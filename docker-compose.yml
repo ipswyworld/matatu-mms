@@ -4,19 +4,22 @@ services:
     restart: unless-stopped
     environment:
       SECRET_KEY: ${BACKEND_SECRET_KEY}
+      MPESA_CALLBACK_SECRET: ${MPESA_CALLBACK_SECRET}
       SESSION_COOKIE_NAME: mms_session
       TERMS_VERSION: ${TERMS_VERSION:-2026-07-25}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # DATABASE_URL defaults to local SQLite inside the container volume.
-      # Swap for a Postgres DSN once that migration lands (see project notes) —
-      # e.g. postgresql+asyncpg://user:pass@postgres:5432/matatu_mms
-      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/mms.db}
+      # Real Postgres by default now — SQLite (single-writer, file-locked)
+      # can't carry real concurrent traffic. Override only for a throwaway
+      # local run with no docker-compose Postgres available.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms}
       # Real-time backbone (GPS telemetry, dashboard live-refresh, per-user
       # notifications) — every backend instance publishes/subscribes here
       # instead of only fanning out to its own in-memory websocket list.
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     volumes:
       - backend_data:/app/data
@@ -27,6 +30,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks: [internal]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: matatu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: matatu_mms
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matatu -d matatu_mms"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks: [internal]
 
   redis:
@@ -126,6 +145,7 @@ services:
 volumes:
   backend_data:
   backend_uploads:
+  postgres_data:
   redis_data:
   nginx_logs:
   certbot_webroot:

@@ -8,7 +8,7 @@ import logging
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 
-from app.database import engine, Base, AsyncSessionLocal
+from app.database import engine, Base, AsyncSessionLocal, IS_SQLITE
 from app.listeners import register_listeners
 from app.seed import seed_data
 from app.logging_config import configure_logging
@@ -60,11 +60,18 @@ async def lifespan(app: FastAPI):
     notifications_broadcaster.start()
     logger.info("Real-time broadcasters started.")
 
-    # 2. Create database schema tables
-    logger.info("Synchronizing database tables...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
+    # 2. Create database schema tables. Postgres schema is now owned by
+    # Alembic migrations (run `alembic upgrade head` before starting the
+    # app) — create_all only runs here for the SQLite dev fallback, where
+    # there's no migration history to preserve and zero-setup convenience
+    # matters more than migration discipline.
+    if IS_SQLITE:
+        logger.info("Synchronizing database tables (SQLite dev mode — no Alembic)...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        logger.info("Postgres detected — schema is managed by Alembic migrations, skipping auto-create.")
+
     # 3. Seed default mock data
     logger.info("Verifying default seed data...")
     async with AsyncSessionLocal() as session:

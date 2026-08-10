@@ -1,9 +1,7 @@
-# Deployment — nginx, observability, self-hosted stack
+# Deployment — nginx, observability, Postgres, self-hosted stack
 
 This covers what was added to take the system from "runs on my laptop" toward
-"runs on our own servers, self-regulated, 24/7." It does **not** cover the
-Postgres migration (tracked separately) — the stack below still runs on
-SQLite by default.
+"runs on our own servers, self-regulated, 24/7."
 
 ## What's here
 
@@ -31,6 +29,47 @@ SQLite by default.
   JSON object (`timestamp`, `level`, `logger`, `message`, plus whatever you
   pass via `extra={...}`), so a log aggregator (Loki/ELK) can actually query
   them instead of you grepping stdout.
+
+## Database — Postgres + Alembic
+
+SQLite is gone as the real target: it single-writer-locks the whole file,
+which caps concurrency hard. Postgres is now the default in
+`docker-compose.yml` (a `postgres` service, schema owned by Alembic
+migrations under `backend/alembic/`). SQLite is still available as an
+explicit opt-out (`DATABASE_URL=sqlite+aiosqlite:///./data/mms.db`) for a
+zero-setup throwaway local run — in that mode the app still self-creates
+its schema on startup like before, since there's no migration history worth
+preserving for a disposable dev file.
+
+**Connection pooling** (`app/database.py`): Postgres gets a real pool
+(`pool_size=20`, `max_overflow=10`, `pool_pre_ping=True`, 30-minute
+recycle) instead of SQLite's `NullPool`. Tune `pool_size` against your
+actual concurrent request volume once you have production numbers — 20 is
+a reasonable starting point, not a measured ceiling.
+
+**Migration workflow going forward** — no more "delete the db file":
+
+```bash
+# After changing a model in app/models.py:
+cd backend
+DATABASE_URL=postgresql+asyncpg://matatu:PASSWORD@localhost:5432/matatu_mms \
+  python -m alembic revision --autogenerate -m "describe the change"
+# Review the generated file under alembic/versions/ — autogenerate is a
+# starting point, not infallible (it won't catch every rename, check
+# constraint, etc. — read the diff).
+DATABASE_URL=postgresql+asyncpg://matatu:PASSWORD@localhost:5432/matatu_mms \
+  python -m alembic upgrade head
+```
+
+In Docker, migrations run automatically: `backend/docker-entrypoint.sh`
+runs `alembic upgrade head` before starting uvicorn whenever `DATABASE_URL`
+is a `postgresql*` URL, and skips it (falls back to `create_all`) for
+SQLite.
+
+**Verified this session** against a real `postgres:16-alpine` container (not
+just written-and-assumed): migration generation and apply, all 16 tables
+created correctly, seed data landing correctly, login, a real read endpoint,
+and a real write endpoint (a booking) round-tripping through Postgres.
 
 ## Frontend
 
@@ -89,9 +128,10 @@ curl -k https://localhost/api/health   # through nginx, not the frontend directl
 
 ## Still outstanding (not built this session)
 
-- **Postgres migration** — next in the agreed sequence. SQLite is still a
-  hard single-writer concurrency ceiling.
 - **Real TLS certificate** — the shipped cert is self-signed, dev-only.
+- **Postgres read replica** for analytics/data-science access — everything
+  still reads/writes the single primary; a scoped `DATA_ANALYST` role
+  reading a replica (not the OLTP primary) is a follow-up from the audit.
 - **Grafana dashboards** — Prometheus is scraping and Grafana is wired up,
   but no dashboards are provisioned yet; you'll see raw metrics only until
   dashboards are built or imported.
