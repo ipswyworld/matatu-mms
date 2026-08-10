@@ -1,0 +1,244 @@
+import Link from "next/link";
+import { readSession } from "@/lib/session";
+import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
+import { can } from "@/lib/rbac";
+import PageBanner from "@/components/PageBanner";
+import ComplianceDonut from "@/components/dashboard/ComplianceDonut";
+import RevenueBars from "@/components/dashboard/RevenueBars";
+import KpiCard from "@/components/dashboard/KpiCard";
+import ActivityFeed from "@/components/dashboard/ActivityFeed";
+import CorridorHealth from "@/components/dashboard/CorridorHealth";
+import BookingsPanel from "@/components/dashboard/BookingsPanel";
+import FleetLiveStatus from "@/components/dashboard/FleetLiveStatus";
+import DashboardLiveRefresh from "@/components/DashboardLiveRefresh";
+
+export default async function DashboardPage() {
+  const session = readSession()!;
+  const isSacco = session.role === "SACCO_OPERATOR";
+
+  if (session.role === "DIRECTOR_MOBILITY" || session.role === "CHIEF_OFFICER") {
+    const saccos = await getSaccos();
+    const isDirector = session.role === "DIRECTOR_MOBILITY";
+    const stageField = isDirector ? "directorMobilityStatus" : "chiefOfficerStatus";
+
+    const awaitingYou = saccos.filter((s) => {
+      if (!s.applicationSubmittedAt) return false;
+      if (isDirector) return s[stageField] === "PENDING";
+      return s.directorMobilityStatus === "APPROVED" && s[stageField] === "PENDING";
+    });
+    const approvedByYou = saccos.filter((s) => s[stageField] === "APPROVED");
+    const rejectedByYou = saccos.filter((s) => s[stageField] === "REJECTED");
+    const notYetSubmitted = saccos.filter((s) => !s.applicationSubmittedAt && s.status === "PENDING_VERIFICATION");
+
+    return (
+      <div className="space-y-6">
+        <PageBanner
+          eyebrow="Nairobi City County Government"
+          title={isDirector ? "Director of Mobility — Operator Verification" : "Chief Officer — Final Operator Verification"}
+          subtitle={`Welcome back, ${session.name}. ${isDirector ? "You review Sacco onboarding applications first." : "You give the final approval once the Director of Mobility has signed off."}`}
+        />
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard
+            label="Awaiting your decision"
+            value={awaitingYou.length.toString()}
+            delta={{ label: "Submitted applications", tone: awaitingYou.length > 0 ? "attention" : "positive" }}
+            accent="yellow"
+            href="/saccos/verify"
+          />
+          <KpiCard label="Approved by you" value={approvedByYou.length.toString()} delta={{ label: "All time", tone: "positive" }} accent="green" />
+          <KpiCard label="Rejected by you" value={rejectedByYou.length.toString()} delta={{ label: "All time", tone: "negative" }} accent="red" />
+          <KpiCard
+            label="Not yet submitted"
+            value={notYetSubmitted.length.toString()}
+            delta={{ label: "Still filling onboarding wizard", tone: "positive" }}
+          />
+        </div>
+
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm text-county-black">Applications Awaiting Your Decision</h3>
+            <Link href="/saccos/verify" className="text-xs font-semibold text-county-green hover:underline">
+              Full verification hub →
+            </Link>
+          </div>
+          {awaitingYou.length === 0 ? (
+            <p className="text-sm text-black/40 py-6 text-center">Nothing waiting on you right now.</p>
+          ) : (
+            <div className="space-y-2">
+              {awaitingYou.map((s) => (
+                <div key={s.id} className="flex items-center justify-between text-sm border-b border-black/5 pb-2 last:border-0">
+                  <div>
+                    <span className="font-semibold text-county-black">{s.name}</span>
+                    <span className="text-xs text-black/50 ml-2">{s.saccoType === "NEW" ? "New Applicant" : "Existing Operator"}</span>
+                  </div>
+                  <span className="text-xs text-black/50">
+                    Submitted {s.applicationSubmittedAt && new Date(s.applicationSubmittedAt).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const [allMatatus, allFines, allActivity, saccos, routes, auditLogs, reports, bookings, telemetry] = await Promise.all([
+    getMatatus(),
+    getFines(),
+    getActivity(),
+    getSaccos(),
+    getRoutes(),
+    can(session.role, "manage_users") ? getAuditLogs() : Promise.resolve([]),
+    can(session.role, "view_reports") ? getReports() : Promise.resolve([]),
+    getMyBookings(),
+    getFleetTelemetry(),
+  ]);
+
+  const matatus = isSacco ? allMatatus.filter((m) => m.saccoId === session.saccoId) : allMatatus;
+  const matatuIds = new Set(matatus.map((m) => m.id));
+  const fines = isSacco ? allFines.filter((f) => matatuIds.has(f.matatuId)) : allFines;
+
+  const pendingFines = fines.filter((f) => f.status === "PENDING");
+  const pendingAmount = pendingFines.reduce((sum, f) => sum + f.amountKes, 0);
+  const flagged = matatus.filter((m) => m.status === "FLAGGED" || m.status === "IMPOUNDED");
+  const activeCount = matatus.filter((m) => m.status === "ACTIVE").length;
+  const flaggedCount = matatus.filter((m) => m.status === "FLAGGED").length;
+  const impoundedCount = matatus.filter((m) => m.status === "IMPOUNDED").length;
+  const decommissionedCount = matatus.filter((m) => m.status === "DECOMMISSIONED").length;
+  const totalFleet = matatus.length;
+  const compliancePct = totalFleet > 0 ? Math.round((activeCount / totalFleet) * 100) : 0;
+
+  const paidKes = fines.filter((f) => f.status === "PAID").reduce((sum, f) => sum + f.amountKes, 0);
+  const pendingKes = fines.filter((f) => f.status === "PENDING").reduce((sum, f) => sum + f.amountKes, 0);
+  const waivedKes = fines.filter((f) => f.status === "WAIVED").reduce((sum, f) => sum + f.amountKes, 0);
+  const disputedKes = fines.filter((f) => f.status === "DISPUTED").reduce((sum, f) => sum + f.amountKes, 0);
+  const collectionRate = paidKes + pendingKes > 0 ? Math.round((paidKes / (paidKes + pendingKes)) * 100) : 0;
+
+  const pendingReports = reports.filter((r) => r.status === "PENDING");
+  const pendingSaccos = saccos.filter((s) => s.status === "PENDING_VERIFICATION");
+  const pendingRenewals = saccos.filter((s) => s.licenseStatus === "RENEWAL_SUBMITTED");
+  const pendingApprovals = pendingSaccos.length + pendingRenewals.length;
+
+  return (
+    <div className="space-y-6">
+      <PageBanner
+        eyebrow="Nairobi City County Government"
+        title={isSacco ? "Your fleet at a glance" : "Matatu public service managing system"}
+        subtitle={`Welcome back, ${session.name}. This view updates itself in real time as bookings, fines, and approvals happen across ${isSacco ? "your fleet" : "Nairobi's matatu sector"}.`}
+        action={session.token && <DashboardLiveRefresh token={session.token} />}
+      />
+
+      {/* Key metrics — bigger, more decisive scale than generic StatCards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          label="Registered vehicles"
+          value={matatus.length.toString()}
+          delta={{ label: `${activeCount} in service`, tone: "positive" }}
+        />
+        <KpiCard
+          label="Fleet compliance"
+          value={`${compliancePct}%`}
+          delta={{
+            label: `${flagged.length} flagged or impounded`,
+            tone: flagged.length > 0 ? "negative" : "positive",
+          }}
+          accent="green"
+        />
+        <KpiCard
+          label="Outstanding fines"
+          value={`KES ${(pendingKes / 1000).toFixed(0)}k`}
+          delta={{ label: `${pendingFines.length} pending citations`, tone: "negative" }}
+          accent="red"
+        />
+        {!isSacco && (
+          <KpiCard
+            label="Awaiting your approval"
+            value={pendingApprovals.toString()}
+            delta={{
+              label: `${pendingSaccos.length} Saccos · ${pendingRenewals.length} renewals`,
+              tone: pendingApprovals > 0 ? "attention" : "positive",
+            }}
+            accent="yellow"
+            href="/saccos/verify"
+          />
+        )}
+        {isSacco && (
+          <KpiCard
+            label="Passenger complaints"
+            value={reports.filter((r) => r.matatuRegNumber && allMatatus.some((m) => matatuIds.has(m.id) && m.regNumber === r.matatuRegNumber)).length.toString()}
+            delta={{ label: `${pendingReports.length} pending review`, tone: "attention" }}
+            accent="yellow"
+          />
+        )}
+      </div>
+
+      {/* Row 2: two feature panels + activity rail */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 grid md:grid-cols-2 gap-6">
+          <ComplianceDonut
+            total={totalFleet}
+            active={activeCount}
+            flagged={flaggedCount}
+            impounded={impoundedCount}
+            decommissioned={decommissionedCount}
+          />
+          <RevenueBars
+            paid={paidKes}
+            pending={pendingKes}
+            disputed={disputedKes}
+            waived={waivedKes}
+            collectionRate={collectionRate}
+          />
+        </div>
+
+        <ActivityFeed
+          auditLogs={auditLogs.slice(0, 12)}
+          reports={reports.slice(0, 4)}
+          activity={allActivity.slice().sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 6)}
+          isVisible={can(session.role, "manage_users")}
+        />
+      </div>
+
+      {/* Row 3: commuter bookings + live crew/GPS status — previously invisible outside
+          the Passenger and Crew dashboards respectively */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        <BookingsPanel bookings={isSacco ? bookings.filter((b) => matatuIds.has(b.matatuId)) : bookings} />
+        <FleetLiveStatus
+          matatus={matatus}
+          telemetry={telemetry}
+          bookings={isSacco ? bookings.filter((b) => matatuIds.has(b.matatuId)) : bookings}
+        />
+      </div>
+
+      {/* Row 4: corridor health, replacing the previous flat status list */}
+      <CorridorHealth
+        routes={routes}
+        matatus={allMatatus}
+        fines={allFines}
+      />
+
+      {/* Bottom quick-links row for approvals — visible only when there's something to act on */}
+      {!isSacco && pendingApprovals > 0 && (
+        <div className="rounded-2xl bg-county-green-deep text-white p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-elevated">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-county-yellow">Action needed</div>
+            <div className="text-lg font-black tracking-tight mt-1">
+              {pendingApprovals} item{pendingApprovals !== 1 ? "s" : ""} awaiting your review
+            </div>
+            <div className="text-sm text-white/70 mt-0.5">
+              Sacco onboarding applications and monthly license renewals routed to your desk.
+            </div>
+          </div>
+          <Link
+            href="/saccos/verify"
+            className="rounded-lg px-4 py-2.5 text-sm font-bold bg-county-yellow text-county-green-deep hover:bg-county-yellow-dark transition-colors shadow-sm"
+          >
+            Go to approvals →
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}

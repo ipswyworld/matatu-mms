@@ -1,0 +1,208 @@
+import asyncio
+import os
+import sys
+import shutil
+import httpx
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy import select
+
+# Set environment variables for testing before imports
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_mms.db"
+os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["WEBHOOK_MAX_RETRIES"] = "1"
+
+from app.main import app
+from app.database import Base, engine, get_db
+from app.models import User, Matatu, Fine, AuditLog, WebhookSubscription, WebhookLog
+from app.auth import get_password_hash
+
+from app.seed import seed_data
+from app.listeners import register_listeners
+
+async def setup_test_db():
+    # Remove existing test DB if any
+    if os.path.exists("./test_mms.db"):
+        os.remove("./test_mms.db")
+        
+    # Re-create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
+    # Register listeners
+    register_listeners()
+        
+    # Seed data manually
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        await seed_data(session)
+
+async def cleanup_test_db():
+    await engine.dispose()
+    if os.path.exists("./test_mms.db"):
+        os.remove("./test_mms.db")
+
+async def run_tests():
+    print("==================================================")
+    print("        RUNNING NCCG BACKEND AUTOMATED TESTS      ")
+    print("==================================================")
+    
+    await setup_test_db()
+    
+    # 1. Start httpx AsyncClient
+    # We use transport=httpx.ASGITransport(app=app) to query the FastAPI app directly without starting a server process.
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        
+        # Test Case 1: Login Admin
+        print("\n[TEST 1] Testing Admin Login...")
+        login_payload = {
+            "email": "admin@nairobi.go.ke",
+            "password": "admin123"
+        }
+        res = await client.post("/api/auth/login", json=login_payload)
+        assert res.status_code == 200, f"Login failed: {res.text}"
+        admin_data = res.json()
+        admin_token = admin_data["accessToken"]
+        print("  [OK] Admin Login Successful!")
+        print(f"  [OK] Admin Token: {admin_token[:25]}...")
+        
+        # Test Case 2: Login Sacco Operator
+        print("\n[TEST 2] Testing Sacco Operator Login...")
+        sacco_payload = {
+            "email": "operator@umoinner.co.ke",
+            "password": "sacco123"
+        }
+        res = await client.post("/api/auth/login", json=sacco_payload)
+        assert res.status_code == 200, f"Login failed: {res.text}"
+        sacco_data = res.json()
+        sacco_token = sacco_data["accessToken"]
+        sacco_id = sacco_data["user"]["saccoId"]
+        print("  [OK] Sacco Operator Login Successful!")
+        print(f"  [OK] Sacco Operator ID: {sacco_id}")
+
+        # Header definitions
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        sacco_headers = {"Authorization": f"Bearer {sacco_token}"}
+
+        # Test Case 3: Sacco Operator Fleet Filtering
+        print("\n[TEST 3] Testing Sacco Operator Matatu Filter...")
+        res = await client.get("/api/matatus", headers=sacco_headers)
+        assert res.status_code == 200
+        matatus = res.json()
+        print(f"  [OK] Retrieved {len(matatus)} matatus.")
+        for m in matatus:
+            assert m["saccoId"] == "sacco-1", f"Found vehicle of another Sacco: {m}"
+        print("  [OK] Fleet filtering enforced correctly.")
+
+        # Test Case 4: Issue Fine (Admin)
+        print("\n[TEST 4] Testing Fine Issuance (Admin)...")
+        fine_payload = {
+            "matatuId": "m-2",
+            "reason": "Speeding on Langata road",
+            "amountKes": 5000.0,
+            "dueDate": "2026-08-01"
+        }
+        res = await client.post("/api/fines", json=fine_payload, headers=admin_headers)
+        assert res.status_code == 201, f"Failed to issue fine: {res.text}"
+        fine_data = res.json()
+        fine_id = fine_data["id"]
+        print(f"  [OK] Fine issued successfully. ID: {fine_id}")
+        
+        # Test Case 5: Verify Audit Log created for the fine
+        print("\n[TEST 5] Checking Event listener (Audit Trail)...")
+        await asyncio.sleep(0.5) # Give background task a moment
+        
+        # Query DB directly to check audit logs
+        async with AsyncSessionLocal() as session:
+            db_res = await session.execute(
+                select(AuditLog).where(AuditLog.resource_id == fine_id)
+            )
+            audit_records = db_res.scalars().all()
+            assert len(audit_records) > 0, "No audit log created for the fine!"
+            print(f"  [OK] Audit Log Found. Action: {audit_records[0].action}")
+
+        # Test Case 6: Dispute Fine (Sacco Operator)
+        print("\n[TEST 6] Testing Fine Dispute (Sacco)...")
+        dispute_payload = {"status": "DISPUTED"}
+        res = await client.patch(f"/api/fines/{fine_id}/status", json=dispute_payload, headers=sacco_headers)
+        assert res.status_code == 200, f"Dispute failed: {res.text}"
+        disputed_fine = res.json()
+        assert disputed_fine["status"] == "DISPUTED"
+        print(f"  [OK] Fine status successfully disputed.")
+
+        # Test Case 7: M-Pesa Callback Payment Simulation
+        print("\n[TEST 7] Testing M-Pesa Webhook Callback Simulation...")
+        mpesa_payload = {
+            "transaction_type": "Pay Bill",
+            "trans_id": "MPESA100293",
+            "trans_time": "20260717143000",
+            "trans_amount": "5000.00",
+            "business_short_code": "123456",
+            "bill_ref_number": fine_id,
+            "msisdn": "254711223344",
+            "first_name": "James",
+            "middle_name": "Mwangi"
+        }
+        res = await client.post("/api/payments/mpesa-callback", json=mpesa_payload)
+        assert res.status_code == 200, f"Mpesa callback failed: {res.text}"
+        callback_res = res.json()
+        assert callback_res["ResultCode"] == 0
+        print("  [OK] M-Pesa Callback Accepted.")
+        
+        # Verify fine is indeed paid now
+        res = await client.get(f"/api/matatus/m-2", headers=sacco_headers)
+        matatu_detail = res.json()
+        # Find fine in matatu details
+        matched_fine = next(f for f in matatu_detail["fines"] if f["id"] == fine_id)
+        assert matched_fine["status"] == "PAID", f"Fine status is {matched_fine['status']} instead of PAID"
+        print("  [OK] Verified fine status changed to PAID in database.")
+
+        # Test Case 8: Webhook Subscription
+        print("\n[TEST 8] Testing Webhook Subscription Registration...")
+        webhook_payload = {
+            "url": "http://127.0.0.1:9999/webhook",
+            "saccoId": "sacco-1",
+            "events": ["FINE_ISSUED", "VEHICLE_STATUS_CHANGED"]
+        }
+        res = await client.post("/api/webhooks/subscriptions", json=webhook_payload, headers=sacco_headers)
+        assert res.status_code == 201, f"Webhook subscription failed: {res.text}"
+        webhook_sub = res.json()
+        assert webhook_sub["url"] == "http://127.0.0.1:9999/webhook"
+        print("  [OK] Webhook Subscription Registered.")
+
+        # Test Case 9: Webhook Delivery Log
+        print("\n[TEST 9] Checking Webhook simulator queue delivery logs...")
+        # Since we registered a webhook subscription, issuing a fine should trigger a webhook log in the database
+        fine_payload2 = {
+            "matatuId": "m-2",
+            "reason": "Overloading spot check",
+            "amountKes": 3000.0,
+            "dueDate": "2026-08-05"
+        }
+        res = await client.post("/api/fines", json=fine_payload2, headers=admin_headers)
+        assert res.status_code == 201
+        
+        await asyncio.sleep(6.0) # wait for event dispatcher + delivery attempts
+        
+        res = await client.get("/api/webhooks/logs", headers=sacco_headers)
+        assert res.status_code == 200
+        logs = res.json()
+        assert len(logs) > 0, "No webhook delivery attempts logged!"
+        print(f"  [OK] Webhook Log entries found. First delivery error message (expected since URL is mock): {logs[0]['errorMessage']}")
+
+    print("\n==================================================")
+    print("        ALL AUTOMATED TESTS PASSED SUCCESSFULLY!  ")
+    print("==================================================")
+
+if __name__ == "__main__":
+    # Update global scope database session reference for local tests
+    from app.database import AsyncSessionLocal
+    
+    try:
+        asyncio.run(run_tests())
+    except Exception as e:
+        print(f"\n[FAIL] TEST RUN ENCOUNTERED AN ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        asyncio.run(cleanup_test_db())

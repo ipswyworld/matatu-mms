@@ -1,0 +1,22 @@
+# Secrets — never commit real values
+.env
+nginx/certs/*.key
+nginx/certs/*.pem
+
+# Backend
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/mms.db
+backend/uploads/
+
+# Frontend
+matatu-mms/node_modules/
+matatu-mms/.next/
+matatu-mms/.env.local
+
+# OS/editor
+.DS_Store
+Thumbs.db
+__MACOSX/
+matatu-mms/tsconfig.tsbuildinfo

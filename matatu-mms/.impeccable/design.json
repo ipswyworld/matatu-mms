@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-23T00:00:00Z",
+  "title": "Design System: NCCG Matatu Management System",
+  "extensions": {
+    "colorMeta": {
+      "county-black": { "role": "primary", "displayName": "County Black", "canonical": "#121824", "tonalRamp": ["#0a0d12", "#121824", "#1c2436", "#2d3852", "#4a5678", "#6b7aa0", "#9aa5c2", "#c8cede"] },
+      "county-green": { "role": "primary", "displayName": "County Green", "canonical": "#068930", "tonalRamp": ["#022c10", "#045A20", "#068930", "#0aa93d", "#2ec95c", "#6adf85", "#a5edb6", "#d9f7e0"] },
+      "county-yellow": { "role": "secondary", "displayName": "County Yellow (live signal only)", "canonical": "#FCDD07", "tonalRamp": ["#4d3f00", "#806a00", "#b39400", "#e6c000", "#FCDD07", "#fde855", "#fef1a3", "#fff9d6"] },
+      "county-blue": { "role": "secondary", "displayName": "County Blue", "canonical": "#0F47AF", "tonalRamp": ["#051c46", "#0a2e73", "#0F47AF", "#1a5cd6", "#4a7de3", "#82a4ec", "#b8c9f5", "#e2eafc"] },
+      "county-red": { "role": "tertiary", "displayName": "County Red (alerts only)", "canonical": "#CE1126", "tonalRamp": ["#4a0409", "#7a0912", "#a80e1c", "#CE1126", "#e0424f", "#ec7981", "#f6b3b8", "#fbe0e2"] },
+      "county-cream": { "role": "neutral", "displayName": "County Cream", "canonical": "#F9FAF6", "tonalRamp": ["#d8dbcf", "#e4e6dc", "#eff1e7", "#F9FAF6", "#fbfcf9", "#fcfdfb", "#fdfefc", "#ffffff"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page and section titles across all five dashboards." },
+      "title": { "displayName": "Title", "purpose": "Card and panel headers." },
+      "body": { "displayName": "Body", "purpose": "Reading text, table cells, descriptions." },
+      "label": { "displayName": "Label", "purpose": "Form labels, table headers, badge text." }
+    },
+    "shadows": [
+      { "name": "resting-card", "value": "0 1px 2px rgba(18,24,36,0.05)", "purpose": "Default card at rest; intensifies to shadow-md on hover." },
+      { "name": "floating-panel", "value": "0 20px 40px rgba(18,24,36,0.25)", "purpose": "Map, seat-map, modals: surfaces that float above the page grid." },
+      { "name": "inset-seat", "value": "inset 0 2px 4px rgba(0,0,0,0.15)", "purpose": "Seat buttons and vehicle chassis body." }
+    ],
+    "motion": [
+      { "name": "live-pulse", "value": "animate-ping, 1.5s cubic-bezier(0,0,0.2,1) infinite", "purpose": "Live/real-time indicator halo. Falls back to static filled dot under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main call-to-action across all dashboards (confirm booking, issue fine, approve sacco).",
+      "html": "<button class=\"ds-btn-primary\">Confirm booking</button>",
+      "css": ".ds-btn-primary { background: #068930; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 0.875rem; border: none; box-shadow: 0 1px 2px rgba(18,24,36,0.05); transition: background 0.2s, transform 0.1s, box-shadow 0.2s; } .ds-btn-primary:hover { background: #045A20; box-shadow: 0 4px 6px rgba(18,24,36,0.1); } .ds-btn-primary:focus-visible { outline: 2px solid #068930; outline-offset: 2px; } .ds-btn-primary:active { transform: scale(0.95); }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "badge-live",
+      "description": "Tinted status badge (10% bg + full-opacity text); used for ACTIVE/FLAGGED/PENDING across matatus, fines, bookings, reports.",
+      "html": "<span class=\"ds-badge ds-badge-active\">ACTIVE</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; border-radius: 9999px; padding: 2px 10px; font-size: 0.7rem; font-weight: 700; } .ds-badge-active { background: rgba(6,137,48,0.1); color: #068930; } .ds-badge-flagged { background: rgba(252,221,7,0.15); color: #806a00; } .ds-badge-alert { background: rgba(206,17,38,0.1); color: #CE1126; }"
+    },
+    {
+      "name": "Live Indicator",
+      "kind": "custom",
+      "refersTo": "badge-live",
+      "description": "Cross-dashboard 'this is happening right now' signal: pulsing dot + label. Used on GisMap, crew GPS toggle.",
+      "html": "<div class=\"ds-live\"><span class=\"ds-live-dot\"></span>Live Synced</div>",
+      "css": ".ds-live { display: inline-flex; align-items: center; gap: 8px; color: #FCDD07; font-weight: 800; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; } .ds-live-dot { width: 10px; height: 10px; border-radius: 9999px; background: #068930; position: relative; } .ds-live-dot::after { content: ''; position: absolute; inset: 0; border-radius: 9999px; background: #068930; animation: ds-ping 1.5s cubic-bezier(0,0,0.2,1) infinite; } @keyframes ds-ping { 75%, 100% { transform: scale(2); opacity: 0; } } @media (prefers-reduced-motion: reduce) { .ds-live-dot::after { animation: none; display: none; } }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card-default",
+      "description": "Default content surface: white on county-cream background.",
+      "html": "<div class=\"ds-card\">Card content</div>",
+      "css": ".ds-card { background: #fff; border-radius: 12px; border: 1px solid rgba(18,24,36,0.05); box-shadow: 0 1px 2px rgba(18,24,36,0.05); padding: 20px; transition: box-shadow 0.3s; } .ds-card:hover { box-shadow: 0 4px 6px rgba(18,24,36,0.1); }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "button-primary",
+      "description": "Active/inactive nav link in the county-black sidebar, with a yellow left-edge marker on the active item.",
+      "html": "<a class=\"ds-nav-item ds-nav-item-active\">Passenger Portal</a>",
+      "css": ".ds-nav-item { display: block; position: relative; padding: 8px 12px; border-radius: 8px; font-size: 0.875rem; font-weight: 600; color: rgba(255,255,255,0.7); transition: background 0.2s, color 0.2s; } .ds-nav-item:hover { background: rgba(255,255,255,0.05); color: #fff; } .ds-nav-item-active { background: #068930; color: #fff; } .ds-nav-item-active::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 0 4px 4px 0; background: #FCDD07; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The County Corridor",
+    "overview": "Two things are true about a matatu corridor at once: it's an official, licensed transit artery run by county government, and it's a living stretch of Nairobi street culture. This system is built the same way: two-thirds institutional (county-black, county-green, cream), one-third matatu energy (county-yellow as a live signal, livery accents in named slots).",
+    "keyCharacteristics": [
+      "County-black as the institutional anchor color",
+      "County-yellow reserved for live state and singular emphasis",
+      "Matatu livery accents live in named slots only: empty states, live indicators, vehicle cards, loading states",
+      "Flat, tonal surfaces at rest; elevation only for floating panels (map, seat chart, modals)"
+    ],
+    "rules": [
+      { "name": "The Yellow Discipline Rule", "body": "County-yellow signals 'live' or 'act now' and nothing else.", "section": "colors" },
+      { "name": "The Two-Thirds Rule", "body": "Any screen should read as roughly two-thirds institutional, at most one-third yellow/blue/livery accent.", "section": "colors" },
+      { "name": "The One Mono Rule", "body": "font-mono is reserved for plate numbers, ticket IDs, and coordinates.", "section": "typography" },
+      { "name": "The Float Justifies Depth Rule", "body": "A shadow's size should match how far above the page the element conceptually sits.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use county-black as the base for any instrument-panel surface (map, seat chart, telemetry bar).",
+      "Do reserve county-yellow for genuinely live or actionable moments.",
+      "Do apply the same live-indicator pattern identically across all five dashboards.",
+      "Do use livery/matatu accents only in named slots: empty states, vehicle cards, live badges, loading states.",
+      "Do keep data-dense surfaces closer to flat county-black-on-cream with minimal color noise."
+    ],
+    "donts": [
+      "Don't ship a generic corporate SaaS dashboard with no Nairobi identity.",
+      "Don't replicate a dated 2010s government portal look.",
+      "Don't let matatu graffiti/livery motifs become kitsch or decorate data-dense surfaces.",
+      "Don't use border-left/border-right as a colored accent stripe except the sidebar's active-nav marker.",
+      "Don't use county-yellow as a large background fill or default button color.",
+      "Don't convey status by color alone; always pair with a text label."
+    ]
+  }
+}
