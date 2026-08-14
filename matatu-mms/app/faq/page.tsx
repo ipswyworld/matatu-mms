@@ -1,5 +1,11 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import PublicLegalLayout from "@/components/PublicLegalLayout";
+
+export const metadata: Metadata = {
+  title: "Help & FAQ",
+  description: "Answers to common questions about registering matatus, booking seats, paying fines, and using the Nairobi County Matatu Management System.",
+};
 
 interface QA {
   q: string;
@@ -32,7 +38,7 @@ export default function FaqPage() {
       a: (
         <>
           Register at the <Link href="/register" className="font-bold text-county-green hover:underline">sign-up page</Link>, choose
-          &quot;Matatu Crew&quot;, and select the Sacco you drive or conduct for. Your Sacco Operator can see every vehicle and crew
+          &quot;Matatu Crew&quot;, and select the Operator you drive or conduct for. Your Operator can see every vehicle and crew
           member linked to their account, and the county Admin retains oversight of the whole system.
         </>
       ),
@@ -67,15 +73,15 @@ export default function FaqPage() {
     },
     {
       q: "My vehicle got a fine or citation from an officer — what happens now?",
-      a: "Enforcement officers issue citations independently of Crew. You'll see the fine reflected in your Sacco's records, and the Sacco Operator is responsible for paying it from their dashboard. As Crew, you aren't the one who pays it, but you are expected to cooperate with any roadside inspection.",
+      a: "Enforcement officers issue citations independently of Crew. You'll see the fine reflected in your Operator's records, and the Operator is responsible for paying it from their dashboard. As Crew, you aren't the one who pays it, but you are expected to cooperate with any roadside inspection.",
     },
     {
       q: "Who sees the incident reports I send in?",
-      a: "Incident alerts you log (breakdowns, delays, checkpoint issues) go into the shared Activity Log, visible to your Sacco Operator, County Enforcement, and Admin. This is the same real log used for compliance history on your vehicle.",
+      a: "Incident alerts you log (breakdowns, delays, checkpoint issues) go into the shared Activity Log, visible to your Operator, County Enforcement, and Admin. This is the same real log used for compliance history on your vehicle.",
     },
     {
       q: "What counts as misuse of the system?",
-      a: "Falsifying seat occupancy to inflate apparent revenue, spoofing your GPS location, refusing to honor a valid online booking, or charging more than the route's published fare. These are covered directly in the Terms & Conditions and can lead to account suspension by your Sacco or the County.",
+      a: "Falsifying seat occupancy to inflate apparent revenue, spoofing your GPS location, refusing to honor a valid online booking, or charging more than the route's published fare. These are covered directly in the Terms & Conditions and can lead to account suspension by your Operator or the County.",
     },
     {
       q: "Is my personal data and location history safe?",
@@ -89,7 +95,7 @@ export default function FaqPage() {
     },
     {
       q: "Something in the app isn't working — who do I contact?",
-      a: "Report it to your Sacco Operator first, since they manage your account and vehicle assignment directly. For system-wide issues, your Sacco can escalate to the County Admin.",
+      a: "Report it to your Operator first, since they manage your account and vehicle assignment directly. For system-wide issues, your Operator can escalate to the County Admin.",
     },
   ];
 
@@ -119,7 +125,7 @@ export default function FaqPage() {
         <FaqSection title="For Commuters" items={passengerFaqs} />
         <div className="rounded-xl bg-county-green-deep text-white p-5 text-sm">
           Still stuck? Read the full{" "}
-          <Link href="/terms" className="font-bold text-county-yellow hover:underline">Terms &amp; Conditions</Link>, or ask your Sacco
+          <Link href="/terms" className="font-bold text-county-yellow hover:underline">Terms &amp; Conditions</Link>, or ask your
           Operator to raise it with County Admin.
         </div>
       </div>

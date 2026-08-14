@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { addUserAction } from "@/lib/actions";
+import { can } from "@/lib/rbac";
 import { Role, Sacco } from "@/lib/types";
 
 function SubmitButton() {
@@ -14,9 +15,10 @@ function SubmitButton() {
   );
 }
 
-export default function NewUserForm({ saccos }: { saccos: Sacco[] }) {
+export default function NewUserForm({ saccos, viewerRole }: { saccos: Sacco[]; viewerRole: Role }) {
   const [state, formAction] = useFormState(addUserAction, undefined);
   const [role, setRole] = useState<Role>("VIEWER");
+  const canAssignAdminTier = can(viewerRole, "manage_admins");
 
   return (
     <div className="card p-5 h-fit">
@@ -43,17 +45,18 @@ export default function NewUserForm({ saccos }: { saccos: Sacco[] }) {
             value={role}
             onChange={(e) => setRole(e.target.value as Role)}
           >
-            <option value="ADMIN">System Administrator</option>
+            {canAssignAdminTier && <option value="SUPERADMIN">Super Administrator</option>}
+            {canAssignAdminTier && <option value="ADMIN">System Administrator</option>}
             <option value="ENFORCEMENT">Enforcement Officer</option>
-            <option value="SACCO_OPERATOR">Sacco Operator</option>
+            <option value="SACCO_OPERATOR">Operator</option>
             <option value="VIEWER">Viewer / Executive</option>
           </select>
         </div>
         {role === "SACCO_OPERATOR" && (
           <div>
-            <label className="label" htmlFor="saccoId">Sacco</label>
+            <label className="label" htmlFor="saccoId">Operator</label>
             <select className="input" id="saccoId" name="saccoId" required defaultValue="">
-              <option value="" disabled>Select a sacco</option>
+              <option value="" disabled>Select an operator</option>
               {saccos.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>

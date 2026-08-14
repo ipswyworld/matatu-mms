@@ -1,14 +1,19 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { readSession } from "@/lib/session";
 import { getAuditLogs, getMatatus, getUsers } from "@/lib/data";
 import PageBanner from "@/components/PageBanner";
 import AuditLogTable from "@/components/AuditLogTable";
 
+export const metadata: Metadata = { title: "System Audit Trail" };
+
 export default async function AuditLogsPage() {
   const session = readSession()!;
 
-  // Defence in depth: double check role (Admin, plus read-only Data Analyst access)
-  if (session.role !== "ADMIN" && session.role !== "DATA_ANALYST") {
+  // Defence in depth: double check role. No nav link points here anymore
+  // (removed as admin-nav clutter), but the page and underlying audit data
+  // stay reachable directly for admins.
+  if (session.role !== "ADMIN" && session.role !== "SUPERADMIN") {
     redirect("/dashboard");
   }
 

@@ -65,4 +65,4 @@ real NCCG operations:
    approximates NCCG colours; swap in the exact brand hex codes and the official crest/logo
    asset once available.
 5. **Payments** — fines are marked "Paid" manually here; a real deployment would integrate
-   an M-Pesa/paybill payment confirmation webhook.
+   a NairobiPay payment confirmation webhook.

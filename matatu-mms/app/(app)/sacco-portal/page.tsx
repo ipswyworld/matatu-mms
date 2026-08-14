@@ -12,6 +12,9 @@ import SaccoDocumentUploadRow from "@/components/SaccoDocumentUploadRow";
 import SaccoOfficialsForm from "@/components/SaccoOfficialsForm";
 import BulkImportVehiclesModal from "@/components/BulkImportVehiclesModal";
 import RemoveMatatuButton from "@/components/RemoveMatatuButton";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Operator Dashboard" };
 
 export default async function SaccoPortalPage() {
   const session = readSession()!;
@@ -29,7 +32,7 @@ export default async function SaccoPortalPage() {
   if (!sacco) {
     return (
       <div className="card p-8 text-center text-sm text-black/60">
-        No Sacco is registered for this account yet.
+        No Operator is registered for this account yet.
       </div>
     );
   }
@@ -66,7 +69,7 @@ export default async function SaccoPortalPage() {
   return (
     <div className="space-y-6">
       <PageBanner
-        eyebrow="Nairobi City County · Sacco Operations"
+        eyebrow="Nairobi City County · Operator Operations"
         title={`${sacco.name} Portal`}
         titleBadge={
           <span className={`badge font-bold ${sacco.status === "ACTIVE" ? "bg-county-green text-white" : "bg-county-yellow text-yellow-900"}`}>
@@ -84,7 +87,7 @@ export default async function SaccoPortalPage() {
 
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Registered Fleet" value={saccoMatatus.length} hint="Vehicles under Sacco" />
+        <StatCard label="Total Registered Fleet" value={saccoMatatus.length} hint="Vehicles under Operator" />
         <StatCard label="Active in Service" value={activeVehicles.length} accent="green" hint="Roadworthy matatus" />
         <StatCard label="Registration Pending" value={pendingVehicles.length} hint="Awaiting county verification" />
         <StatCard label="Flagged / Impounded" value={flaggedVehicles.length} accent="red" hint="Requires resolution" />
@@ -94,7 +97,7 @@ export default async function SaccoPortalPage() {
       <div className="card p-5 space-y-3">
         <div className="flex justify-between items-center border-b border-black/5 pb-2">
           <div>
-            <h3 className="font-bold text-sm text-county-black">Sacco Route Licensing & Operating Corridors</h3>
+            <h3 className="font-bold text-sm text-county-black">Operator Route Licensing & Operating Corridors</h3>
             <p className="text-xs text-black/50">Official main route and existing authorized operating corridors for {sacco.name}.</p>
           </div>
           <span className="badge bg-county-blue/10 text-county-blue font-bold">
@@ -135,7 +138,7 @@ export default async function SaccoPortalPage() {
       <div className="card p-5 space-y-3">
         <div className="flex justify-between items-center">
           <div>
-            <h3 className="font-bold text-sm text-county-black">Sacco Vehicle Onboarding Registry</h3>
+            <h3 className="font-bold text-sm text-county-black">Operator Vehicle Onboarding Registry</h3>
             <p className="text-xs text-black/50">All matatus onboarded under {sacco.name} with terminal stage assignments.</p>
           </div>
           <span className="text-xs font-bold text-black/50">
@@ -148,7 +151,6 @@ export default async function SaccoPortalPage() {
             <thead className="bg-black/5 text-black/60 uppercase text-[10px]">
               <tr>
                 <th className="p-2.5">Plate Number</th>
-                <th className="p-2.5">Assigned Route</th>
                 <th className="p-2.5">Terminal & Stage Segment</th>
                 <th className="p-2.5">Capacity</th>
                 <th className="p-2.5">Status</th>
@@ -160,15 +162,11 @@ export default async function SaccoPortalPage() {
             </thead>
             <tbody className="divide-y divide-black/5">
               {saccoMatatus.map((m) => {
-                const route = routeMap.get(m.routeId);
                 const defaultSegment = `${sacco.name}: CBD-Umoja Terminal: Tusker Stage`;
                 return (
                   <tr key={m.id} className="hover:bg-black/[0.02]">
                     <td className="p-2.5 font-bold font-mono text-county-black">
                       {m.regNumber}
-                    </td>
-                    <td className="p-2.5 font-medium">
-                      Route {route?.code || "102"} - {route?.name || "CBD-Umoja"}
                     </td>
                     <td className="p-2.5">
                       <span className="bg-black/5 px-2 py-1 rounded border border-black/5 font-semibold text-black/70">
@@ -210,7 +208,7 @@ export default async function SaccoPortalPage() {
               })}
               {saccoMatatus.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-6 text-black/40">
+                  <td colSpan={8} className="text-center py-6 text-black/40">
                     No vehicles onboarded yet under {sacco.name}. Click &quot;+ Onboard New Vehicle&quot; to add your first matatu.
                   </td>
                 </tr>
@@ -228,7 +226,7 @@ export default async function SaccoPortalPage() {
         <div className="flex justify-between items-center border-b border-black/5 pb-2">
           <div>
             <h3 className="font-bold text-sm text-county-black">County Verification Documents & Bonafide Contacts</h3>
-            <p className="text-xs text-black/50">Mandatory onboarding files on record for your Sacco County Operating License.</p>
+            <p className="text-xs text-black/50">Mandatory onboarding files on record for your Operator County Operating License.</p>
           </div>
           <span className="badge bg-county-green/10 text-county-green font-bold">
             VERIFIED & APPROVED

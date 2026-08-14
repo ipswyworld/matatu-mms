@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import PublicFooter from "./PublicFooter";
 
 export default function PublicLegalLayout({
   eyebrow,
@@ -41,11 +42,7 @@ export default function PublicLegalLayout({
 
       <main className="max-w-3xl mx-auto px-5 py-10 md:py-14">{children}</main>
 
-      <footer className="max-w-3xl mx-auto px-5 pb-12 text-center">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-county-ink/40">
-          Nairobi City County Government · Matatu Management System
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

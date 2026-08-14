@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import PublicLegalLayout from "@/components/PublicLegalLayout";
+
+export const metadata: Metadata = {
+  title: "Terms & Conditions",
+  description: "Terms and conditions governing use of the Nairobi City County Matatu Management System by passengers, crew, operators, and enforcement officers.",
+};
 
 function Section({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
   return (
@@ -23,7 +29,7 @@ export default function TermsPage() {
           <p>
             By creating an account or otherwise using the Nairobi City County Matatu Management System (&quot;the System&quot;), you
             agree to these Terms & Conditions. If you do not agree, do not register for or use the System. These Terms apply to all
-            account types: County Admin, Enforcement Officers, Sacco Operators, Crew (drivers and conductors), and Passengers, with
+            account types: County Admin, Enforcement Officers, Operators, Crew (drivers and conductors), and Passengers, with
             additional obligations for Crew set out in Section 4.
           </p>
         </Section>
@@ -31,18 +37,18 @@ export default function TermsPage() {
         <Section n="2" title="Definitions">
           <ul className="list-disc pl-5 space-y-1">
             <li><strong>&quot;County&quot;</strong> means the Nairobi City County Government, operator of the System.</li>
-            <li><strong>&quot;Sacco&quot;</strong> means a registered matatu Savings and Credit Cooperative Organisation onboarded onto the System.</li>
-            <li><strong>&quot;Crew&quot;</strong> means a driver or conductor account, linked to exactly one Sacco and its registered vehicles.</li>
-            <li><strong>&quot;Vehicle&quot;</strong> means a matatu registered under a Sacco within the System, identified by its number plate.</li>
+            <li><strong>&quot;Operator&quot;</strong> means a registered matatu Savings and Credit Cooperative Organisation onboarded onto the System.</li>
+            <li><strong>&quot;Crew&quot;</strong> means a driver or conductor account, linked to exactly one Operator and its registered vehicles.</li>
+            <li><strong>&quot;Vehicle&quot;</strong> means a matatu registered under an Operator within the System, identified by its number plate.</li>
             <li><strong>&quot;Booking&quot;</strong> means a seat reservation created through the System, whether by a Passenger online or by Crew recording a cash walk-in fare.</li>
           </ul>
         </Section>
 
         <Section n="3" title="Eligibility & Account Registration">
           <p>
-            Crew accounts must be affiliated with a Sacco that is active and verified within the System. You must provide accurate
-            identity information at registration. Sacco Operators are responsible for confirming that Crew registered under their
-            Sacco are genuinely engaged to drive or conduct the vehicles assigned to them. The County reserves the right to request
+            Crew accounts must be affiliated with an Operator that is active and verified within the System. You must provide accurate
+            identity information at registration. Operators are responsible for confirming that Crew registered under their
+            Operator are genuinely engaged to drive or conduct the vehicles assigned to them. The County reserves the right to request
             verification of any account at any time.
           </p>
         </Section>
@@ -66,7 +72,7 @@ export default function TermsPage() {
           </p>
           <ul className="list-disc pl-5 space-y-1">
             <li>Show passengers your vehicle&apos;s live position so they can plan their journey and confirm the correct vehicle;</li>
-            <li>Give the County and your Sacco visibility into whether a vehicle is actively in service.</li>
+            <li>Give the County and your Operator visibility into whether a vehicle is actively in service.</li>
           </ul>
           <p>
             Location data is not collected while the toggle is off, and is not used to monitor you outside your work on the route.
@@ -80,7 +86,7 @@ export default function TermsPage() {
             Online bookings are settled by the passenger paying the crew directly on boarding, referencing the fare shown on their
             boarding pass. A dedicated payment gateway integration (NairobiPay) for automatic, cashless settlement of fines and
             permits is planned and will be announced separately — until then, cash handling and fare collection remain a Crew and
-            Sacco responsibility, and every transaction is still recorded in the System for audit purposes.
+            Operator responsibility, and every transaction is still recorded in the System for audit purposes.
           </p>
         </Section>
 
@@ -99,14 +105,14 @@ export default function TermsPage() {
         <Section n="8" title="Fines, Citations & Compliance">
           <p>
             Citations and fines are issued exclusively by County Enforcement Officers and are recorded against the Vehicle, visible
-            to its Sacco Operator and County Admin. Settling a fine is the Sacco&apos;s responsibility, not Crew&apos;s directly.
+            to its Operator and County Admin. Settling a fine is the Operator&apos;s responsibility, not Crew&apos;s directly.
             Repeated citations against a vehicle may affect its operating status independent of any individual Crew account.
           </p>
         </Section>
 
         <Section n="9" title="Account Suspension & Termination">
           <p>
-            A Sacco Operator may deactivate a Crew account linked to their Sacco at any time. The County Admin may suspend any
+            An Operator may deactivate a Crew account linked to their Operator at any time. The County Admin may suspend any
             account, Crew included, for violation of these Terms, for fraudulent activity, or at the request of law enforcement.
             Suspension does not entitle you to a refund of any fees or waive any outstanding citation.
           </p>
@@ -114,9 +120,9 @@ export default function TermsPage() {
 
         <Section n="10" title="Data Privacy">
           <p>
-            Personal data (name, phone number, email, Sacco affiliation) and operational data (GPS telemetry while broadcasting,
+            Personal data (name, phone number, email, Operator affiliation) and operational data (GPS telemetry while broadcasting,
             seat/booking records, ticket validations, incident reports) are processed by the County in accordance with the Kenya
-            Data Protection Act, 2019. This data is accessible to: your own Sacco Operator (your records only), County Admin and
+            Data Protection Act, 2019. This data is accessible to: your own Operator (your records only), County Admin and
             Enforcement (system-wide, for compliance oversight), and is never sold or shared with third parties outside the County's
             operational and legal obligations.
           </p>
@@ -125,7 +131,7 @@ export default function TermsPage() {
         <Section n="11" title="Limitation of Liability">
           <p>
             The System is an operational and compliance tool. It does not guarantee a minimum number of bookings, fares, or income
-            for any Crew member or Sacco, and the County is not liable for lost income arising from system downtime, GPS
+            for any Crew member or Operator, and the County is not liable for lost income arising from system downtime, GPS
             inaccuracy, or passenger no-shows. Nothing in these Terms limits liability for fraud, willful misconduct, or death or
             personal injury caused by negligence, to the extent such limitation is not permitted under the laws of Kenya.
           </p>
@@ -148,8 +154,8 @@ export default function TermsPage() {
 
         <Section n="14" title="Contact">
           <p>
-            Crew members should direct questions about their account or these Terms to their Sacco Operator in the first instance.
-            Sacco Operators may escalate system-wide concerns to the Nairobi City County Government's Matatu Management System
+            Crew members should direct questions about their account or these Terms to their Operator in the first instance.
+            Operators may escalate system-wide concerns to the Nairobi City County Government's Matatu Management System
             administration.
           </p>
         </Section>

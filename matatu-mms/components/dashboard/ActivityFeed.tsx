@@ -27,7 +27,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   fine: "Fine",
   matatu: "Matatu",
   booking: "Booking",
-  sacco_license: "Sacco license",
+  sacco_license: "Operator license",
 };
 
 function fromAudit(log: AuditLog): FeedItem {
@@ -81,7 +81,7 @@ function timeAgo(iso: string): string {
 export default function ActivityFeed({ auditLogs, reports, activity, isVisible }: ActivityFeedProps) {
   if (!isVisible) {
     return (
-      <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-county-ink/[0.06]">
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-county-ink/[0.06]">
         <h3 className="font-black text-county-ink text-base tracking-tight">Recent field activity</h3>
         <p className="text-[11px] text-county-ink/50 mt-1">Trips, inspections and incidents logged by crew and officers.</p>
         <ul className="mt-4 space-y-3">
@@ -118,7 +118,7 @@ export default function ActivityFeed({ auditLogs, reports, activity, isVisible }
     .slice(0, 10);
 
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
+    <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-black text-county-ink text-base tracking-tight">System heartbeat</h3>
@@ -133,7 +133,7 @@ export default function ActivityFeed({ auditLogs, reports, activity, isVisible }
         </span>
       </div>
 
-      <ul className="mt-4 space-y-3.5 flex-1 max-h-[520px] overflow-y-auto pr-1">
+      <ul className="mt-3 space-y-3 flex-1 max-h-[360px] overflow-y-auto pr-1">
         {items.length === 0 ? (
           <li className="text-sm text-county-ink/40 py-8 text-center">No system events yet.</li>
         ) : (

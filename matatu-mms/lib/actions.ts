@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
+import { getReports } from "./data";
 import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
@@ -148,6 +149,23 @@ export async function registerAction(_prevState: { error?: string } | undefined,
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
     return { error: err.message || "Registration failed." };
+  }
+}
+
+/**
+ * Unauthenticated Sacco list for the pre-login registration page's Crew
+ * "Assigned Operator" picker. Hits the public backend endpoint (id + name
+ * only) since the visitor has no session/token yet to call GET /api/saccos.
+ */
+export async function getPublicSaccosAction(): Promise<{ id: string; name: string }[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/saccos/public`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
   }
 }
 
@@ -472,16 +490,18 @@ export async function addRouteAction(_prevState: { error?: string } | undefined,
   const code = String(formData.get("code") || "").trim();
   const name = String(formData.get("name") || "").trim();
   const description = String(formData.get("description") || "").trim();
-  const fareKes = Number(formData.get("fareKes") || 0);
 
-  if (!code || !name || !fareKes) {
-    return { error: "Route code, name, and fare are required." };
+  if (!code || !name) {
+    return { error: "Route code and name are required." };
   }
 
   const id = `route-${code.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
 
   try {
-    await apiWrite("/api/routes", "POST", { id, code, name, description, fareKes });
+    // Fare is set separately (per-route, once operators have real corridor
+    // data) rather than guessed at creation time — backend applies a
+    // placeholder default until it's set.
+    await apiWrite("/api/routes", "POST", { id, code, name, description });
   } catch (err: any) {
     return { error: err.message };
   }
@@ -598,28 +618,42 @@ export async function removeMatatuAction(matatuId: string): Promise<{ error?: st
 }
 
 export async function recordCrimeAction(_prevState: { error?: string } | undefined, formData: FormData) {
-  const offenceCommitted = String(formData.get("offenceCommitted") || "").trim();
+  let offenceCommitted = String(formData.get("offenceCommitted") || "").trim();
+  const offenceOtherText = String(formData.get("offenceOtherText") || "").trim();
   const regNumber = String(formData.get("regNumber") || "").trim().toUpperCase();
   const driverName = String(formData.get("driverName") || "").trim();
   const driverLicense = String(formData.get("driverLicense") || "").trim();
   const location = String(formData.get("location") || "").trim();
   const fineAmountKes = Number(formData.get("fineAmountKes") || 0);
   const remarks = String(formData.get("remarks") || "").trim();
+  const photo = formData.get("photo");
 
-  if (!offenceCommitted || !regNumber || !location) {
-    return { error: "Offence committed, plate number, and location are required." };
+  if (offenceCommitted === "Other") {
+    if (!offenceOtherText) {
+      return { error: "Please describe the offence." };
+    }
+    offenceCommitted = `Other: ${offenceOtherText}`;
   }
 
+  if (!offenceCommitted || offenceCommitted === "Select" || !regNumber || !location) {
+    return { error: "Offence committed, plate number, and location are required." };
+  }
+  if (!(photo instanceof File) || photo.size === 0) {
+    return { error: "Photo evidence is required." };
+  }
+
+  const upload = new FormData();
+  upload.set("offence_committed", offenceCommitted);
+  upload.set("reg_number", regNumber);
+  upload.set("driver_name", driverName || "Unidentified Driver");
+  upload.set("driver_license", driverLicense || "N/A");
+  upload.set("location", location);
+  upload.set("fine_amount_kes", String(fineAmountKes));
+  upload.set("remarks", remarks);
+  upload.set("photo", photo);
+
   try {
-    await apiWrite("/api/enforcement/crimes", "POST", {
-      offenceCommitted,
-      regNumber,
-      driverName: driverName || "Unidentified Driver",
-      driverLicense: driverLicense || "N/A",
-      location,
-      fineAmountKes,
-      remarks,
-    });
+    await apiWriteMultipart("/api/enforcement/crimes", upload);
   } catch (err: any) {
     return { error: err.message };
   }
@@ -811,13 +845,48 @@ export async function submitReportAction(input: {
   message: string;
   reporterName?: string;
   reporterPhone?: string;
+  photo?: File | null;
 }): Promise<{ report?: PassengerReport; error?: string }> {
+  const formData = new FormData();
+  formData.set("category", input.category);
+  formData.set("message", input.message);
+  if (input.matatuRegNumber) formData.set("matatu_reg_number", input.matatuRegNumber);
+  if (input.reporterName) formData.set("reporter_name", input.reporterName);
+  if (input.reporterPhone) formData.set("reporter_phone", input.reporterPhone);
+  if (input.photo && input.photo.size > 0) formData.set("photo", input.photo);
+
   try {
-    const report = await apiWrite<PassengerReport>("/api/reports", "POST", input);
+    const report = await apiWriteMultipart("/api/reports", formData);
     return { report };
   } catch (err: any) {
     return { error: err.message || "Could not submit report. Please try again." };
   }
+}
+
+export async function submitPublicCommentAction(input: {
+  message: string;
+  name?: string;
+  phone?: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const formData = new FormData();
+  formData.set("message", input.message);
+  if (input.name) formData.set("reporter_name", input.name);
+  if (input.phone) formData.set("reporter_phone", input.phone);
+
+  try {
+    await apiWriteMultipart("/api/reports/public-comment", formData);
+    return { ok: true };
+  } catch (err: any) {
+    return { error: err.message || "Could not send your comment. Please try again." };
+  }
+}
+
+export async function getCrewReportsAction(regNumber: string): Promise<PassengerReport[]> {
+  const reports = await getReports();
+  return reports
+    .filter((r) => (r.matatuRegNumber || "").toUpperCase() === regNumber.toUpperCase())
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, 10);
 }
 
 export async function reviewReportAction(reportId: string, status: ReportStatus) {
@@ -848,4 +917,67 @@ export async function addUserAction(_prevState: { error?: string } | undefined, 
 
   revalidatePath("/users");
   redirect("/users");
+}
+
+export async function updateUserAction(
+  userId: string,
+  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/users/${userId}`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update user." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
+export async function forgotPasswordAction(
+  _prevState: { message?: string; error?: string } | undefined,
+  formData: FormData
+): Promise<{ message?: string; error?: string }> {
+  const email = String(formData.get("email") || "").trim();
+  if (!email) return { error: "Enter your account email." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return { message: data.message || "If that email is registered, a password reset link has been sent." };
+  } catch {
+    return { error: "Could not process your request. Please try again." };
+  }
+}
+
+export async function resetPasswordAction(
+  _prevState: { message?: string; error?: string } | undefined,
+  formData: FormData
+): Promise<{ message?: string; error?: string }> {
+  const token = String(formData.get("token") || "").trim();
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (!token) return { error: "Missing or invalid reset link." };
+  if (newPassword.length < 6) return { error: "Password must be at least 6 characters." };
+  if (newPassword !== confirmPassword) return { error: "Passwords do not match." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data.detail || "Could not reset your password." };
+    }
+    return { message: data.message || "Password updated. You can now sign in." };
+  } catch {
+    return { error: "Could not process your request. Please try again." };
+  }
 }

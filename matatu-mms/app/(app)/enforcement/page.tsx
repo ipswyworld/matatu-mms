@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { readSession } from "@/lib/session";
 import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones } from "@/lib/data";
@@ -10,6 +11,8 @@ import PageBanner from "@/components/PageBanner";
 import ExportCsvButton from "@/components/ExportCsvButton";
 import EnforcementTabs from "@/components/EnforcementTabs";
 import OfficerAssignmentRow from "@/components/OfficerAssignmentRow";
+
+export const metadata: Metadata = { title: "Enforcement Operations" };
 
 export default async function EnforcementPage() {
   const session = readSession()!;

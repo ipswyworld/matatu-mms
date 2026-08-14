@@ -24,7 +24,7 @@ export default function LicenseRenewalPanel({ saccos }: { saccos: Sacco[] }) {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-bold text-sm text-county-black">Monthly License Renewal Approvals</h3>
-          <p className="text-xs text-black/50">Saccos that have submitted their monthly permit renewal payment, awaiting county sign-off.</p>
+          <p className="text-xs text-black/50">Operators that have submitted their monthly permit renewal payment, awaiting county sign-off.</p>
         </div>
         <span className="badge bg-county-yellow text-yellow-900 font-bold">{pending.length} Awaiting Approval</span>
       </div>

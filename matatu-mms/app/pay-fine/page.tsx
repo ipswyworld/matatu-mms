@@ -5,6 +5,7 @@ import Link from "next/link";
 import { publicLookupCaseAction, publicPayCaseAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import NairobiPayBadge from "@/components/NairobiPayBadge";
+import PublicFooter from "@/components/PublicFooter";
 
 export default function PayFinePage() {
   const [reference, setReference] = useState("");
@@ -36,7 +37,8 @@ export default function PayFinePage() {
   };
 
   return (
-    <main className="min-h-screen bg-county-black text-white flex flex-col justify-center items-center p-4">
+    <main className="min-h-screen bg-county-black text-white flex flex-col">
+      <div className="flex-1 flex flex-col justify-center items-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
           <NairobiCrest size={52} className="mx-auto drop-shadow-lg" />
@@ -119,6 +121,8 @@ export default function PayFinePage() {
           </div>
         </div>
       </div>
+      </div>
+      <PublicFooter dark />
     </main>
   );
 }

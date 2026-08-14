@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
+
+export const metadata: Metadata = { title: "Overview" };
 import ComplianceDonut from "@/components/dashboard/ComplianceDonut";
 import RevenueBars from "@/components/dashboard/RevenueBars";
 import KpiCard from "@/components/dashboard/KpiCard";
@@ -35,7 +38,7 @@ export default async function DashboardPage() {
         <PageBanner
           eyebrow="Nairobi City County Government"
           title={isDirector ? "Director of Mobility — Operator Verification" : "Chief Officer — Final Operator Verification"}
-          subtitle={`Welcome back, ${session.name}. ${isDirector ? "You review Sacco onboarding applications first." : "You give the final approval once the Director of Mobility has signed off."}`}
+          subtitle={`Welcome back, ${session.name}. ${isDirector ? "You review Operator onboarding applications first." : "You give the final approval once the Director of Mobility has signed off."}`}
         />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -122,7 +125,7 @@ export default async function DashboardPage() {
   const pendingApprovals = pendingSaccos.length + pendingRenewals.length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageBanner
         eyebrow="Nairobi City County Government"
         title={isSacco ? "Your fleet at a glance" : "Matatu public service managing system"}
@@ -157,7 +160,7 @@ export default async function DashboardPage() {
             label="Awaiting your approval"
             value={pendingApprovals.toString()}
             delta={{
-              label: `${pendingSaccos.length} Saccos · ${pendingRenewals.length} renewals`,
+              label: `${pendingSaccos.length} Operators · ${pendingRenewals.length} renewals`,
               tone: pendingApprovals > 0 ? "attention" : "positive",
             }}
             accent="yellow"
@@ -175,8 +178,8 @@ export default async function DashboardPage() {
       </div>
 
       {/* Row 2: two feature panels + activity rail */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 grid md:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="lg:col-span-2 grid sm:grid-cols-2 gap-4 md:gap-6">
           <ComplianceDonut
             total={totalFleet}
             active={activeCount}
@@ -203,7 +206,7 @@ export default async function DashboardPage() {
 
       {/* Row 3: commuter bookings + live crew/GPS status — previously invisible outside
           the Passenger and Crew dashboards respectively */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-4 md:gap-6">
         <BookingsPanel bookings={isSacco ? bookings.filter((b) => matatuIds.has(b.matatuId)) : bookings} />
         <FleetLiveStatus
           matatus={matatus}
@@ -219,26 +222,6 @@ export default async function DashboardPage() {
         fines={allFines}
       />
 
-      {/* Bottom quick-links row for approvals — visible only when there's something to act on */}
-      {!isSacco && pendingApprovals > 0 && (
-        <div className="rounded-2xl bg-county-green-deep text-white p-5 md:p-6 flex flex-wrap items-center justify-between gap-4 shadow-elevated">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-county-yellow">Action needed</div>
-            <div className="text-lg font-black tracking-tight mt-1">
-              {pendingApprovals} item{pendingApprovals !== 1 ? "s" : ""} awaiting your review
-            </div>
-            <div className="text-sm text-white/70 mt-0.5">
-              Sacco onboarding applications and monthly license renewals routed to your desk.
-            </div>
-          </div>
-          <Link
-            href="/saccos/verify"
-            className="rounded-lg px-4 py-2.5 text-sm font-bold bg-county-yellow text-county-green-deep hover:bg-county-yellow-dark transition-colors shadow-sm"
-          >
-            Go to approvals →
-          </Link>
-        </div>
-      )}
     </div>
   );
 }

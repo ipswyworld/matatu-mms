@@ -6,8 +6,8 @@ interface ComplianceDonutProps {
   decommissioned: number;
 }
 
-const SIZE = 200;
-const STROKE = 22;
+const SIZE = 120;
+const STROKE = 14;
 const R = (SIZE - STROKE) / 2;
 const C = 2 * Math.PI * R;
 
@@ -25,7 +25,7 @@ export default function ComplianceDonut({ total, active, flagged, impounded, dec
   let cumulativeOffset = 0;
 
   return (
-    <div className="rounded-2xl bg-white p-5 md:p-6 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
+    <div className="rounded-2xl bg-white p-4 md:p-5 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
       <div className="flex items-start justify-between mb-1">
         <div>
           <h3 className="font-black text-county-ink text-base tracking-tight">Fleet compliance</h3>
@@ -36,7 +36,7 @@ export default function ComplianceDonut({ total, active, flagged, impounded, dec
         </span>
       </div>
 
-      <div className="flex items-center gap-6 mt-4 flex-1">
+      <div className="flex flex-col md:flex-row items-center gap-4 md:gap-5 mt-3 flex-1">
         <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
           <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full -rotate-90">
             <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="#F0E9CE" strokeWidth={STROKE} />
@@ -63,14 +63,14 @@ export default function ComplianceDonut({ total, active, flagged, impounded, dec
                 return el;
               })}
           </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-[44px] font-black tracking-tight text-county-ink leading-none">{compliancePct}%</span>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-county-ink/50 mt-1">Compliant</span>
-            <span className="text-[11px] text-county-ink/60 mt-1">{total} vehicles</span>
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
+            <span className="text-[26px] font-black tracking-tight text-county-ink leading-none">{compliancePct}%</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-county-ink/50 mt-1">Compliant</span>
+            <span className="text-[10px] text-county-ink/60">{total} vehicles</span>
           </div>
         </div>
 
-        <ul className="flex-1 space-y-2.5 min-w-0">
+        <ul className="flex-1 w-full space-y-2.5 min-w-0">
           {SEGMENTS.map((seg) => {
             const val = values[seg.key];
             const pct = total > 0 ? Math.round((val / total) * 100) : 0;

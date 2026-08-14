@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ROLE_LABELS } from "@/lib/rbac";
+import { ROLE_LABELS, ADMIN_TIER_ROLES, can } from "@/lib/rbac";
 import { Role, Sacco, User } from "@/lib/types";
+import EditUserModal from "./EditUserModal";
 
-export default function UsersTable({ users, saccos }: { users: User[]; saccos: Sacco[] }) {
+export default function UsersTable({ users, saccos, viewerRole }: { users: User[]; saccos: Sacco[]; viewerRole: Role }) {
+  const canManageAdmins = can(viewerRole, "manage_admins");
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
 
@@ -45,7 +47,8 @@ export default function UsersTable({ users, saccos }: { users: User[]; saccos: S
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
-              <th>Sacco</th>
+              <th>Operator</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -55,11 +58,18 @@ export default function UsersTable({ users, saccos }: { users: User[]; saccos: S
                 <td className="text-black/60">{u.email}</td>
                 <td><span className="badge bg-county-green/10 text-county-green">{ROLE_LABELS[u.role as Role] || u.role}</span></td>
                 <td>{saccoMap.get(u.saccoId || "") || "—"}</td>
+                <td>
+                  {ADMIN_TIER_ROLES.includes(u.role) && !canManageAdmins ? (
+                    <span className="text-[11px] text-black/30 italic">Super Admin only</span>
+                  ) : (
+                    <EditUserModal user={u} saccos={saccos} viewerRole={viewerRole} />
+                  )}
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center text-black/40 py-8">No users match your search.</td>
+                <td colSpan={5} className="text-center text-black/40 py-8">No users match your search.</td>
               </tr>
             )}
           </tbody>

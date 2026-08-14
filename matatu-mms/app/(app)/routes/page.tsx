@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { getMatatus, getRoutes } from "@/lib/data";
 import { readSession } from "@/lib/session";
 import { can } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 import AddRouteModal from "@/components/AddRouteModal";
+
+export const metadata: Metadata = { title: "Route Corridors" };
 
 export default async function RoutesPage() {
   const session = readSession()!;

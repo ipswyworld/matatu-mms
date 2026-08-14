@@ -3,37 +3,42 @@
 import Image from "next/image";
 import { useFormState, useFormStatus } from "react-dom";
 import { loginAction } from "@/lib/actions";
+import LeaveCommentSection from "@/components/LeaveCommentSection";
+import PublicFooter from "@/components/PublicFooter";
+import LanguageToggle from "@/components/LanguageToggle";
+import { useLanguage } from "@/components/LanguageProvider";
 
 const DEMO_ACCOUNTS = [
   { role: "Admin", email: "admin@nairobi.go.ke", password: "admin123" },
   { role: "Enforcement Officer", email: "enforcement@nairobi.go.ke", password: "enforce123" },
-  { role: "Sacco Operator", email: "operator@umoinner.co.ke", password: "sacco123" },
+  { role: "Operator", email: "operator@umoinner.co.ke", password: "sacco123" },
   { role: "Commuter Passenger", email: "commuter@nairobi.go.ke", password: "pass123" },
   { role: "Driver / Conductor Crew", email: "crew@umoinner.co.ke", password: "crew123" },
   { role: "Viewer / Executive", email: "viewer@nairobi.go.ke", password: "viewer123" },
   { role: "Director of Mobility", email: "director.mobility@nairobi.go.ke", password: "director123" },
   { role: "Chief Officer", email: "chiefofficer@nairobi.go.ke", password: "chief123" },
-  { role: "Sacco Operator (pending onboarding)", email: "operator@kilimanidirect.co.ke", password: "sacco123" },
+  { role: "Operator (pending onboarding)", email: "operator@kilimanidirect.co.ke", password: "sacco123" },
   { role: "Enforcement Commander", email: "commander@nairobi.go.ke", password: "commander123" },
   { role: "Arresting Officer", email: "arresting.officer@nairobi.go.ke", password: "arrest123" },
   { role: "Releasing Officer", email: "releasing.officer@nairobi.go.ke", password: "release123" },
-  { role: "Data Analyst", email: "analyst@nairobi.go.ke", password: "analyst123" },
 ];
 
 function SubmitButton() {
   const { pending } = useFormStatus();
+  const { t } = useLanguage();
   return (
     <button type="submit" className="btn-primary w-full !py-3 text-base" disabled={pending}>
-      {pending ? "Signing in..." : "Sign in"}
+      {pending ? t("login.signingIn") : t("login.signIn")}
     </button>
   );
 }
 
 export default function LoginPage() {
   const [state, formAction] = useFormState(loginAction, undefined);
+  const { t } = useLanguage();
 
   return (
-    <div className="min-h-screen flex bg-county-cream">
+    <div className="h-screen flex bg-county-cream overflow-hidden">
       {/* Left brand panel — deep green with hex lattice and real crest */}
       <div className="relative hidden lg:flex lg:w-[46%] flex-col justify-between bg-county-green-deep text-white p-12 overflow-hidden">
         <svg
@@ -70,29 +75,33 @@ export default function LoginPage() {
             Matatu Management System
           </div>
           <h1 className="text-[42px] leading-[1.05] font-black tracking-tight text-balance">
-            One county, one live view of every matatu.
+            {t("login.heading")}
           </h1>
           <p className="text-white/70 text-[15px] leading-relaxed mt-5 max-w-md">
-            Fleet registration, live GPS telemetry, seat booking, fare compliance and enforcement,
-            all on one real-time backbone connecting officers, saccos, crew and commuters.
+            {t("login.subheading")}
           </p>
+          <div className="mt-6 flex items-center gap-4">
+            <LanguageToggle dark />
+          </div>
+          <div className="mt-4">
+            <LeaveCommentSection />
+          </div>
         </div>
 
         <div className="relative">
-          <div className="h-1.5 w-24 rounded-full overflow-hidden flex">
-            <div className="bg-county-green flex-1" />
-            <div className="bg-county-yellow flex-1" />
-            <div className="bg-county-red flex-1" />
-          </div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40 mt-3">
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
             County of Nairobi · Kenya
           </div>
         </div>
       </div>
 
-      {/* Right sign-in panel */}
-      <div className="flex-1 flex items-center justify-center p-6 md:p-10">
-        <div className="w-full max-w-md space-y-8">
+      {/* Right column: sign-in panel with the footer pinned to its own bottom,
+          not spanning the full page width under the green brand panel too. The
+          page itself never scrolls; this inner area is the only scroll escape
+          hatch, for edge cases like a short viewport with demo accounts open. */}
+      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 md:p-8">
+        <div className="w-full max-w-md space-y-5 py-4">
           <div className="flex lg:hidden items-center gap-3">
             <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-md">
               <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={44} height={44} className="object-contain" />
@@ -104,17 +113,22 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <h2 className="text-3xl font-black tracking-tight text-county-ink">Sign in</h2>
-            <p className="text-sm text-county-ink/55 mt-2">Use your county-issued credentials to continue.</p>
+            <h2 className="text-3xl font-black tracking-tight text-county-ink">{t("login.signIn")}</h2>
+            <p className="text-sm text-county-ink/55 mt-2">{t("login.useCredentials")}</p>
           </div>
 
           <form action={formAction} className="space-y-4">
             <div>
-              <label className="label" htmlFor="email">Email</label>
+              <label className="label" htmlFor="email">{t("login.email")}</label>
               <input className="input" id="email" name="email" type="email" placeholder="you@nairobi.go.ke" required />
             </div>
             <div>
-              <label className="label" htmlFor="password">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="label" htmlFor="password">{t("login.password")}</label>
+                <a href="/forgot-password" className="text-[11px] font-bold text-county-green hover:underline">
+                  {t("login.forgotPassword")}
+                </a>
+              </div>
               <input className="input" id="password" name="password" type="password" placeholder="••••••••" required />
             </div>
 
@@ -129,16 +143,16 @@ export default function LoginPage() {
 
           <div className="text-center space-y-1.5">
             <a href="/register" className="block text-xs font-extrabold text-county-green hover:underline">
-              New here? Register as Commuter or Matatu Crew →
+              {t("login.registerLink")}
             </a>
             <a href="/operator-onboarding" className="block text-xs font-extrabold text-county-blue hover:underline">
-              Sacco / Operator? Start Onboarding & Verification →
+              {t("login.onboardingLink")}
             </a>
           </div>
 
           <details className="rounded-xl border border-county-ink/10 bg-white/60 group">
             <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-county-ink/60">
-              <span>Demo accounts</span>
+              <span>{t("login.demoAccounts")}</span>
               <span className="text-county-green group-open:rotate-45 transition-transform text-lg leading-none">+</span>
             </summary>
             <ul className="px-4 pb-4 space-y-1.5 text-xs text-county-ink/70">
@@ -150,13 +164,17 @@ export default function LoginPage() {
               ))}
             </ul>
           </details>
-
-          <div className="flex items-center justify-center gap-3 text-[11px] font-bold text-county-ink/40">
-            <a href="/faq" className="hover:text-county-green hover:underline">Help &amp; FAQ</a>
-            <span>·</span>
-            <a href="/terms" className="hover:text-county-green hover:underline">Terms &amp; Conditions</a>
-          </div>
         </div>
+      </div>
+        <PublicFooter
+          topSlot={
+            <div className="flex items-center justify-center gap-3 text-[11px] font-bold text-county-ink/70">
+              <a href="/faq" className="hover:text-county-green hover:underline">{t("login.helpFaq")}</a>
+              <span>·</span>
+              <a href="/terms" className="hover:text-county-green hover:underline">{t("login.termsConditions")}</a>
+            </div>
+          }
+        />
       </div>
     </div>
   );

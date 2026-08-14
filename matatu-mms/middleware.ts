@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAndExtractPayload } from "./lib/sessionSign";
 
 const SESSION_COOKIE_NAME = "mms_session";
-const PUBLIC_PATHS = ["/login", "/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine"];
+const PUBLIC_PATHS = ["/login", "/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password"];
 
 /**
  * Verifies the HMAC signature before trusting anything in the cookie. A
@@ -69,15 +69,20 @@ export async function middleware(request: NextRequest) {
   const defaultHomeFor = (r: string) =>
     r === "SACCO_OPERATOR" ? "/sacco-portal" : ENFORCEMENT_ROLES.includes(r) ? "/enforcement" : "/dashboard";
 
-  // Admin-only system management page
-  if (pathname.startsWith("/users") && role !== "ADMIN") {
+  const ADMIN_TIER_ROLES = ["ADMIN", "SUPERADMIN"];
+
+  // Admin-tier-only system management pages
+  if (pathname.startsWith("/users") && !ADMIN_TIER_ROLES.includes(role)) {
     return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
   }
-  // Audit trail: Admin plus read-only Data Analyst access
-  if (pathname.startsWith("/audit-logs") && !["ADMIN", "DATA_ANALYST"].includes(role)) {
+  if (pathname.startsWith("/audit-logs") && !ADMIN_TIER_ROLES.includes(role)) {
     return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
   }
-  if (pathname.startsWith("/saccos/verify") && !["ADMIN", "DIRECTOR_MOBILITY", "CHIEF_OFFICER"].includes(role)) {
+  if (pathname.startsWith("/saccos/verify") && ![...ADMIN_TIER_ROLES, "DIRECTOR_MOBILITY", "CHIEF_OFFICER"].includes(role)) {
+    return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
+  }
+  // Super Admin-only console: system health, config, admin-account management
+  if (pathname.startsWith("/system") && role !== "SUPERADMIN") {
     return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
   }
 

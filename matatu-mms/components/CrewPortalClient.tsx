@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import SeatMap from "@/components/SeatMap";
 import StatCard from "@/components/StatCard";
 import LiveIndicator from "@/components/LiveIndicator";
 import EmptyState from "@/components/EmptyState";
 import PageBanner from "@/components/PageBanner";
+import GisMap from "@/components/GisMap";
 import {
-  createBookingAction,
   getBookingByIdAction,
   getBookingsForMatatuAction,
+  getCrewReportsAction,
   logCrewIncidentAction,
   updateBookingStatusAction,
 } from "@/lib/actions";
-import { Booking, Matatu, Route, Seat } from "@/lib/types";
+import { Booking, Matatu, PassengerReport, Route, Seat } from "@/lib/types";
+
+const REPORTS_POLL_MS = 20000;
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
 
@@ -30,6 +32,8 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isPending, startTransition] = useTransition();
+
+  const [liveReports, setLiveReports] = useState<PassengerReport[]>([]);
 
   const [ticketSearch, setTicketSearch] = useState("");
   const [scannedTicket, setScannedTicket] = useState<Booking | null>(null);
@@ -50,6 +54,26 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   useEffect(() => {
     refreshBookings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMatatu]);
+
+  // Live passenger requests & complaints for the active vehicle — polled
+  // rather than pushed, since reports don't have a dedicated WS channel yet.
+  useEffect(() => {
+    if (!selectedMatatu) return;
+    let cancelled = false;
+
+    const poll = () => {
+      getCrewReportsAction(selectedMatatu.regNumber).then((reports) => {
+        if (!cancelled) setLiveReports(reports);
+      });
+    };
+
+    poll();
+    const interval = setInterval(poll, REPORTS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [selectedMatatu]);
 
   const takenSeatMap = useMemo(() => {
@@ -78,29 +102,6 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   const totalCollectedKes = bookings
     .filter((b) => b.status === "CONFIRMED" || b.status === "USED")
     .reduce((sum, b) => sum + b.fareKes, 0);
-
-  // Tap a seat: empty seat -> record a cash walk-in booking; occupied seat -> cancel (passenger alighted / correction)
-  const handleToggleSeat = (seatId: number) => {
-    if (!selectedMatatu || isPending) return;
-    const route = routeById.get(selectedMatatu.routeId);
-    const existingBooking = takenSeatMap.get(seatId);
-
-    startTransition(async () => {
-      if (existingBooking) {
-        await updateBookingStatusAction(existingBooking.id, "CANCELLED");
-      } else {
-        await createBookingAction({
-          matatuId: selectedMatatu.id,
-          routeId: selectedMatatu.routeId,
-          passengerName: "Walk-in Passenger (Cash)",
-          phone: "N/A",
-          stageName: selectedMatatu.terminalSegment,
-          seatNumbers: [seatId],
-        });
-      }
-      refreshBookings();
-    });
-  };
 
   // Stream live GPS to the passenger map: real device location when granted, simulated jitter as fallback
   useEffect(() => {
@@ -246,8 +247,8 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
     return (
       <div className="card">
         <EmptyState
-          title="No active vehicles assigned to your Sacco"
-          hint="Once your Sacco onboards a vehicle and it's marked active, it will appear here for you to drive."
+          title="No active vehicles assigned to your Operator"
+          hint="Once your Operator onboards a vehicle and it's marked active, it will appear here for you to drive."
         />
       </div>
     );
@@ -299,25 +300,7 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
         <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" />
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <div className="card p-4 bg-county-black text-white flex items-center justify-between">
-            <div>
-              <div className="font-extrabold text-sm text-county-yellow uppercase">Tap Seat to Toggle Occupancy</div>
-              <div className="text-xs text-white/60">Empty → records a cash walk-in fare. Occupied → cancels that booking.</div>
-            </div>
-            <span className="badge bg-county-green text-white font-bold">Live Synced</span>
-          </div>
-
-          <SeatMap
-            capacity={selectedMatatu.capacity}
-            seats={currentSeats}
-            onToggleSeatStatus={handleToggleSeat}
-            isCrewMode={true}
-          />
-        </div>
-
-        <div className="space-y-6">
+      <div className="grid md:grid-cols-2 gap-6">
           <div className="card p-5 space-y-4">
             <h3 className="font-bold text-sm text-county-black">Commuter Ticket Validator</h3>
             <form onSubmit={handleValidateTicket} className="flex gap-2">
@@ -397,6 +380,51 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
               </form>
             )}
           </div>
+      </div>
+
+      {/* Live Ops: passenger requests/complaints for this vehicle, plus the
+          county-wide live fleet map so crew can see their own position among
+          other vehicles in real time. */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <GisMap />
+        </div>
+
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm text-county-black">Passenger Requests & Complaints</h3>
+            <LiveIndicator label="Live" state="live" className="text-[10px]" />
+          </div>
+          <p className="text-xs text-black/50 -mt-2">Reports filed against {selectedMatatu.regNumber}, newest first.</p>
+
+          {liveReports.length === 0 ? (
+            <div className="py-8 text-center text-xs text-black/40 italic">
+              No passenger reports for this vehicle right now.
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-96 overflow-y-auto">
+              {liveReports.map((r) => (
+                <div key={r.id} className="p-3 rounded-lg border border-black/10 bg-black/[0.01] text-xs space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-county-black">{r.category}</span>
+                    <span
+                      className={`badge text-[9px] font-extrabold ${
+                        r.status === "PENDING"
+                          ? "bg-amber-100 text-amber-700"
+                          : r.status === "ESCALATED"
+                          ? "bg-county-red/10 text-county-red"
+                          : "bg-county-green/10 text-county-green"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                  </div>
+                  <p className="text-black/60">{r.message}</p>
+                  <p className="text-[10px] text-black/30">{new Date(r.createdAt).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

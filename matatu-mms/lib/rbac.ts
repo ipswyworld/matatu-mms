@@ -45,9 +45,50 @@ export type Action =
   | "file_enforcement_case"
   | "decide_enforcement_case"
   | "manage_officer_assignments"
-  | "view_audit_logs";
+  | "view_audit_logs"
+  | "manage_admins"
+  | "view_system_health"
+  | "manage_system_config";
+
+// Roles allowed to hold system-wide administrative power. Kept in sync with
+// the backend's ADMIN_TIER_ROLES (app/rbac.py) — anything gated by that set
+// server-side should be gated by this set client-side too.
+export const ADMIN_TIER_ROLES: Role[] = ["ADMIN", "SUPERADMIN"];
 
 const MATRIX: Record<Role, Action[]> = {
+  SUPERADMIN: [
+    "view_dashboard",
+    "view_matatus",
+    "edit_matatu_status",
+    "view_routes",
+    "manage_routes",
+    "view_activity",
+    "view_enforcement",
+    "view_fines",
+    "issue_fine",
+    "update_fine_status",
+    "view_users",
+    "manage_users",
+    "manage_admins",
+    "view_passengers",
+    "view_revenue",
+    "verify_saccos",
+    "approve_license_renewal",
+    "view_reports",
+    "review_report",
+    "view_operator_verification",
+    "decide_operator_verification_stage1",
+    "decide_operator_verification_stage2",
+    "remove_matatu",
+    "record_crime",
+    "view_enforcement_cases",
+    "file_enforcement_case",
+    "decide_enforcement_case",
+    "manage_officer_assignments",
+    "view_audit_logs",
+    "view_system_health",
+    "manage_system_config",
+  ],
   ADMIN: [
     "view_dashboard",
     "view_matatus",
@@ -57,6 +98,7 @@ const MATRIX: Record<Role, Action[]> = {
     "view_activity",
     "view_enforcement",
     "view_fines",
+    "issue_fine",
     "update_fine_status",
     "view_users",
     "manage_users",
@@ -76,22 +118,6 @@ const MATRIX: Record<Role, Action[]> = {
     "decide_enforcement_case",
     "manage_officer_assignments",
     "view_audit_logs",
-  ],
-  DATA_ANALYST: [
-    // Read-only everywhere, no mutation permission is ever granted here.
-    "view_dashboard",
-    "view_matatus",
-    "view_routes",
-    "view_activity",
-    "view_fines",
-    "view_users",
-    "view_reports",
-    "view_enforcement",
-    "view_enforcement_cases",
-    "view_operator_verification",
-    "view_audit_logs",
-    "view_revenue",
-    "view_passengers",
   ],
   DIRECTOR_MOBILITY: [
     "view_dashboard",
@@ -194,9 +220,10 @@ export function can(role: Role, action: Action): boolean {
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
+  SUPERADMIN: "Super Administrator",
   ADMIN: "System Administrator",
   ENFORCEMENT: "Enforcement Officer",
-  SACCO_OPERATOR: "Sacco Operator",
+  SACCO_OPERATOR: "Operator",
   VIEWER: "Viewer / Executive",
   PASSENGER: "Commuter Passenger",
   CREW: "Driver / Conductor",
@@ -205,5 +232,4 @@ export const ROLE_LABELS: Record<Role, string> = {
   ARRESTING_OFFICER: "Arresting Officer",
   RELEASING_OFFICER: "Releasing Officer",
   ENFORCEMENT_COMMANDER: "Enforcement Commander",
-  DATA_ANALYST: "Data Analyst",
 };

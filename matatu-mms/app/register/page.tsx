@@ -1,11 +1,12 @@
 "use client";
 
 import { useFormState } from "react-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { registerAction } from "@/lib/actions";
+import { registerAction, getPublicSaccosAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import MatatuGlyph from "@/components/MatatuGlyph";
+import PublicFooter from "@/components/PublicFooter";
 
 export default function RegisterPage() {
   const [state, formAction] = useFormState(registerAction, undefined);
@@ -13,13 +14,18 @@ export default function RegisterPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [fullName, setFullName] = useState("");
   const [signature, setSignature] = useState("");
+  const [saccos, setSaccos] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    getPublicSaccosAction().then(setSaccos);
+  }, []);
 
   const signatureMatches =
     signature.trim().length > 0 && signature.trim().toLowerCase() === fullName.trim().toLowerCase();
   const canSubmit = agreedToTerms && signatureMatches;
 
   return (
-    <main className="min-h-screen bg-county-black text-white flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <main className="min-h-screen bg-county-black text-white flex flex-col justify-center items-center p-4 pb-0 relative overflow-hidden">
       {/* Livery diagonal-stripe texture */}
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.05]"
@@ -113,15 +119,21 @@ export default function RegisterPage() {
 
             {selectedRole === "CREW" && (
               <div>
-                <label className="text-xs font-semibold text-white/70 block mb-1">Assigned Sacco Operator</label>
+                <label className="text-xs font-semibold text-white/70 block mb-1">Assigned Operator</label>
                 <select
                   name="saccoId"
                   required
+                  defaultValue=""
                   className="w-full bg-slate-900 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-county-blue font-bold"
                 >
-                  <option value="sacco-1">Umoinner Sacco</option>
-                  <option value="sacco-2">Rembo Shuttle Sacco</option>
-                  <option value="sacco-3">Kenya Mpya Sacco</option>
+                  <option value="" disabled>
+                    {saccos.length > 0 ? "Select your operator" : "Loading operators..."}
+                  </option>
+                  {saccos.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
@@ -198,6 +210,9 @@ export default function RegisterPage() {
             </Link>
           </div>
         </div>
+      </div>
+      <div className="relative z-10 w-full mt-8">
+        <PublicFooter dark />
       </div>
     </main>
   );

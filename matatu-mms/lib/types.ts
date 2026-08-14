@@ -1,4 +1,5 @@
 export type Role =
+  | "SUPERADMIN"
   | "ADMIN"
   | "ENFORCEMENT"
   | "SACCO_OPERATOR"
@@ -9,8 +10,7 @@ export type Role =
   | "CHIEF_OFFICER"
   | "ARRESTING_OFFICER"
   | "RELEASING_OFFICER"
-  | "ENFORCEMENT_COMMANDER"
-  | "DATA_ANALYST";
+  | "ENFORCEMENT_COMMANDER";
 
 export interface User {
   id: string;
@@ -203,6 +203,7 @@ export interface CrimeRecord {
   officerName?: string;
   timestamp: string;
   status: "PENDING" | "PROCESSED" | "PAID" | "DISPUTED";
+  photoPath?: string;
 }
 
 export interface SessionData {
@@ -211,6 +212,32 @@ export interface SessionData {
   role: Role;
   saccoId?: string;
   token?: string;
+}
+
+export interface AbacPolicy {
+  id: string;
+  description: string;
+  appliesToRoles: string[];
+}
+
+export interface SystemHealth {
+  uptimeSeconds: number;
+  database: {
+    reachable: boolean;
+    error: string | null;
+    engine: string;
+    pool: Record<string, string | number>;
+  };
+  redis: {
+    reachable: boolean;
+    error: string | null;
+  };
+  config: {
+    secretKeyConfigured: boolean;
+    nairobiPayCallbackSecretConfigured: boolean;
+    sentryConfigured: boolean;
+  };
+  abacPolicies: AbacPolicy[];
 }
 
 export interface AuditLog {
@@ -250,6 +277,7 @@ export interface PassengerReport {
   message: string;
   reporterName?: string;
   reporterPhone?: string;
+  photoPath?: string;
   status: ReportStatus;
   createdAt: string;
 }

@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { readSession } from "@/lib/session";
 import { getRoutes, getMatatus, getReports } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import StatCard from "@/components/StatCard";
 import PageBanner from "@/components/PageBanner";
 import EmptyState from "@/components/EmptyState";
+
+export const metadata: Metadata = { title: "Passenger Feedback & Safety" };
 
 const REPORT_STATUS_STYLES: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",

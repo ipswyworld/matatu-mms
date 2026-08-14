@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
@@ -12,13 +13,22 @@ interface Notification {
   receivedAt: number;
 }
 
+interface ActionNeeded {
+  count: number;
+  message: string;
+  href: string;
+}
+
 /**
  * Per-user, real-time, name-addressed notifications — connects to this
  * user's own Redis-backed channel (see backend/app/routes/notifications.py),
  * so what arrives here is never visible to anyone else, and arrives the
- * same way regardless of which backend instance triggered it.
+ * same way regardless of which backend instance triggered it. `actionNeeded`
+ * is a separate, pinned entry computed at page load (pending operator
+ * approvals) rather than a live WS push, but lives in the same dropdown so
+ * there's one place to check instead of a persistent banner on the dashboard.
  */
-export default function NotificationBell({ token }: { token: string }) {
+export default function NotificationBell({ token, actionNeeded }: { token: string; actionNeeded?: ActionNeeded }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [toast, setToast] = useState<Notification | null>(null);
   const [open, setOpen] = useState(false);
@@ -26,7 +36,6 @@ export default function NotificationBell({ token }: { token: string }) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,8 +63,6 @@ export default function NotificationBell({ token }: { token: string }) {
           setNotifications((prev) => [notif, ...prev].slice(0, 20));
           setUnread((n) => n + 1);
           setToast(notif);
-          if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-          toastTimeoutRef.current = setTimeout(() => setToast(null), 6000);
         } catch {
           // ignore malformed frames
         }
@@ -76,7 +83,6 @@ export default function NotificationBell({ token }: { token: string }) {
     return () => {
       cancelled = true;
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       wsRef.current?.close();
     };
   }, [token]);
@@ -86,6 +92,8 @@ export default function NotificationBell({ token }: { token: string }) {
     success: "bg-county-green",
     error: "bg-county-red",
   };
+
+  const badgeCount = unread + (actionNeeded?.count || 0);
 
   return (
     <div className="relative">
@@ -98,14 +106,14 @@ export default function NotificationBell({ token }: { token: string }) {
         aria-label="Notifications"
       >
         <span className="text-base">🔔</span>
-        {unread > 0 && (
+        {badgeCount > 0 && (
           <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-county-red text-white text-[9px] font-bold flex items-center justify-center">
-            {unread > 9 ? "9+" : unread}
+            {badgeCount > 9 ? "9+" : badgeCount}
           </span>
         )}
       </button>
 
-      {/* Transient toast for the newest notification */}
+      {/* Newest notification stays visible until manually dismissed */}
       {toast && (
         <div className="fixed top-4 right-4 z-50 w-80 bg-white rounded-xl shadow-2xl border border-black/10 p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="flex items-start gap-2.5">
@@ -124,6 +132,22 @@ export default function NotificationBell({ token }: { token: string }) {
           <div className="p-3 border-b border-black/5 font-extrabold text-xs uppercase tracking-wider text-black/50">
             Notifications
           </div>
+
+          {actionNeeded && (
+            <Link
+              href={actionNeeded.href}
+              onClick={() => setOpen(false)}
+              className="block p-3.5 bg-county-yellow/10 hover:bg-county-yellow/15 border-b border-black/5 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-county-black uppercase tracking-wider">Action needed</span>
+                <span className="badge bg-county-yellow text-yellow-900 font-extrabold text-[10px]">{actionNeeded.count}</span>
+              </div>
+              <p className="text-xs text-black/60 mt-1">{actionNeeded.message}</p>
+              <p className="text-[11px] font-bold text-county-green mt-1.5">Go to approvals →</p>
+            </Link>
+          )}
+
           {notifications.length === 0 ? (
             <div className="p-6 text-center text-xs text-black/40">Nothing yet — you'll see live updates here.</div>
           ) : (

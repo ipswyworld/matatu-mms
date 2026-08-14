@@ -179,7 +179,7 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
 
       {step === 2 && (
         <div className="space-y-2.5">
-          <p className="text-xs text-white/60">Chairperson, Secretary, and Treasurer contact details for your Sacco.</p>
+          <p className="text-xs text-white/60">Chairperson, Secretary, and Treasurer contact details for your Operator.</p>
           <div className="bg-white rounded-xl p-3">
             <SaccoOfficialsForm saccoId={sacco.id} officials={officials} />
           </div>

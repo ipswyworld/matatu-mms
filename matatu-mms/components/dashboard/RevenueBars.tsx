@@ -25,7 +25,7 @@ export default function RevenueBars({ paid, pending, disputed, waived, collectio
   const totalIssued = paid + pending + disputed + waived;
 
   return (
-    <div className="rounded-2xl bg-white p-5 md:p-6 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
+    <div className="rounded-2xl bg-white p-4 md:p-5 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
       <div className="flex items-start justify-between mb-1">
         <div>
           <h3 className="font-black text-county-ink text-base tracking-tight">Fine revenue</h3>
@@ -39,7 +39,7 @@ export default function RevenueBars({ paid, pending, disputed, waived, collectio
         </div>
       </div>
 
-      <div className="flex-1 flex items-end gap-4 mt-6 min-h-[180px]">
+      <div className="flex-1 flex items-end gap-3 mt-3 min-h-[110px]">
         {BARS.map((bar) => {
           const val = values[bar.key];
           const heightPct = (val / max) * 100;
@@ -58,7 +58,7 @@ export default function RevenueBars({ paid, pending, disputed, waived, collectio
                   <div className="absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-white/25 to-transparent" />
                 )}
               </div>
-              <div className="text-[11px] font-bold text-county-ink/60 uppercase tracking-wider">{bar.label}</div>
+              <div className="text-[10px] font-bold text-county-ink/60 uppercase tracking-wide whitespace-nowrap">{bar.label}</div>
             </div>
           );
         })}

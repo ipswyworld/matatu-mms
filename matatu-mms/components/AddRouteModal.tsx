@@ -50,10 +50,6 @@ export default function AddRouteModal() {
                 <label className="label">Description</label>
                 <input type="text" name="description" placeholder="e.g. Nairobi CBD to Dagoretti via Ngong Rd" className="input" />
               </div>
-              <div>
-                <label className="label">Fare (KES per seat)</label>
-                <input type="number" name="fareKes" required min={1} placeholder="e.g. 100" className="input font-bold" />
-              </div>
               <div className="pt-2 flex gap-3">
                 <button type="button" onClick={() => setIsOpen(false)} className="btn-secondary flex-1">Cancel</button>
                 <div className="flex-1"><SubmitButton /></div>

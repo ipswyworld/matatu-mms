@@ -25,7 +25,7 @@ export default function FleetLiveStatus({ matatus, telemetry, bookings }: FleetL
     });
 
   return (
-    <div className="rounded-2xl bg-white p-5 md:p-6 shadow-sm ring-1 ring-county-ink/[0.06]">
+    <div className="rounded-2xl bg-white p-5 md:p-6 shadow-sm ring-1 ring-county-ink/[0.06] min-w-0">
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="font-black text-county-ink text-base tracking-tight">Live fleet status</h3>

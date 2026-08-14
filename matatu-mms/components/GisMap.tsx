@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Map as LeafletMap, Marker, Polyline } from "leaflet";
+import type { TomTomMap as TomTomMapType } from "@tomtom-org/maps-sdk/map";
+import type { Marker as MaplibreMarker } from "maplibre-gl";
 import { Stage } from "@/lib/types";
-import LiveIndicator from "./LiveIndicator";
 
 export const NAIROBI_STAGES: Stage[] = [
   { id: "stg-1", name: "Kencom / City Hall Terminal", code: "CBD-KNC", zone: "CBD Zone", lat: -1.2864, lng: 36.8228 },
@@ -15,9 +15,11 @@ export const NAIROBI_STAGES: Stage[] = [
   { id: "stg-7", name: "Umoja 1 Market Terminus", code: "UMJ-UMJ", zone: "Eastlands Trunk", lat: -1.2892, lng: 36.8831 },
 ];
 
-const NAIROBI_CBD_CENTER: [number, number] = [-1.2864, 36.8228];
+// TomTom (MapLibre-based) takes center as [lng, lat].
+const NAIROBI_CBD_CENTER: [number, number] = [36.8228, -1.2864];
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
+const TOMTOM_API_KEY = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
 
 export interface LiveVehicleTelemetry {
   matatu_id: string;
@@ -34,109 +36,152 @@ interface GisMapProps {
   onSelectStage?: (stage: Stage) => void;
 }
 
-function matatuDivIcon(reg: string, speed: number) {
-  return `
-    <div style="
-      background: #0F47AF;
-      border: 2px solid #FCDD07;
-      border-radius: 8px;
-      padding: 3px 6px;
-      font-size: 10px;
-      font-weight: 800;
-      color: white;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      line-height: 1.2;
-    ">
-      <span>🚐 ${reg}</span>
-      <span style="color:#FCDD07;font-size:9px;">${speed} km/h</span>
-    </div>
-  `;
+function stageMarkerElement(selected: boolean) {
+  const el = document.createElement("div");
+  el.style.width = selected ? "20px" : "14px";
+  el.style.height = selected ? "20px" : "14px";
+  el.style.borderRadius = "50%";
+  el.style.background = selected ? "#FCDD07" : "#068930";
+  el.style.border = "2px solid #ffffff";
+  el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.4)";
+  el.style.cursor = "pointer";
+  return el;
+}
+
+function matatuMarkerElement(reg: string, speed: number) {
+  const el = document.createElement("div");
+  el.style.background = "#0F47AF";
+  el.style.border = "2px solid #FCDD07";
+  el.style.borderRadius = "8px";
+  el.style.padding = "3px 6px";
+  el.style.fontSize = "10px";
+  el.style.fontWeight = "800";
+  el.style.color = "white";
+  el.style.whiteSpace = "nowrap";
+  el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.4)";
+  el.style.display = "flex";
+  el.style.flexDirection = "column";
+  el.style.alignItems = "center";
+  el.style.lineHeight = "1.2";
+  el.innerHTML = `<span>🚐 ${reg}</span><span style="color:#FCDD07;font-size:9px;">${speed} km/h</span>`;
+  return el;
 }
 
 export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<LeafletMap | null>(null);
-  const vehicleMarkersRef = useRef<Record<string, Marker>>({});
-  const routeLinesRef = useRef<Polyline[]>([]);
+  const mapRef = useRef<TomTomMapType | null>(null);
+  const vehicleMarkersRef = useRef<Record<string, MaplibreMarker>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
 
-  const [vehicleCount, setVehicleCount] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "live" | "offline">("connecting");
 
-  // Initialize the Leaflet map once
+  // Initialize the TomTom map once
   useEffect(() => {
+    if (!TOMTOM_API_KEY) return;
     let destroyed = false;
-    let L: typeof import("leaflet");
 
     (async () => {
-      L = (await import("leaflet")).default;
+      const [{ TomTomConfig }, { TomTomMap }, maplibregl] = await Promise.all([
+        import("@tomtom-org/maps-sdk/core"),
+        import("@tomtom-org/maps-sdk/map"),
+        import("maplibre-gl"),
+      ]);
       if (destroyed || !containerRef.current || mapRef.current) return;
 
-      const map = L.map(containerRef.current, {
-        zoomControl: true,
-        attributionControl: true,
-      }).setView(NAIROBI_CBD_CENTER, 12);
+      TomTomConfig.instance.put({ apiKey: TOMTOM_API_KEY });
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        subdomains: "abcd",
-        maxZoom: 19,
-      }).addTo(map);
-
-      // Nairobi County stage markers + corridor lines from CBD hub
-      const hub = L.latLng(NAIROBI_CBD_CENTER);
-      NAIROBI_STAGES.forEach((stg) => {
-        const isSelected = stg.id === selectedStageId;
-        const marker = L.circleMarker([stg.lat, stg.lng], {
-          radius: isSelected ? 10 : 7,
-          fillColor: isSelected ? "#FCDD07" : "#068930",
-          color: "#ffffff",
-          weight: 2,
-          fillOpacity: 0.9,
-        }).addTo(map);
-        marker.bindTooltip(`${stg.name} (${stg.code})`, { direction: "top" });
-        marker.on("click", () => onSelectStage && onSelectStage(stg));
-
-        if (stg.lat !== hub.lat || stg.lng !== hub.lng) {
-          const line = L.polyline([hub, [stg.lat, stg.lng]], {
-            color: "#FCDD07",
-            weight: 2,
-            opacity: 0.35,
-            dashArray: "6 6",
-          }).addTo(map);
-          routeLinesRef.current.push(line);
-        }
+      const map = new TomTomMap({
+        style: "standardDark",
+        mapLibre: {
+          container: containerRef.current,
+          center: NAIROBI_CBD_CENTER,
+          zoom: 12,
+        },
       });
-
       mapRef.current = map;
+
+      // The style can finish loading before this listener attaches (the SDK
+      // resolves it during construction), so check the already-loaded case
+      // directly instead of only relying on the "load" event.
+      const setupLayers = () => {
+        if (destroyed) return;
+        const glMap = map.mapLibreMap;
+        if (glMap.getSource("corridor-lines")) return;
+
+        // Dashed corridor lines from the CBD hub to every stage, as one line layer.
+        glMap.addSource("corridor-lines", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: NAIROBI_STAGES.filter(
+              (stg) => stg.lat !== NAIROBI_CBD_CENTER[1] || stg.lng !== NAIROBI_CBD_CENTER[0]
+            ).map((stg) => ({
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "LineString",
+                coordinates: [NAIROBI_CBD_CENTER, [stg.lng, stg.lat]],
+              },
+            })),
+          },
+        });
+        glMap.addLayer({
+          id: "corridor-lines-layer",
+          type: "line",
+          source: "corridor-lines",
+          paint: {
+            "line-color": "#FCDD07",
+            "line-width": 2,
+            "line-opacity": 0.35,
+            "line-dasharray": [2, 2],
+          },
+        });
+
+        NAIROBI_STAGES.forEach((stg) => {
+          const el = stageMarkerElement(stg.id === selectedStageId);
+          new maplibregl.Marker({ element: el }).setLngLat([stg.lng, stg.lat]).addTo(glMap);
+
+          const popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setText(`${stg.name} (${stg.code})`);
+          el.addEventListener("mouseenter", () => popup.setLngLat([stg.lng, stg.lat]).addTo(glMap));
+          el.addEventListener("mouseleave", () => popup.remove());
+          el.addEventListener("click", () => onSelectStage && onSelectStage(stg));
+        });
+      };
+
+      // `mapReady` (the SDK's own documented readiness flag) becomes true on
+      // a different, earlier timeline than the underlying MapLibre map's own
+      // "load" event/`loaded()` state in this wrapper, so poll it directly
+      // rather than relying on an event that doesn't reliably fire here.
+      const readyCheck = setInterval(() => {
+        if (destroyed) {
+          clearInterval(readyCheck);
+          return;
+        }
+        if (map.mapReady) {
+          clearInterval(readyCheck);
+          setupLayers();
+        }
+      }, 100);
     })();
 
     return () => {
       destroyed = true;
-      mapRef.current?.remove();
+      mapRef.current?.mapLibreMap.remove();
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Highlight selected stage without re-initializing the whole map
-  useEffect(() => {
-    // handled visually on next full mount; kept intentionally simple for this prototype
-  }, [selectedStageId]);
-
   // Real-time telemetry over WebSocket, with reconnect/backoff (no fake simulated movement)
   useEffect(() => {
+    if (!TOMTOM_API_KEY) return;
     let cancelled = false;
 
     const connect = async () => {
       if (cancelled) return;
-      const L = (await import("leaflet")).default;
+      const maplibregl = await import("maplibre-gl");
       setConnectionStatus("connecting");
 
       const ws = new WebSocket(`${WS_BASE_URL}/api/telemetry/ws/passengers`);
@@ -150,17 +195,22 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
       const upsertVehicle = (v: LiveVehicleTelemetry) => {
         const map = mapRef.current;
         if (!map) return;
+        const glMap = map.mapLibreMap;
         const existing = vehicleMarkersRef.current[v.matatu_id];
         if (existing) {
-          existing.setLatLng([v.lat, v.lng]);
-          existing.setIcon(
-            L.divIcon({ html: matatuDivIcon(v.reg_number, v.speed), className: "", iconSize: [0, 0] })
-          );
+          existing.setLngLat([v.lng, v.lat]);
+          const el = existing.getElement();
+          el.innerHTML = `<span>🚐 ${v.reg_number}</span><span style="color:#FCDD07;font-size:9px;">${v.speed} km/h</span>`;
         } else {
-          const marker = L.marker([v.lat, v.lng], {
-            icon: L.divIcon({ html: matatuDivIcon(v.reg_number, v.speed), className: "", iconSize: [0, 0] }),
-          }).addTo(map);
-          marker.bindTooltip(`Route ${v.route_code} · ${v.speed} km/h`, { direction: "top" });
+          const marker = new maplibregl.Marker({ element: matatuMarkerElement(v.reg_number, v.speed) })
+            .setLngLat([v.lng, v.lat])
+            .addTo(glMap);
+          const popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setText(
+            `Route ${v.route_code} · ${v.speed} km/h`
+          );
+          const el = marker.getElement();
+          el.addEventListener("mouseenter", () => popup.setLngLat([v.lng, v.lat]).addTo(glMap));
+          el.addEventListener("mouseleave", () => popup.remove());
           vehicleMarkersRef.current[v.matatu_id] = marker;
         }
       };
@@ -170,10 +220,8 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
           const payload = JSON.parse(event.data);
           if (payload.type === "INIT_TELEMETRY" && Array.isArray(payload.vehicles)) {
             payload.vehicles.forEach(upsertVehicle);
-            setVehicleCount(payload.vehicles.length);
           } else if (payload.type === "VEHICLE_POSITION_UPDATE" && payload.vehicle) {
             upsertVehicle(payload.vehicle);
-            setVehicleCount(Object.keys(vehicleMarkersRef.current).length);
           }
         } catch {
           // ignore malformed frames
@@ -202,45 +250,29 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
     };
   }, []);
 
-  const statusLabel =
-    connectionStatus === "live"
-      ? `${vehicleCount} Live Vehicles Streaming`
-      : connectionStatus === "connecting"
-      ? "Connecting to telemetry…"
-      : "Offline — retrying…";
+  const dotColor =
+    connectionStatus === "live" ? "#068930" : connectionStatus === "connecting" ? "#F5C518" : "#B4232C";
 
   return (
-    <div className="bg-county-black rounded-2xl p-5 text-white shadow-2xl relative overflow-hidden select-none border border-white/10 space-y-3">
-      <div className="flex items-center justify-between border-b border-white/10 pb-3">
-        <div>
-          <h3 className="font-extrabold text-sm tracking-wide text-white uppercase">
-            Nairobi Live Matatu GPS Telemetry Map
-          </h3>
-          <p className="text-[11px] text-white/60">Real WebSocket GPS feed — no simulated movement</p>
+    <div className="rounded-2xl overflow-hidden relative border border-white/10 shadow-2xl">
+      {!TOMTOM_API_KEY ? (
+        <div className="h-[380px] flex items-center justify-center bg-county-black text-white/50 text-xs font-semibold px-6 text-center">
+          Set NEXT_PUBLIC_TOMTOM_API_KEY to enable the live map.
         </div>
-        <div className="flex items-center gap-2 text-xs bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
-          <LiveIndicator label={statusLabel} state={connectionStatus === "live" ? "live" : connectionStatus === "connecting" ? "connecting" : "offline"} className="text-county-yellow" />
-        </div>
-      </div>
-
-      <div
-        ref={containerRef}
-        className="relative w-full h-[380px] rounded-xl border border-white/10 overflow-hidden z-0"
-      />
-
-      <div className="flex flex-wrap gap-4 justify-between items-center text-xs pt-1 text-white/70">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-md bg-county-blue border border-white" />
-            <span>Live Matatu</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-full bg-county-green" />
-            <span>Bus Terminus</span>
-          </div>
-        </div>
-        <div className="text-[10px] text-white/40 font-mono">Telemetry Pipeline: WebSocket Pub/Sub</div>
-      </div>
+      ) : (
+        <div ref={containerRef} className="w-full h-[380px]" />
+      )}
+      {TOMTOM_API_KEY && (
+        <span className="absolute top-3 right-3 flex h-2.5 w-2.5 z-10">
+          {connectionStatus !== "offline" && (
+            <span
+              className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+              style={{ backgroundColor: dotColor }}
+            />
+          )}
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotColor }} />
+        </span>
+      )}
     </div>
   );
 }

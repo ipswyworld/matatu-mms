@@ -6,6 +6,7 @@ import Link from "next/link";
 import { operatorOnboardingRegisterAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import MatatuGlyph from "@/components/MatatuGlyph";
+import PublicFooter from "@/components/PublicFooter";
 
 export default function OperatorOnboardingPage() {
   const [state, formAction] = useFormState(operatorOnboardingRegisterAction, undefined);
@@ -19,7 +20,7 @@ export default function OperatorOnboardingPage() {
   const canSubmit = agreedToTerms && signatureMatches;
 
   return (
-    <main className="min-h-screen bg-county-black text-white flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <main className="min-h-screen bg-county-black text-white flex flex-col justify-center items-center p-4 pb-0 relative overflow-hidden">
       <div
         className="pointer-events-none absolute inset-0 opacity-[0.05]"
         style={{
@@ -36,13 +37,13 @@ export default function OperatorOnboardingPage() {
           <NairobiCrest size={52} className="mx-auto drop-shadow-lg" />
           <h1 className="text-xl font-extrabold tracking-tight text-white">Nairobi City County</h1>
           <p className="text-xs font-semibold text-county-yellow uppercase tracking-widest">
-            Sacco / Operator Onboarding & Verification
+            Operator Onboarding & Verification
           </p>
         </div>
 
         <div className="bg-white/[0.06] border border-white/10 p-6 rounded-2xl shadow-2xl space-y-5">
           <div className="text-xs text-white/60 bg-black/30 border border-white/10 rounded-lg p-3 leading-relaxed">
-            Register your Sacco here to begin county verification. You&apos;ll set your login password now and can log
+            Register your Operator here to begin county verification. You&apos;ll set your login password now and can log
             in immediately to upload documents and track approval status — but the full operator dashboard (vehicle
             onboarding, revenue, routes) only unlocks once the Director of Mobility and Chief Officer both approve.
           </div>
@@ -56,7 +57,7 @@ export default function OperatorOnboardingPage() {
           <form action={formAction} className="space-y-4">
             <div>
               <label className="text-xs font-bold uppercase tracking-wider text-white/70 block mb-2">
-                Is your Sacco new to Nairobi County, or already operating here?
+                Is your Operator new to Nairobi County, or already operating here?
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -88,12 +89,12 @@ export default function OperatorOnboardingPage() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-white/70 block mb-1">Sacco / Company Name</label>
+              <label className="text-xs font-semibold text-white/70 block mb-1">Operator / Company Name</label>
               <input
                 type="text"
                 name="saccoName"
                 required
-                placeholder="e.g. Kilimani Direct Shuttle Sacco"
+                placeholder="e.g. Kilimani Direct Shuttle Operator"
                 className="w-full bg-black/40 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-county-green"
               />
             </div>
@@ -117,7 +118,7 @@ export default function OperatorOnboardingPage() {
                 type="email"
                 name="email"
                 required
-                placeholder="operator@yoursacco.co.ke"
+                placeholder="operator@youroperator.co.ke"
                 className="w-full bg-black/40 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-county-green"
               />
             </div>
@@ -146,7 +147,7 @@ export default function OperatorOnboardingPage() {
                   <Link href="/terms" target="_blank" className="font-bold text-county-yellow hover:underline">
                     Terms &amp; Conditions
                   </Link>{" "}
-                  on behalf of this Sacco.
+                  on behalf of this Operator.
                 </span>
               </label>
 
@@ -188,6 +189,9 @@ export default function OperatorOnboardingPage() {
             </Link>
           </div>
         </div>
+      </div>
+      <div className="relative z-10 w-full mt-8">
+        <PublicFooter dark />
       </div>
     </main>
   );
