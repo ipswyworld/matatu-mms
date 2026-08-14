@@ -11,6 +11,13 @@ logger = logging.getLogger("app.config")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./mms.db")
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
+# Recorded before the auto-generated fallbacks below overwrite these — the
+# /system console needs to know whether a secret was actually configured
+# without ever seeing the secret's value itself.
+SECRET_KEY_IS_CONFIGURED = bool(os.getenv("SECRET_KEY"))
+NAIROBIPAY_CALLBACK_SECRET_IS_CONFIGURED = bool(os.getenv("NAIROBIPAY_CALLBACK_SECRET"))
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     # No hardcoded fallback — a fixed default secret checked into source is
@@ -37,17 +44,19 @@ WEBHOOK_TIMEOUT = float(os.getenv("WEBHOOK_TIMEOUT", "5.0"))
 # stay tied to the version of the Terms a user actually agreed to.
 TERMS_VERSION = os.getenv("TERMS_VERSION", "2026-07-25")
 
-# Safaricom Daraja doesn't sign C2B callback payloads, so the standard
-# protection is a secret, unguessable path segment known only to your Daraja
-# app config — anyone who doesn't know this token gets a 404, not a fine
-# marked paid. Same random-per-process fallback pattern as SECRET_KEY: works
-# with zero setup locally, forces a real value before deployment.
-MPESA_CALLBACK_SECRET = os.getenv("MPESA_CALLBACK_SECRET")
-if not MPESA_CALLBACK_SECRET:
-    MPESA_CALLBACK_SECRET = secrets.token_urlsafe(24)
+# NairobiPay doesn't sign its callback payloads, so the standard protection
+# is a secret, unguessable path segment known only to this server and the
+# NairobiPay gateway config — anyone who doesn't know this token gets a 404,
+# not a fine marked paid. Same random-per-process fallback pattern as
+# SECRET_KEY: works with zero setup locally, forces a real value before
+# deployment (and before NairobiPay's real API is wired in).
+NAIROBIPAY_CALLBACK_SECRET = os.getenv("NAIROBIPAY_CALLBACK_SECRET")
+if not NAIROBIPAY_CALLBACK_SECRET:
+    NAIROBIPAY_CALLBACK_SECRET = secrets.token_urlsafe(24)
     logger.warning(
-        "MPESA_CALLBACK_SECRET not set — generated a random one for this "
-        "process: %s . Configure this exact value as your Daraja callback "
-        "URL's secret segment, and set it explicitly before deploying.",
-        MPESA_CALLBACK_SECRET,
+        "NAIROBIPAY_CALLBACK_SECRET not set — generated a random one for "
+        "this process: %s . Configure this exact value as your NairobiPay "
+        "callback URL's secret segment, and set it explicitly before "
+        "deploying.",
+        NAIROBIPAY_CALLBACK_SECRET,
     )

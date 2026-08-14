@@ -1,4 +1,6 @@
 import datetime
+import logging
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -7,9 +9,12 @@ import json
 
 from app.database import get_db
 from app.models import User
-from app.schemas import UserLogin, Token, UserResponse, UserCreate
+from app.schemas import UserLogin, Token, UserResponse, UserCreate, ForgotPasswordRequest, ResetPasswordRequest
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION
+
+logger = logging.getLogger(__name__)
+RESET_TOKEN_TTL_MINUTES = 30
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -139,6 +144,52 @@ async def register(credentials: UserCreate, response: Response, db: AsyncSession
         token_type="bearer",
         user=user_resp
     )
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    # Always returns the same generic message regardless of whether the email
+    # exists, so this endpoint can't be used to enumerate registered accounts.
+    result = await db.execute(select(User).where(User.email == payload.email.lower().strip()))
+    user = result.scalars().first()
+
+    if user:
+        token = secrets.token_urlsafe(32)
+        expires_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=RESET_TOKEN_TTL_MINUTES)).isoformat() + "Z"
+        user.reset_token = token
+        user.reset_token_expires_at = expires_at
+        await db.commit()
+        # No email/SMS provider is configured for this deployment yet, so the
+        # reset link is logged server-side rather than silently dropped.
+        logger.warning(
+            "Password reset requested for %s. Reset link: /reset-password?token=%s (expires in %d min)",
+            user.email, token, RESET_TOKEN_TTL_MINUTES,
+        )
+
+    return {"message": "If that email is registered, a password reset link has been sent."}
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    result = await db.execute(select(User).where(User.reset_token == payload.token))
+    user = result.scalars().first()
+    if not user or not user.reset_token_expires_at:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+
+    expires_at = datetime.datetime.fromisoformat(user.reset_token_expires_at.replace("Z", ""))
+    if datetime.datetime.utcnow() > expires_at:
+        user.reset_token = None
+        user.reset_token_expires_at = None
+        await db.commit()
+        raise HTTPException(status_code=400, detail="This reset link has expired. Please request a new one.")
+
+    user.password = get_password_hash(payload.new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    await db.commit()
+
+    return {"message": "Password updated. You can now sign in with your new password."}
 
 @router.post("/logout")
 async def logout(response: Response):

@@ -129,24 +129,23 @@ async def run_tests():
         assert disputed_fine["status"] == "DISPUTED"
         print(f"  [OK] Fine status successfully disputed.")
 
-        # Test Case 7: M-Pesa Callback Payment Simulation
-        print("\n[TEST 7] Testing M-Pesa Webhook Callback Simulation...")
-        mpesa_payload = {
+        # Test Case 7: NairobiPay Callback Payment Simulation
+        print("\n[TEST 7] Testing NairobiPay Webhook Callback Simulation...")
+        nairobipay_payload = {
             "transaction_type": "Pay Bill",
-            "trans_id": "MPESA100293",
-            "trans_time": "20260717143000",
-            "trans_amount": "5000.00",
-            "business_short_code": "123456",
-            "bill_ref_number": fine_id,
-            "msisdn": "254711223344",
-            "first_name": "James",
-            "middle_name": "Mwangi"
+            "transaction_id": "NRBPAY100293",
+            "transaction_time": "20260717143000",
+            "amount": "5000.00",
+            "reference": fine_id,
+            "payer_phone": "254711223344",
+            "payer_name": "James Mwangi"
         }
-        res = await client.post("/api/payments/mpesa-callback", json=mpesa_payload)
-        assert res.status_code == 200, f"Mpesa callback failed: {res.text}"
+        from app.config import NAIROBIPAY_CALLBACK_SECRET
+        res = await client.post(f"/api/payments/nairobipay-callback/{NAIROBIPAY_CALLBACK_SECRET}", json=nairobipay_payload)
+        assert res.status_code == 200, f"NairobiPay callback failed: {res.text}"
         callback_res = res.json()
-        assert callback_res["ResultCode"] == 0
-        print("  [OK] M-Pesa Callback Accepted.")
+        assert callback_res["resultCode"] == 0
+        print("  [OK] NairobiPay Callback Accepted.")
         
         # Verify fine is indeed paid now
         res = await client.get(f"/api/matatus/m-2", headers=sacco_headers)

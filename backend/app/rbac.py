@@ -1,6 +1,42 @@
 from typing import List, Dict
 
+# Roles allowed to hold system-wide administrative power. Only accounts with
+# one of these roles may be assigned to (or edited by someone assigned to)
+# ADMIN/SUPERADMIN — enforced in routes/users.py, not just here.
+ADMIN_TIER_ROLES = {"ADMIN", "SUPERADMIN"}
+
 ROLE_MATRIX: Dict[str, List[str]] = {
+    "SUPERADMIN": [
+        "view_dashboard",
+        "view_matatus",
+        "edit_matatu_status",
+        "view_routes",
+        "manage_routes",
+        "view_activity",
+        "view_fines",
+        "issue_fine",
+        "update_fine_status",
+        "view_users",
+        "manage_users",
+        "manage_admins",
+        "update_booking_status",
+        "view_reports",
+        "review_report",
+        "verify_saccos",
+        "approve_license_renewal",
+        "view_operator_verification",
+        "decide_operator_verification_stage1",
+        "decide_operator_verification_stage2",
+        "remove_matatu",
+        "record_crime",
+        "view_enforcement_cases",
+        "file_enforcement_case",
+        "decide_enforcement_case",
+        "manage_officer_assignments",
+        "view_audit_logs",
+        "view_system_health",
+        "manage_system_config",
+    ],
     "ADMIN": [
         "view_dashboard",
         "view_matatus",
@@ -9,6 +45,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "manage_routes",
         "view_activity",
         "view_fines",
+        "issue_fine",
         "update_fine_status",
         "view_users",
         "manage_users",
@@ -26,22 +63,6 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "file_enforcement_case",
         "decide_enforcement_case",
         "manage_officer_assignments",
-        "view_audit_logs",
-    ],
-    "DATA_ANALYST": [
-        # Read-only, everywhere. No mutation permission is ever granted to
-        # this role — analysts/data scientists should be able to see
-        # everything for reporting without being able to change anything.
-        "view_dashboard",
-        "view_matatus",
-        "view_routes",
-        "view_activity",
-        "view_fines",
-        "view_users",
-        "view_reports",
-        "view_enforcement",
-        "view_enforcement_cases",
-        "view_operator_verification",
         "view_audit_logs",
     ],
     "DIRECTOR_MOBILITY": [
@@ -142,6 +163,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "book_ticket",
         "update_booking_status",
         "log_activity",
+        "view_reports",
     ],
 }
 

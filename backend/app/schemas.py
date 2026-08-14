@@ -31,6 +31,12 @@ class SaccoDocuments(BaseModelCamel):
     single_business_permit: str
     bonafide_officials_contacts: SaccoOfficialContact
 
+class SaccoPublicResponse(BaseModelCamel):
+    """Minimal, non-sensitive Sacco fields safe to expose without authentication
+    (e.g. populating the operator picker on the pre-login registration page)."""
+    id: str
+    name: str
+
 class SaccoResponse(SaccoBase):
     id: str
     status: Optional[str] = "ACTIVE"
@@ -109,9 +115,23 @@ class UserResponse(UserBase):
     terms_accepted_at: Optional[str] = None
     terms_signature: Optional[str] = None
 
+class UserUpdate(BaseModelCamel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[str] = None
+    sacco_id: Optional[str] = None
+    new_password: Optional[str] = None
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+class ForgotPasswordRequest(BaseModelCamel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModelCamel):
+    token: str
+    new_password: str
 
 class Token(BaseModelCamel):
     access_token: str
@@ -196,15 +216,13 @@ class CrimeRecordBase(BaseModelCamel):
     fine_amount_kes: float = 0.0
     remarks: Optional[str] = None
 
-class CrimeRecordCreate(CrimeRecordBase):
-    pass
-
 class CrimeRecordResponse(CrimeRecordBase):
     id: str
     officer_id: str
     officer_name: Optional[str] = None
     timestamp: str
     status: str
+    photo_path: Optional[str] = None
 
 # --- Fine Schemas ---
 class FineBase(BaseModelCamel):
@@ -254,13 +272,6 @@ class BookingResponse(BaseModelCamel):
     route_name: Optional[str] = None
 
 # --- Passenger Report Schemas ---
-class PassengerReportCreate(BaseModelCamel):
-    matatu_reg_number: Optional[str] = None
-    category: str
-    message: str
-    reporter_name: Optional[str] = None
-    reporter_phone: Optional[str] = None
-
 class PassengerReportStatusUpdate(BaseModelCamel):
     status: str  # PENDING, REVIEWED, ESCALATED, DISMISSED
 
@@ -271,6 +282,7 @@ class PassengerReportResponse(BaseModelCamel):
     message: str
     reporter_name: Optional[str] = None
     reporter_phone: Optional[str] = None
+    photo_path: Optional[str] = None
     status: str
     created_at: str
 

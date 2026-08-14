@@ -21,6 +21,7 @@ from app.schemas import (
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.abac import sacco_scope_query, enforce_own_sacco
 
 router = APIRouter(prefix="/api/matatus", tags=["Matatus"])
 
@@ -31,10 +32,8 @@ async def get_matatus(
 ):
     query = select(Matatu).options(selectinload(Matatu.sacco), selectinload(Matatu.route))
     
-    # Sacco Operators and Crew only see vehicles belonging to their own Sacco
-    if current_user.role in ("SACCO_OPERATOR", "CREW"):
-        query = query.where(Matatu.sacco_id == current_user.sacco_id)
-        
+    query = sacco_scope_query(current_user, query, Matatu.sacco_id)
+
     result = await db.execute(query)
     matatus = result.scalars().all()
     
@@ -338,8 +337,7 @@ async def remove_matatu(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu not found")
 
-    if current_user.role == "SACCO_OPERATOR" and matatu.sacco_id != current_user.sacco_id:
-        raise HTTPException(status_code=403, detail="You can only remove vehicles from your own Sacco.")
+    enforce_own_sacco(current_user, matatu.sacco_id, "You can only remove vehicles from your own Sacco.")
 
     pending_fines = await db.execute(
         select(Fine).where(Fine.matatu_id == id, Fine.status == "PENDING")
@@ -389,8 +387,7 @@ async def get_matatu_by_id(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu not found")
         
-    if current_user.role == "SACCO_OPERATOR" and matatu.sacco_id != current_user.sacco_id:
-        raise HTTPException(status_code=403, detail="Forbidden: This vehicle belongs to another Sacco.")
+    enforce_own_sacco(current_user, matatu.sacco_id, "Forbidden: This vehicle belongs to another Sacco.")
         
     if not matatu.terminal_segment:
         matatu.terminal_segment = f"{matatu.sacco.name if matatu.sacco else 'County'}: CBD Terminal Stage"

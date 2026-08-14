@@ -95,6 +95,13 @@ async def seed_data(db: AsyncSession):
     # Seed Users (hashing their passwords)
     users = [
         User(
+            id="u-superadmin",
+            name="Wanjiru Kamau",
+            email="superadmin@nairobi.go.ke",
+            password=get_password_hash("superadmin123"),
+            role="SUPERADMIN"
+        ),
+        User(
             id="u-admin",
             name="Grace Wambui",
             email="admin@nairobi.go.ke",
@@ -184,13 +191,6 @@ async def seed_data(db: AsyncSession):
             password=get_password_hash("release123"),
             role="RELEASING_OFFICER",
             enforcement_duty="RELEASING",
-        ),
-        User(
-            id="u-analyst",
-            name="Dr. Aisha Mohammed",
-            email="analyst@nairobi.go.ke",
-            password=get_password_hash("analyst123"),
-            role="DATA_ANALYST",
         ),
     ]
     for u in users:

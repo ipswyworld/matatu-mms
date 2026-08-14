@@ -16,9 +16,10 @@ async def get_audit_logs(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retrieves all database audit trail logs. Gated on its own permission
-    (not folded into manage_users) so read-only roles like DATA_ANALYST can
-    see the trail without being able to manage user accounts.
+    Retrieves all database audit trail logs. No UI page links here anymore
+    (removed from admin nav as noise), but the endpoint and the underlying
+    audit records stay — this is real compliance data, kept available for
+    direct API access/export even without a browsing UI.
     """
     query = select(AuditLog).order_by(AuditLog.timestamp.desc())
     result = await db.execute(query)

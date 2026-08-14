@@ -72,6 +72,11 @@ class User(Base):
     assigned_zone_id = Column(String, ForeignKey("zones.id"), nullable=True)
     commander_title = Column(String, nullable=True)  # e.g. "Commander of Public Transport Compliance"
 
+    # Self-service password reset — token is single-use and time-boxed;
+    # cleared after a successful reset or once expired.
+    reset_token = Column(String, nullable=True, index=True)
+    reset_token_expires_at = Column(String, nullable=True)
+
     sacco = relationship("Sacco", back_populates="users")
     assigned_zone = relationship("Zone")
 
@@ -139,6 +144,7 @@ class CrimeRecord(Base):
     officer_id = Column(String, ForeignKey("users.id"), nullable=False)
     timestamp = Column(String, nullable=False)
     status = Column(String, default="PENDING")  # PENDING, PROCESSED, PAID, DISPUTED
+    photo_path = Column(String, nullable=True)
 
     officer = relationship("User")
 
@@ -185,6 +191,7 @@ class PassengerReport(Base):
     reporter_user_id = Column(String, ForeignKey("users.id"), nullable=True)
     reporter_name = Column(String, nullable=True)
     reporter_phone = Column(String, nullable=True)
+    photo_path = Column(String, nullable=True)  # optional evidence photo, /uploads path
     status = Column(String, default="PENDING")  # PENDING, REVIEWED, ESCALATED, DISMISSED
     created_at = Column(String, nullable=False)
 

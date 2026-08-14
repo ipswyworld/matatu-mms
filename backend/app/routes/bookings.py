@@ -12,6 +12,7 @@ from app.schemas import BookingCreate, BookingResponse, BookingStatusUpdate
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.abac import enforce_own_record, enforce_own_sacco, sacco_scope_query, is_own_record
 
 router = APIRouter(prefix="/api/bookings", tags=["Passenger Bookings"])
 
@@ -56,7 +57,8 @@ async def get_bookings(
     if current_user.role == "PASSENGER":
         query = query.where(Booking.passenger_user_id == current_user.id)
     elif current_user.role in ("SACCO_OPERATOR", "CREW"):
-        query = query.join(Matatu, Matatu.id == Booking.matatu_id).where(Matatu.sacco_id == current_user.sacco_id)
+        query = query.join(Matatu, Matatu.id == Booking.matatu_id)
+        query = sacco_scope_query(current_user, query, Matatu.sacco_id)
 
     if matatu_id:
         query = query.where(Booking.matatu_id == matatu_id)
@@ -79,10 +81,8 @@ async def get_booking(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    if current_user.role == "PASSENGER" and booking.passenger_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="This ticket does not belong to you")
-    if current_user.role in ("SACCO_OPERATOR", "CREW") and booking.matatu.sacco_id != current_user.sacco_id:
-        raise HTTPException(status_code=403, detail="This ticket belongs to another Sacco's vehicle")
+    enforce_own_record(current_user, booking.passenger_user_id, "This ticket does not belong to you")
+    enforce_own_sacco(current_user, booking.matatu.sacco_id, "This ticket belongs to another Sacco's vehicle")
 
     return _to_response(booking)
 
@@ -114,13 +114,12 @@ async def update_booking_status(
     is_own_cancellation = (
         new_status == "CANCELLED"
         and can(current_user.role, "cancel_own_booking")
-        and booking.passenger_user_id == current_user.id
+        and is_own_record(current_user, booking.passenger_user_id)
     )
     if not (is_ticket_manager or is_own_cancellation):
         raise HTTPException(status_code=403, detail="You do not have permission to update this booking.")
 
-    if current_user.role == "CREW" and booking.matatu.sacco_id != current_user.sacco_id:
-        raise HTTPException(status_code=403, detail="This ticket belongs to another Sacco's vehicle")
+    enforce_own_sacco(current_user, booking.matatu.sacco_id, "This ticket belongs to another Sacco's vehicle")
 
     if is_own_cancellation and booking.status != "CONFIRMED":
         raise HTTPException(status_code=400, detail="Only a confirmed, upcoming booking can be cancelled.")

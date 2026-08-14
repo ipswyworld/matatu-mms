@@ -9,11 +9,13 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/mms.db
 backend/uploads/
+backend/*.log
 
 # Frontend
 matatu-mms/node_modules/
 matatu-mms/.next/
 matatu-mms/.env.local
+matatu-mms/*.log
 
 # OS/editor
 .DS_Store

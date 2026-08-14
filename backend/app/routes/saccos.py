@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models import Sacco, User
 from app.schemas import (
     SaccoResponse,
+    SaccoPublicResponse,
     SaccoVerificationUpdate,
     LicenseRenewalDecision,
     OperatorOnboardingRegister,
@@ -25,6 +26,7 @@ from app.config import TERMS_VERSION
 from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.routes.notifications import notify_user
+from app.abac import sacco_scope_query, enforce_own_sacco_operator_only
 
 router = APIRouter(prefix="/api/saccos", tags=["Saccos"])
 
@@ -71,10 +73,26 @@ async def get_saccos(
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Sacco)
-    # Sacco Operators only see their own Sacco's onboarding documents and officials' contacts
-    if current_user.role == "SACCO_OPERATOR":
-        query = query.where(Sacco.id == current_user.sacco_id)
+    query = sacco_scope_query(current_user, query, Sacco.id)
 
+    result = await db.execute(query)
+    saccos = result.scalars().all()
+    return saccos
+
+
+@router.get("/public", response_model=List[SaccoPublicResponse])
+async def get_public_saccos(db: AsyncSession = Depends(get_db)):
+    """
+    Unauthenticated list of registrable Saccos (id + name only) for pre-login
+    flows like the public registration page, which can't call the authed
+    GET /api/saccos endpoint above since the user has no session yet.
+
+    Includes PENDING_VERIFICATION Saccos, not just ACTIVE ones — a newly
+    onboarded Sacco still needs to be pickable so its Crew can sign up while
+    the operator's own verification is in progress. Only REJECTED/SUSPENDED
+    Saccos are excluded.
+    """
+    query = select(Sacco).where(Sacco.status.notin_(["REJECTED", "SUSPENDED"]))
     result = await db.execute(query)
     saccos = result.scalars().all()
     return saccos
@@ -161,8 +179,7 @@ async def upload_sacco_document(
     current_user: User = Depends(requires_permission("manage_sacco_documents")),
     db: AsyncSession = Depends(get_db),
 ):
-    if current_user.sacco_id != sacco_id:
-        raise HTTPException(status_code=403, detail="You can only manage documents for your own Sacco.")
+    enforce_own_sacco_operator_only(current_user, sacco_id, "You can only manage documents for your own Sacco.")
 
     field_name = DOC_FIELD_MAP.get(doc_type)
     if not field_name:
@@ -201,8 +218,7 @@ async def update_sacco_officials(
     current_user: User = Depends(requires_permission("manage_sacco_documents")),
     db: AsyncSession = Depends(get_db),
 ):
-    if current_user.sacco_id != sacco_id:
-        raise HTTPException(status_code=403, detail="You can only manage officials for your own Sacco.")
+    enforce_own_sacco_operator_only(current_user, sacco_id, "You can only manage officials for your own Sacco.")
 
     result = await db.execute(select(Sacco).where(Sacco.id == sacco_id))
     sacco = result.scalars().first()
@@ -231,8 +247,7 @@ async def submit_application(
     an operator who has only partially filled the wizard and abandoned it
     shouldn't show up looking like a finished application.
     """
-    if current_user.sacco_id != sacco_id:
-        raise HTTPException(status_code=403, detail="You can only submit your own Sacco's application.")
+    enforce_own_sacco_operator_only(current_user, sacco_id, "You can only submit your own Sacco's application.")
 
     result = await db.execute(select(Sacco).where(Sacco.id == sacco_id))
     sacco = result.scalars().first()
@@ -425,8 +440,7 @@ async def submit_license_renewal_payment(
     gateway yet (NairobiPay integration pending) — records the submission as
     awaiting county approval, matching the intended pay-then-approve flow.
     """
-    if current_user.sacco_id != sacco_id:
-        raise HTTPException(status_code=403, detail="You can only submit renewal payment for your own Sacco.")
+    enforce_own_sacco_operator_only(current_user, sacco_id, "You can only submit renewal payment for your own Sacco.")
 
     result = await db.execute(select(Sacco).where(Sacco.id == sacco_id))
     sacco = result.scalars().first()

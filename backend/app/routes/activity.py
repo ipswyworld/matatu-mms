@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models import ActivityLog, Matatu, User
 from app.schemas import ActivityLogResponse, ActivityLogCreate
 from app.auth import get_current_user, requires_permission
+from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/activity", tags=["Activity Logs"])
 
@@ -19,11 +20,7 @@ async def get_activities(
     db: AsyncSession = Depends(get_db)
 ):
     query = select(ActivityLog).join(Matatu, ActivityLog.matatu_id == Matatu.id)
-    
-    # Filter logs by Sacco if user is Sacco Operator
-    if current_user.role == "SACCO_OPERATOR":
-        query = query.where(Matatu.sacco_id == current_user.sacco_id)
-        
+    query = sacco_scope_query(current_user, query, Matatu.sacco_id)
     query = query.order_by(ActivityLog.timestamp.desc())
     result = await db.execute(query)
     return result.scalars().all()

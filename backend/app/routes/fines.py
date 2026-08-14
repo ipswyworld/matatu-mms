@@ -12,6 +12,7 @@ from app.schemas import FineResponse, FineCreate, FineStatusUpdate
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.abac import sacco_scope_query, enforce_own_sacco, is_own_sacco
 
 router = APIRouter(prefix="/api/fines", tags=["Fines & Penalties"])
 
@@ -21,11 +22,8 @@ async def get_fines(
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Fine).join(Matatu, Fine.matatu_id == Matatu.id).options(selectinload(Fine.matatu))
-    
-    # Filter by Sacco if user is Sacco Operator
-    if current_user.role == "SACCO_OPERATOR":
-        query = query.where(Matatu.sacco_id == current_user.sacco_id)
-        
+    query = sacco_scope_query(current_user, query, Matatu.sacco_id)
+
     result = await db.execute(query)
     fines = result.scalars().all()
     
@@ -132,8 +130,7 @@ async def update_fine_status(
         from app.rbac import can
         if not can(current_user.role, "dispute_fine"):
             raise HTTPException(status_code=403, detail="You do not have permission to dispute fines.")
-        if current_user.role == "SACCO_OPERATOR" and fine.matatu.sacco_id != current_user.sacco_id:
-            raise HTTPException(status_code=403, detail="You can only dispute fines belonging to your Sacco.")
+        enforce_own_sacco(current_user, fine.matatu.sacco_id, "You can only dispute fines belonging to your Sacco.")
             
     # WAIVED is a policy override: Admin only
     if new_status == "WAIVED":
@@ -146,7 +143,7 @@ async def update_fine_status(
     if new_status == "PAID":
         from app.rbac import can
         is_admin_override = can(current_user.role, "update_fine_status")
-        is_sacco_payment = can(current_user.role, "pay_fine") and fine.matatu.sacco_id == current_user.sacco_id
+        is_sacco_payment = can(current_user.role, "pay_fine") and is_own_sacco(current_user, fine.matatu.sacco_id)
         if not (is_admin_override or is_sacco_payment):
             raise HTTPException(status_code=403, detail="You can only pay fines belonging to your own Sacco.")
 
