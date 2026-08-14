@@ -12,6 +12,22 @@ from app.database import engine, Base, AsyncSessionLocal, IS_SQLITE
 from app.listeners import register_listeners
 from app.seed import seed_data
 from app.logging_config import configure_logging
+from app.config import SENTRY_DSN
+
+# Error tracking — inert with no config required. Without SENTRY_DSN set,
+# this is a no-op (no network calls, no overhead); set it in the environment
+# to start receiving unhandled exceptions and their request context.
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        environment=os.getenv("SENTRY_ENVIRONMENT", "development"),
+    )
 
 # Import routers
 from app.routes.auth import router as auth_router
@@ -35,6 +51,7 @@ from app.routes.enforcement_cases import router as enforcement_cases_router
 from app.routes.notifications import router as notifications_router
 from app.routes.notifications import broadcaster as notifications_broadcaster
 from app.routes.telemetry import broadcaster as telemetry_broadcaster
+from app.routes.system import router as system_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -96,10 +113,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS for Next.js frontend communication
+# Configure CORS for Next.js frontend communication. Extra origins (e.g. a
+# deployed frontend URL) come from CORS_ORIGINS as a comma-separated list —
+# the localhost defaults always stay allowed for local dev.
+_extra_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", *_extra_cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -129,6 +149,7 @@ app.include_router(reports_router)
 app.include_router(dashboard_events_router)
 app.include_router(enforcement_cases_router)
 app.include_router(notifications_router)
+app.include_router(system_router)
 
 # Serve uploaded verification/onboarding documents (dev-only local disk
 # storage — will move to object storage e.g. S3/GCS behind Postgres+Redis

@@ -126,6 +126,38 @@ curl -k https://localhost/healthz
 curl -k https://localhost/api/health   # through nginx, not the frontend directly
 ```
 
+## Quick investor demo — Render (free tier)
+
+For "put it on a URL investors can open," not the self-hosted stack above:
+`render.yaml` at the repo root is a Render Blueprint defining Postgres, Redis,
+the backend, and the frontend together.
+
+1. Push this repo to GitHub (Render deploys from a connected repo).
+2. In Render: **New → Blueprint**, point it at the repo/branch. It reads
+   `render.yaml` and creates all four resources.
+3. Render auto-generates `SECRET_KEY` and `NAIROBIPAY_CALLBACK_SECRET`
+   (`generateValue: true`) — no action needed.
+4. Set `NEXT_PUBLIC_TOMTOM_API_KEY` manually on the frontend service (left
+   out of the committed file on purpose — it's a secret). Restrict that key
+   to the deployed frontend domain in the TomTom console.
+5. **After the first deploy**, confirm the actual URLs Render assigned to
+   `matatu-mms-backend` and `matatu-mms-frontend` (they default to
+   `https://<service-name>.onrender.com`, but Render appends a random suffix
+   if that name is already taken). If they differ from `render.yaml`,
+   update `CORS_ORIGINS` (backend) and `NEXT_PUBLIC_BACKEND_URL` /
+   `NEXT_PUBLIC_WS_URL` (frontend) to match, then redeploy.
+6. Every push to the connected branch auto-redeploys both services — this is
+   how "make changes together" stays a live link, not a manual re-upload.
+
+**Known limits of this path, worth setting expectations with investors:**
+- Free services sleep after ~15 min idle; first load after that can take
+  30–60s. Open the link a minute before a call.
+- Uploaded files (sacco documents, crime-report photos) write to local disk,
+  which is **ephemeral** on Render — they vanish on redeploy. Fine for a demo
+  built on seed data; don't rely on uploads persisting.
+- This is a public URL. Seed/demo data only — never real citizen or operator
+  data.
+
 ## Still outstanding (not built this session)
 
 - **Real TLS certificate** — the shipped cert is self-signed, dev-only.
