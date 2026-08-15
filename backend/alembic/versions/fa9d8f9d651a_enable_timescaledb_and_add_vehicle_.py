@@ -23,33 +23,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     is_postgres = bind.dialect.name == "postgresql"
 
-    # Raw DDL with IF NOT EXISTS rather than op.create_table/create_index:
-    # this table's creation commits (see the autocommit_block below, which
-    # forces an early commit before it runs) before the extension/hypertable
-    # steps even start. If the deploy process is killed between that commit
-    # and the migration's own final commit (observed in practice — Render
-    # retried this migration after an interrupted attempt), a plain
-    # op.create_table would hit "relation already exists" on retry and fail
-    # the deploy outright. IF NOT EXISTS makes the whole migration safely
-    # re-runnable regardless of where a previous attempt stopped.
-    if is_postgres:
-        op.execute("""
-            CREATE TABLE IF NOT EXISTS vehicle_positions (
-                id SERIAL PRIMARY KEY,
-                matatu_id VARCHAR NOT NULL REFERENCES matatus (id),
-                lat FLOAT NOT NULL,
-                lng FLOAT NOT NULL,
-                speed FLOAT,
-                heading FLOAT,
-                source VARCHAR DEFAULT 'CREW_GPS',
-                recorded_at TIMESTAMP WITH TIME ZONE NOT NULL
-            )
-        """)
-        op.execute(
-            "CREATE INDEX IF NOT EXISTS ix_vehicle_positions_matatu_recorded "
-            "ON vehicle_positions (matatu_id, recorded_at)"
-        )
-    else:
+    if not is_postgres:
         op.create_table(
             "vehicle_positions",
             sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -64,11 +38,43 @@ def upgrade() -> None:
         op.create_index("ix_vehicle_positions_matatu_recorded", "vehicle_positions", ["matatu_id", "recorded_at"])
         return
 
+    # A prior deploy attempt got as far as creating this table (with a
+    # single-column PRIMARY KEY (id)) before TimescaleDB's create_hypertable
+    # rejected it — a hypertable requires every unique index, including the
+    # primary key, to include the partitioning column. The table has no
+    # real data yet (telemetry persistence is new in this same change), so
+    # dropping and recreating with the correct composite key is simpler and
+    # safer than an in-place ALTER, and makes this migration idempotent
+    # regardless of which partial state a previous attempt left behind.
+    op.execute("DROP TABLE IF EXISTS vehicle_positions")
+    op.execute("""
+        CREATE TABLE vehicle_positions (
+            id SERIAL,
+            matatu_id VARCHAR NOT NULL REFERENCES matatus (id),
+            lat FLOAT NOT NULL,
+            lng FLOAT NOT NULL,
+            speed FLOAT,
+            heading FLOAT,
+            source VARCHAR DEFAULT 'CREW_GPS',
+            recorded_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            PRIMARY KEY (id, recorded_at)
+        )
+    """)
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_vehicle_positions_matatu_recorded "
+        "ON vehicle_positions (matatu_id, recorded_at)"
+    )
+
     # Same defensive pattern as the enable_postgis migration: TimescaleDB
     # availability on this Postgres plan is unconfirmed, and
     # docker-entrypoint.sh runs migrations with `set -e` — a hard failure
-    # here would crash-loop the whole deploy. Catch, log, move on; the
-    # table above works fine as a plain indexed table either way.
+    # here would crash-loop the whole deploy. autocommit_block() also
+    # isolates each attempt in its own auto-committing mini-transaction, so
+    # a failure can't poison the migration's main transaction and block the
+    # final alembic_version update the way the plain try/except version did
+    # (observed in practice: create_hypertable failed, and the subsequent
+    # UPDATE alembic_version failed too with "current transaction is
+    # aborted" because the failed statement was never rolled back).
     try:
         with op.get_context().autocommit_block():
             op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
@@ -81,15 +87,12 @@ def upgrade() -> None:
               f"Postgres plan).")
         return
 
-    # create_hypertable() requires the target table to have no data yet and
-    # errors if the extension setup above didn't actually succeed — wrapped
-    # separately so a failure here doesn't mask whether the extension itself
-    # loaded.
     try:
-        op.execute(
-            "SELECT create_hypertable('vehicle_positions', 'recorded_at', "
-            "if_not_exists => TRUE, migrate_data => TRUE)"
-        )
+        with op.get_context().autocommit_block():
+            op.execute(
+                "SELECT create_hypertable('vehicle_positions', 'recorded_at', "
+                "if_not_exists => TRUE, migrate_data => TRUE)"
+            )
         print("vehicle_positions converted to a TimescaleDB hypertable.")
     except Exception as e:
         print(f"WARNING: could not convert vehicle_positions to a hypertable ({e}).")
