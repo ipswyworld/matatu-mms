@@ -1,7 +1,7 @@
 import hmac
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,7 @@ from app.models import Fine
 from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.config import NAIROBIPAY_CALLBACK_SECRET
+from app.rate_limit import limiter
 
 logger = logging.getLogger("app.routes.payments")
 router = APIRouter(prefix="/api/payments", tags=["NairobiPay Payments Integration"])
@@ -26,7 +27,9 @@ class NairobiPayCallbackPayload(BaseModel):
     payer_name: str
 
 @router.post("/nairobipay-callback/{callback_token}")
+@limiter.limit("60/minute")
 async def nairobipay_payment_callback(
+    request: Request,
     callback_token: str,
     payload: NairobiPayCallbackPayload,
     db: AsyncSession = Depends(get_db)
@@ -42,6 +45,11 @@ async def nairobipay_payment_callback(
     the actual authentication here. Register the callback URL with this
     exact token in its path; anyone else gets a 404 indistinguishable from a
     wrong URL, not a fine marked paid.
+
+    Rate limit is deliberately generous (60/min per IP) — this endpoint is
+    called by NairobiPay's own servers, not end users, so the limit exists
+    to bound worst-case abuse if the token ever leaked, not to throttle
+    normal payment traffic.
     """
     if not hmac.compare_digest(callback_token, NAIROBIPAY_CALLBACK_SECRET):
         logger.warning("Rejected NairobiPay callback with an invalid callback token.")

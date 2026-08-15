@@ -13,6 +13,7 @@ from app.models import User
 from app.schemas import UserLogin, Token, UserResponse, UserCreate, ForgotPasswordRequest, ResetPasswordRequest
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION
+from app.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 RESET_TOKEN_TTL_MINUTES = 30
@@ -20,7 +21,8 @@ RESET_TOKEN_TTL_MINUTES = 30
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 @router.post("/login", response_model=Token)
-async def login(response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalars().first()
     
@@ -66,7 +68,8 @@ async def login(response: Response, credentials: UserLogin, db: AsyncSession = D
 SELF_REGISTRATION_ALLOWED_ROLES = {"PASSENGER"}
 
 @router.post("/register", response_model=Token)
-async def register(credentials: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, credentials: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
     # Only Passengers self-register here. Crew accounts are issued by the
     # operator when they onboard a vehicle (see saccos.py's crew-assignment
     # endpoint) — a driver/conductor never creates their own login. Staff
@@ -173,7 +176,8 @@ async def register(credentials: UserCreate, response: Response, db: AsyncSession
     )
 
 @router.post("/forgot-password")
-async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     # Always returns the same generic message regardless of whether the email
     # exists, so this endpoint can't be used to enumerate registered accounts.
     result = await db.execute(select(User).where(User.email == payload.email.lower().strip()))
@@ -195,7 +199,8 @@ async def forgot_password(payload: ForgotPasswordRequest, db: AsyncSession = Dep
     return {"message": "If that email is registered, a password reset link has been sent."}
 
 @router.post("/reset-password")
-async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def reset_password(request: Request, payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(payload.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 

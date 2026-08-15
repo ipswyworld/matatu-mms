@@ -1,7 +1,7 @@
 import datetime
 import random
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -13,6 +13,7 @@ from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.abac import enforce_own_record, enforce_own_sacco, sacco_scope_query, is_own_record
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/bookings", tags=["Passenger Bookings"])
 
@@ -145,7 +146,9 @@ async def update_booking_status(
     return _to_response(booking)
 
 @router.post("", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")
 async def create_booking(
+    request: Request,
     payload: BookingCreate,
     current_user: User = Depends(requires_permission("book_ticket")),
     db: AsyncSession = Depends(get_db),

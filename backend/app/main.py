@@ -8,11 +8,16 @@ import logging
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 from app.database import engine, Base, AsyncSessionLocal, IS_SQLITE
 from app.listeners import register_listeners
 from app.seed import seed_data
 from app.logging_config import configure_logging
 from app.config import SENTRY_DSN
+from app.rate_limit import limiter
 
 # Error tracking — inert with no config required. Without SENTRY_DSN set,
 # this is a no-op (no network calls, no overhead); set it in the environment
@@ -112,6 +117,14 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Rate limiting — per-client-IP, Redis-backed so limits hold across replicas
+# (see app/rate_limit.py). Individual limits are applied per-route via
+# @limiter.limit(...) on the endpoints that need it (auth, booking,
+# NairobiPay callback) rather than one blanket limit for the whole API.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Configure CORS for Next.js frontend communication. Extra origins (e.g. a
 # deployed frontend URL) come from CORS_ORIGINS as a comma-separated list —
