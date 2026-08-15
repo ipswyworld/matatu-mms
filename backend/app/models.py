@@ -89,7 +89,68 @@ class Route(Base):
     description = Column(String, nullable=True)
     fare_kes = Column(Numeric(12, 2), default=100.0)
 
+    # BRN digitization fields (ARCHITECTURE_DECISIONS.md §1.3, §8). `code`
+    # above is the pre-existing simple route identifier used throughout the
+    # app (route-1..4, used by Matatu.route_id) — these are additive, not a
+    # replacement, and default to NULL/false for all pre-existing routes.
+    #
+    # brn_serial: the report's own serial number (e.g. "2A") — explicitly
+    # provisional per report §5.3.4, so it's metadata, never a join key.
+    # base_route_id: for a variant like "2A", points at the parent route
+    # "2" — variants are first-class rows, not a naming convention.
+    # corridor: the arterial road grouping from the report's colour legend
+    # (Ngong Rd, Jogoo Rd, Thika Rd...) — grouping metadata, not identity.
+    brn_serial = Column(String, nullable=True, index=True)
+    base_route_id = Column(String, ForeignKey("routes.id"), nullable=True)
+    corridor = Column(String, nullable=True)
+    start_point = Column(String, nullable=True)
+    end_point = Column(String, nullable=True)
+
     matatus = relationship("Matatu", back_populates="route")
+    stage_links = relationship("RouteStage", back_populates="route", order_by="RouteStage.sequence")
+
+
+class Stage(Base):
+    """A boarding point along the BRN network — a stage or a terminus.
+    Replaces the frontend-only NAIROBI_STAGES constant (GisMap.tsx) with
+    real, queryable data. lat/lng are plain floats rather than a PostGIS
+    geography type deliberately — PostGIS availability on the deployed
+    Postgres plan is unconfirmed (see the enable-postgis migration), and
+    stage data + map rendering must not hard-depend on that resolving.
+    `geocoded` distinguishes a real surveyed/confirmed coordinate from a
+    placeholder — never fabricate false-precision GPS for a name we're not
+    confident about; leave lat/lng null and geocoded false instead.
+    """
+    __tablename__ = "stages"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    code = Column(String, nullable=True)
+    stage_type = Column(String, default="STAGE")  # STAGE, TERMINUS
+    zone = Column(String, nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    geocoded = Column(Boolean, default=False)
+
+    route_links = relationship("RouteStage", back_populates="stage")
+
+
+class RouteStage(Base):
+    """One stage's position in one route's sequence, in one direction.
+    Directions are asymmetric in the BRN report (Table 5's separate
+    "Routing on Return Journey Thro CBD" column proves inbound != outbound)
+    — modelled explicitly rather than assuming a route mirrors itself.
+    """
+    __tablename__ = "route_stages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    sequence = Column(Integer, nullable=False)
+    direction = Column(String, nullable=False)  # OUTBOUND, RETURN
+
+    route = relationship("Route", back_populates="stage_links", foreign_keys=[route_id])
+    stage = relationship("Stage", back_populates="route_links")
 
 class Matatu(Base):
     __tablename__ = "matatus"

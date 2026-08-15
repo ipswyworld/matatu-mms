@@ -1,8 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType
+from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage
 from app.auth import get_password_hash
+from app.brn_data import STAGE_COORDS, ROUTES as BRN_ROUTES
 import datetime
+import re
 
 
 def _dt(s: str) -> datetime.datetime:
@@ -20,7 +22,87 @@ def _date(s: str) -> datetime.date:
     Fine.due_date column (a calendar date, not a moment in time)."""
     return datetime.date.fromisoformat(s)
 
+def _slug(name: str) -> str:
+    """Stage id from a stage name: lowercase, non-alnum runs collapsed to
+    a single hyphen. Shared landmark names (e.g. "GPO") recur across many
+    routes' stage lists, so this must be deterministic — the same name
+    always yields the same id, which is how re-used stages get deduped."""
+    s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return f"stage-{s}"
+
+
+async def seed_brn_data(db: AsyncSession):
+    """Loads the digitized BRN routes/stages from app/brn_data.py. Runs
+    independently of seed_data()'s "already seeded" guard and of its own
+    accord is idempotent (checked via the stages table), so it's safe to
+    call on every startup and to extend brn_data.py incrementally without
+    needing a fresh database each time."""
+    existing = await db.execute(select(Stage))
+    if existing.scalars().first():
+        return  # Already seeded
+
+    stage_ids: dict[str, str] = {}
+
+    def get_or_create_stage(name: str) -> str:
+        stage_id = _slug(name)
+        if stage_id in stage_ids:
+            return stage_id
+        coords = STAGE_COORDS.get(name)
+        db.add(Stage(
+            id=stage_id,
+            name=name,
+            stage_type="TERMINUS" if name in (
+                r["start"] for r in BRN_ROUTES
+            ) or name in (r["end"] for r in BRN_ROUTES) else "STAGE",
+            lat=coords[0] if coords else None,
+            lng=coords[1] if coords else None,
+            geocoded=coords is not None,
+        ))
+        stage_ids[stage_id] = stage_id
+        return stage_id
+
+    route_ids: dict[str, str] = {}
+    for r in BRN_ROUTES:
+        route_id = f"brn-route-{r['brn_serial']}"
+        route_ids[r["brn_serial"]] = route_id
+        db.add(Route(
+            id=route_id,
+            code=f"BRN-{r['brn_serial']}",
+            name=f"{r['start']} - {r['end']}",
+            description=f"BRN {r['brn_serial']}: {r['start']} to {r['end']}",
+            fare_kes=100.0,
+            brn_serial=r["brn_serial"],
+            corridor=r["corridor"],
+            start_point=r["start"],
+            end_point=r["end"],
+        ))
+
+    # Second pass: link lettered variants (e.g. "2A") to their base route
+    # ("2"), now that every route_id exists.
+    for r in BRN_ROUTES:
+        base_serial = re.match(r"^(\d+)", r["brn_serial"]).group(1)
+        if base_serial != r["brn_serial"] and base_serial in route_ids:
+            route = await db.get(Route, route_ids[r["brn_serial"]])
+            route.base_route_id = route_ids[base_serial]
+
+    for r in BRN_ROUTES:
+        route_id = route_ids[r["brn_serial"]]
+        for direction, stage_names in (("OUTBOUND", r["outbound"]), ("RETURN", r["return"])):
+            for sequence, name in enumerate(stage_names, start=1):
+                stage_id = get_or_create_stage(name)
+                db.add(RouteStage(
+                    route_id=route_id,
+                    stage_id=stage_id,
+                    sequence=sequence,
+                    direction=direction,
+                ))
+
+    await db.commit()
+
+
 async def seed_data(db: AsyncSession):
+    await seed_brn_data(db)
+
     # Check if data already exists
     sacco_check = await db.execute(select(Sacco))
     if sacco_check.scalars().first():
