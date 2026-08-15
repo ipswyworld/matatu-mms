@@ -1579,7 +1579,234 @@ admin side consumes.
 
 ---
 
-## 28. Current gaps summary
+## 28. Split public and staff front doors (confirmed decision)
+
+**Decision:** the app stays one deployable unit — no separate applications per role
+(reaffirms §2.1's modular-monolith stance, extended to the frontend). What changes is the
+**entry point**: two distinct login/landing surfaces instead of one shared page, so the
+public never lands on a page framed around "county-issued credentials," and the county
+staff portal never carries citizen-registration links.
+
+### 28.1 Why this is not the same question as "separate apps per role"
+
+Two different decisions were being conflated:
+
+1. *"Should each role see a tailored experience?"* — already solved correctly, and not what
+   this section is about. Role-based routing (`middleware.ts`), RBAC-scoped data fetching,
+   and the role-based dashboard templates (§25.2) already give each role its own view
+   within one app.
+2. *"Should the public be able to reach the internal side?"* — this is a front-door/IA
+   question, answered below.
+
+### 28.2 The security boundary already holds — verified, not assumed
+
+Audited `middleware.ts` directly. Every request is checked against an HMAC-signed session
+cookie (`verifyAndExtractPayload`) before any role is trusted — a forged cookie fails
+verification identically to no session at all. Confirmed hard confinements already in
+place:
+
+- `PASSENGER` → forced onto `/passenger-portal` only.
+- `CREW` → forced onto `/crew-portal` only.
+- `/users`, `/audit-logs` → Admin/Superadmin tier only.
+- `/system` → Superadmin only.
+- `DIRECTOR_MOBILITY` / `CHIEF_OFFICER` → confined to `/saccos/verify` (+ `/dashboard`).
+
+**So a passenger cannot reach internal pages today, even by typing the URL directly.** This
+was not a gap. The gap is presentational.
+
+### 28.3 The actual gap — there is no public front door
+
+`app/page.tsx` currently does nothing but `redirect("/dashboard")`, which (unauthenticated)
+bounces straight to `/login`. **`/login` is the front door for everyone** — a passenger
+wanting to book a seat lands on the same page as a county admin, and that page's own copy
+already straddles both audiences: *"Use your county-issued credentials to continue"*
+sitting directly above *"Register as Commuter or Matatu Crew"* and *"Operator? Start
+Onboarding."*
+
+### 28.4 The fix — two entry pages, one app, one backend
+
+No new services, no new infrastructure, no change to the Render deployment shape (§13, §14).
+Purely a routing/IA split within the existing Next.js app:
+
+- **`/` becomes the public portal** — county branding, "Book a ride," "Register your Sacco,"
+  "Sign up as Crew," the marketing copy currently stranded on `/login`, and a sign-in form
+  for the public-facing roles. A small, deliberately low-emphasis link to the staff portal.
+- **`/login` narrows to Staff Sign In** — keeps the "county-issued credentials" framing
+  (accurate there), drops the Register/Operator-onboarding links, and gets a small link back
+  to the public portal for anyone who lands there by mistake.
+- Middleware's post-login redirect logic (`defaultHomeFor` and friends) needs no change —
+  it already sends each role to the correct destination regardless of which page collected
+  the credentials.
+
+### 28.5 Front-door assignment by role
+
+| Public portal (`/`) | Staff portal (`/login`) |
+|---|---|
+| Passenger | Admin / Superadmin |
+| Crew | Enforcement (all 4 sub-roles) |
+| Sacco Operator | Director of Mobility / Chief Officer |
+| | Viewer |
+
+**Operators sit on the public side deliberately.** They are an external business, not
+county staff — discovery and onboarding are public-facing. This does not change anything
+about their post-login experience: `/sacco-portal` stays exactly as dense and operational
+as it is today. The split is about the door, not what's behind it.
+
+### 28.6 One security detail to get right during implementation
+
+Middleware's `PUBLIC_PATHS` allowlist checks membership via `pathname.startsWith(p)`.
+**`"/"` must never be added to that array** — since every path starts with `"/"`, doing so
+would silently mark the entire application as public and disable auth enforcement
+everywhere. Root must be handled as a separate **exact-match** (`pathname === "/"`) case,
+not folded into the prefix-matched list.
+
+A reasonable accompanying improvement: if an already-authenticated user hits `/`, redirect
+them to their role's home (reusing/extending the existing `defaultHomeFor` logic to cover
+`PASSENGER`/`CREW`/`SACCO_OPERATOR`/`DIRECTOR_MOBILITY`/`CHIEF_OFFICER`, which it doesn't
+today) rather than showing the marketing page to someone already signed in.
+
+### 28.7 Status
+
+Decision confirmed; **not yet implemented**. Build order: i18n copy for the new public
+heading/subheading/tagline → extract a shared `LoginForm` + `DemoAccountsList` (the current
+`/login` page duplicates markup that both pages will need) → build the new `/` page → trim
+`/login` → update `middleware.ts` per §28.6 → verify in a live browser (login as a public
+role and a staff role, confirm each lands in the right place, confirm root redirects an
+authenticated session correctly).
+
+---
+
+## 29. Additional confirmed decisions and refinements (2026-08-15)
+
+A batch of decisions and clarifications on top of the plan above. Each cross-referenced
+against existing sections and, where relevant, against what the code actually does today.
+
+### 29.1 Crew accounts: no self-registration — operator-issued only
+
+**Confirmed decision, changes a previously-assumed flow.** Matatu Crew (driver/conductor)
+no longer self-register via `/register`. Instead: an operator onboards a vehicle, assigns
+crew to it, and the system issues that crew member login credentials (username/password) at
+that point. This is the operator's action, not the crew member's.
+
+**Register-link relocation is unaffected** — "New here? Register..." still moves from
+`/login` to the public portal (§28.4) exactly as planned. What changes is *what* that link
+offers: **Commuter only.** Crew is removed as a self-service registration option.
+
+**Two things need to change, not one:**
+
+1. **Frontend**: drop the Crew tab from `/register`'s role selector.
+2. **Backend, and this is the part that actually matters**: `POST /api/auth/register`
+   currently accepts `role=credentials.role` directly from the request body
+   (`auth.py:105`) with no server-side restriction. Removing the UI tab alone leaves the
+   endpoint still willing to create a `CREW` account for anyone who POSTs to it directly.
+   The endpoint must explicitly reject self-registration with `role=CREW` (and any
+   internal/staff role) going forward — this is a defense-in-depth fix, not just a UI change.
+
+**The real gap this surfaces: crew accounts cannot be tied to a vehicle today.**
+Audited the schema — `Matatu.driver_name/driver_license/driver_phone` and
+`conductor_name/conductor_license/conductor_phone` (used by `OnboardVehicleModal.tsx`) are
+**plain text fields**, not linked to real `User` records. `User` has no `matatu_id` or
+equivalent column at all. So "operator assigns crew to a vehicle and they get a login" is a
+genuine new feature, not a UI tweak:
+
+- Needs a real link between `User` (role `CREW`) and `Matatu`. A join table
+  (`CrewAssignment: user_id, matatu_id, assigned_at, ...`) fits better than a single FK
+  column on `User`, since a crew member plausibly moves between vehicles over time and a
+  single FK can't represent history.
+- Needs a credential-issuance flow inside the operator dashboard (likely modeled on the
+  existing Admin → `NewUserForm`/`EditUserModal` pattern, scoped down: operator can create
+  only `CREW` accounts, only within their own sacco, only attached to their own vehicles).
+- Add to §21's schema-correction list — this is the same category of "fix before it's
+  expensive to migrate" as the `Float`/`String` issues already documented there.
+
+### 29.2 Fare charts: "full detailing" means a fare-stage model, not a flat number
+
+Sharpens §1.4, doesn't replace it. The requirement that operators upload a fare chart "with
+full detailing" exposes a real schema gap: `Route.fare_kes` is a single flat number per
+route, but real matatu fares vary by distance/stage, not by route alone.
+
+**Implication:** the structured fare-chart parsing already planned in §1.4 needs to land as
+a **fare-stage table** — fare between stage pairs (or distance bands) within a route — not
+one number per route. `Booking.fare_kes` and `Route.fare_kes` as they exist today are a
+placeholder shape, not the target one. This also directly affects §27.1's "upfront fixed
+fare" passenger feature — the fare shown before booking needs to be computed from the
+passenger's actual boarding/alighting stage pair, not a single per-route constant.
+
+### 29.3 Dashboard KPI cards must be interactive — confirmed, and cheaper than expected
+
+Confirmed requirement: the KPI tiles on the admin dashboard (`Registered vehicles`, `Fleet
+compliance`, `Outstanding fines`, and the operator-view `Passenger complaints`) must be
+clickable through to relevant stats/detail, not static numbers.
+
+**Checked the code — the mechanism already exists and is half-wired.** `KpiCard.tsx`
+already supports an `href` prop and renders an "Open →" affordance when one is passed; only
+**one of four cards** (`Awaiting your approval` → `/saccos/verify`) actually uses it today.
+The other three render with no link at all.
+
+Two tiers, worth building in this order:
+
+1. **Immediate, cheap**: wire the missing `href`s to their obviously-relevant existing pages
+   — Registered vehicles → `/matatus`, Outstanding fines → `/revenue`, Fleet compliance →
+   `/matatus` (compliance-focused view), Passenger complaints → `/passengers`. Near-zero
+   effort, satisfies "has functionality" today.
+2. **What was actually asked for** ("show stats or graphs for that topic") is the fuller
+   drill-down principle already written into §24.3 (item 18) and §25.4 ("click drills
+   down") — this confirms that as a hard requirement with concrete first targets, rather
+   than the general aspiration it was before. Full realization depends on the widget
+   library (§25.1) and aggregation layer (§23.3).
+
+### 29.4 Route-deviation alerts + same-route alternate-road recommendation
+
+New feature, and worth being precise about what it is *not*: **this is not route variants.**
+Routes 2, 2A, 18A etc. (§1.3) are separate, permanently-numbered official routes in the BRN
+plan. What's being asked for here is a **temporary detour within one route's identity** —
+same route, a different road for a stretch, because of a live incident. These need distinct
+representations in the data model; conflating them would corrupt the official route registry
+with ad-hoc detour noise.
+
+Three components, two of which are already planned elsewhere:
+
+- **Deviation detection ("alert if straying")** — already scoped in §1.6: a buffered
+  polygon per route in PostGIS, alert if a position sits outside it past a tolerance window.
+  This request confirms it as required, not new work.
+- **Incident awareness** — new. Use **TomTom's Traffic Incidents API** (already integrated
+  for maps/routing, §9.2) as the source rather than building incident detection in-house.
+- **Alternate-road recommendation, constrained to the same route** — new, and needs each
+  route to optionally carry pre-approved alternate path segments for known incident-prone
+  stretches. Deliberately **not** general-purpose rerouting — only pre-approved detours,
+  since these are regulated public transit corridors, not turn-by-turn car navigation.
+
+**Recommendation on "algorithm or ML": rule-based for v1, no ML.** Pull TomTom incidents
+along the route corridor; if one intersects a stretch with a predefined alternate segment,
+surface it. Separately, flag when a position exits the route's buffered polygon. Fully
+explainable and testable — for a government safety feature, "why did the system tell this
+driver to divert here" needs a concrete answer, not a black-box inference. ML becomes worth
+its cost later for *predictive* rerouting from historical incident patterns, not for a first
+version.
+
+### 29.5 Passenger booking as "airplane search" — refines §27.1, not a new feature
+
+Sharpens the O→D search UX rather than adding scope: results should read like a flight
+search — route/operator as the comparable line item (like a "carrier"), with fare, ETA, and
+seats available shown side by side for the same origin-destination pair.
+
+**Already partly built.** Live-checked the deployed passenger portal directly — it already
+shows a boarding-stage picker, a route filter, and a results list of available vehicles with
+operator, fare, and seat count (e.g. *"KDA 112B · Route 111 · CBD-Rongai · KES 100/seat"*).
+That list is structurally already "search results." What's missing is true **origin AND
+destination** search — today a passenger picks where they're *boarding*; there's no "tell
+me where I'm going and show every route/operator that gets me there" yet. That gap is
+exactly what §27.1 already flagged as depending on route/stage digitization + PostGIS — this
+item sharpens the target UX, it doesn't change the dependency chain.
+
+### 29.6 Confirmed, no change needed
+
+- **Modular monolith over microservices** — already the decision on record (§2). This is
+  reaffirmation, not new information.
+
+---
+
+## 30. Current gaps summary
 
 | Gap | Status | Ref |
 |---|---|---|
@@ -1635,6 +1862,14 @@ admin side consumes.
 | Upfront fixed fare display | **None** — depends on structured fare charts | §27.1 |
 | Passenger live tracking / ETA | **None** — depends on telemetry + internal ETA | §27.1 |
 | Demand intelligence (OD / boarding heatmaps) | **None** — the planning-data payoff | §27.3 |
+| Public vs. staff front-door split | **Decided, not built** — `/` still redirects to `/dashboard`; one shared `/login` serves everyone | §28 |
+| Crew ↔ vehicle linkage | **None** — driver/conductor are plain text fields on `Matatu`, no linked `User`/`CrewAssignment` | §29.1 |
+| Server-side block on self-registering as CREW/staff | **None** — `role` accepted directly from request body | §29.1 |
+| Fare-stage model (per-segment fares) | **None** — `Route.fare_kes` is a single flat number | §29.2 |
+| Dashboard KPI card links | **Partial** — 1 of 4 cards wired; mechanism (`KpiCard href`) already exists | §29.3 |
+| Route-deviation alerts | **None** — depends on PostGIS (§1.2, §1.6) | §29.4 |
+| Incident-aware alternate-road recommendation | **None** — depends on TomTom Traffic Incidents API + alternate-segment route model | §29.4 |
+| Passenger true origin+destination search | **None** — current flow is boarding-stage-only | §29.5 |
 
 Already present: circuit breaker + retry, Redis, asyncpg, Alembic, Sentry, Prometheus +
 Alertmanager + Grafana, JSON structured logging, ABAC policy layer, audit logging,
@@ -1642,13 +1877,16 @@ Alertmanager + Grafana, JSON structured logging, ABAC policy layer, audit loggin
 
 ---
 
-## 29. Suggested sequencing
+## 31. Suggested sequencing
 
 Ordered by dependency, not by appeal:
 
 0. **Fix the confirmed bugs first** (§15) — email normalisation, the registration race, and
    the `innerHTML` XSS. These are live defects, not architecture, and the XSS is
    operator-triggerable today.
+0b. **Public/staff front-door split** (§28) — cheap (routing + copy, no new infra), and every
+   day it's deferred is another day the public-facing entry point carries "county-issued
+   credentials" framing. Good candidate to bundle with step 0.
 1. **Unblock scaling** — set `SECRET_KEY` and `NAIROBIPAY_CALLBACK_SECRET` explicitly
    (§5.1). Add rate limiting (§6). Cheap, and everything else assumes them.
 1b. **Pagination and composite indexes** (§16.1–16.2) — the first hard performance wall,
@@ -1656,10 +1894,25 @@ Ordered by dependency, not by appeal:
 1c. **Schema type corrections** (§21) — money to `Numeric`, timestamps to `DateTime`. Do
    these before real financial data exists, and note that §21.2 is a hard prerequisite for
    step 3's TimescaleDB work.
+1d. **Crew self-registration lockdown** (§29.1) — block `role=CREW` server-side at
+   `/api/auth/register` and drop the Crew tab from `/register`. Cheap, and closes an open
+   privilege-escalation-shaped gap (anyone can currently self-register as Crew) before the
+   operator-issued-credentials flow replaces it.
+1e. **Wire the existing KPI card links** (§29.3, tier 1) — the `href` mechanism already
+   exists in `KpiCard`; this is a few lines, not a feature build.
 2. **Confirm the IRMS contract** (§9.1) — update frequency and availability determine what
    the tracking product can truthfully offer. Establish before building on it.
-3. **Data layer** — PostGIS, then TimescaleDB, then PgBouncer (§3). Route extraction and
-   adherence monitoring both depend on PostGIS.
+3. **Data layer** — PostGIS, then TimescaleDB, then PgBouncer (§3). Route extraction,
+   adherence monitoring, and the deviation-alert/alternate-route feature (§29.4) all depend
+   on PostGIS.
+3b. **Crew ↔ vehicle linkage + operator-issued credentials** (§29.1) — new
+   `CrewAssignment` join table, plus the credential-issuance UI inside the operator
+   dashboard (mirroring the existing Admin `NewUserForm`/`EditUserModal` pattern, scoped to
+   one sacco). Natural to build alongside the fare-stage model (§29.2), since both are
+   operator-onboarding-flow work.
+3c. **Fare-stage model** (§29.2) — replaces the flat `Route.fare_kes`/`Booking.fare_kes`
+   with real per-segment fares. Blocks §27.1's "upfront fixed fare" passenger feature from
+   being accurate rather than a placeholder number.
 4. **CI hardening** — Postgres/PostGIS integration job and migration checks (§14.2–14.3),
    before there is production data to endanger.
 5. **Durable events + task queue** (§4) — closes the silent data-loss path.
