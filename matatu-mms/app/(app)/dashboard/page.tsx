@@ -93,7 +93,7 @@ export default async function DashboardPage() {
     getActivity(),
     getSaccos(),
     getRoutes(),
-    can(session.role, "manage_users") ? getAuditLogs() : Promise.resolve([]),
+    can(session.role, "manage_users") ? getAuditLogs(12) : Promise.resolve([]),
     can(session.role, "view_reports") ? getReports() : Promise.resolve([]),
     getMyBookings(),
     getFleetTelemetry(),
@@ -201,7 +201,7 @@ export default async function DashboardPage() {
         </div>
 
         <ActivityFeed
-          auditLogs={auditLogs.slice(0, 12)}
+          auditLogs={auditLogs}
           reports={reports.slice(0, 4)}
           activity={allActivity.slice().sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 6)}
           isVisible={can(session.role, "manage_users")}

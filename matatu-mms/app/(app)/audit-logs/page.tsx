@@ -17,11 +17,18 @@ export default async function AuditLogsPage() {
     redirect("/dashboard");
   }
 
+  // Keyset-paginated on the backend (most recent first, id-cursored — see
+  // GET /api/audit-logs) rather than the full table. This page doesn't yet
+  // have a "load more" control, so it shows the most recent 500 with a
+  // note when the trail is longer than that, rather than silently
+  // truncating with no indication.
+  const AUDIT_LOG_PAGE_SIZE = 500;
   const [logs, users, matatus] = await Promise.all([
-    getAuditLogs(),
+    getAuditLogs(AUDIT_LOG_PAGE_SIZE),
     getUsers(),
     getMatatus(),
   ]);
+  const truncated = logs.length === AUDIT_LOG_PAGE_SIZE;
 
   const userMap = new Map(users.map((u) => [u.id, u.name]));
   const matatuMap = new Map(matatus.map((m) => [m.id, m]));
@@ -43,7 +50,11 @@ export default async function AuditLogsPage() {
       <PageBanner
         eyebrow="Nairobi City County · System Audit"
         title="Audit Trail"
-        subtitle={`${logs.length} system audit trail record${logs.length !== 1 ? "s" : ""} — every status change and creation across the platform.`}
+        subtitle={
+          truncated
+            ? `Showing the most recent ${AUDIT_LOG_PAGE_SIZE} audit trail records — the full history is longer. Use the API's before_id cursor to page further back.`
+            : `${logs.length} system audit trail record${logs.length !== 1 ? "s" : ""} — every status change and creation across the platform.`
+        }
       />
 
       <AuditLogTable rows={rows} />

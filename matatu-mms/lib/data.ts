@@ -81,8 +81,9 @@ export async function getMatatuById(id: string): Promise<Matatu | undefined> {
   return apiFetch<Matatu>(`/api/matatus/${id}`);
 }
 
-export async function getActivity(): Promise<ActivityLog[]> {
-  return apiFetch<ActivityLog[]>("/api/activity");
+// Backend defaults to the most recent 200 records, not the whole table.
+export async function getActivity(limit?: number): Promise<ActivityLog[]> {
+  return apiFetch<ActivityLog[]>(limit !== undefined ? `/api/activity?limit=${limit}` : "/api/activity");
 }
 
 export async function getActivityForMatatu(matatuId: string): Promise<ActivityLog[]> {
@@ -99,8 +100,18 @@ export async function getFinesForMatatu(matatuId: string): Promise<Fine[]> {
   return matatu?.fines || [];
 }
 
-export async function getAuditLogs(): Promise<AuditLog[]> {
-  return apiFetch<AuditLog[]>("/api/audit-logs");
+// The backend defaults to the most recent 100 records (keyset-paginated,
+// not the whole table) — pass `limit` explicitly for callers that need a
+// different page size. beforeId continues further back using the last
+// returned record's id as the cursor.
+export async function getAuditLogs(limit?: number, beforeId?: number): Promise<AuditLog[]> {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set("limit", String(limit));
+  // Backend Query() params (unlike Pydantic body models) aren't camelCase-
+  // aliased, so this has to match the Python parameter name exactly.
+  if (beforeId !== undefined) params.set("before_id", String(beforeId));
+  const qs = params.toString();
+  return apiFetch<AuditLog[]>(`/api/audit-logs${qs ? `?${qs}` : ""}`);
 }
 
 export async function getSystemHealth(): Promise<SystemHealth> {

@@ -1,7 +1,7 @@
 import datetime
 import random
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -16,12 +16,19 @@ router = APIRouter(prefix="/api/activity", tags=["Activity Logs"])
 
 @router.get("", response_model=List[ActivityLogResponse])
 async def get_activities(
+    limit: int = Query(200, ge=1, le=1000),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    # Bounded, most-recent-first. ActivityLog.timestamp is still a String
+    # column (see ARCHITECTURE_DECISIONS.md §21.2 — that migration is a
+    # separate tracked task), so this is a limit cap rather than a full
+    # keyset cursor for now; id isn't a real auto-incrementing key here
+    # either (unlike AuditLog), so it can't be used as one until that
+    # column-type work lands.
     query = select(ActivityLog).join(Matatu, ActivityLog.matatu_id == Matatu.id)
     query = sacco_scope_query(current_user, query, Matatu.sacco_id)
-    query = query.order_by(ActivityLog.timestamp.desc())
+    query = query.order_by(ActivityLog.timestamp.desc()).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
