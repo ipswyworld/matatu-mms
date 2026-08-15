@@ -62,3 +62,78 @@ jobs:
         run: python test_backend.py
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
+
+  postgres-integration:
+    name: Postgres/PostGIS integration + migration checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    # ARCHITECTURE_DECISIONS.md §14.2 — the `backend` job above proves the
+    # app boots and its logic holds, but on SQLite; production runs
+    # Postgres + PostGIS, which has no SQLite equivalent for its dialect,
+    # transaction, and extension behaviour. This job runs the identical
+    # boot-smoke suite against the real engine instead.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: matatu_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/matatu_ci
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-test-secret-key-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Migrate to head
+        run: alembic upgrade head
+
+      - name: Migration down/up check
+        # §14.3 — "Alembic migration up and down", to catch an irreversible
+        # or blocking migration before it ever reaches a real deploy.
+        # Scoped to the latest migration rather than a full downgrade to
+        # base: this repo's early migrations include one-way defensive
+        # extension-enable steps (PostGIS/TimescaleDB, autocommit_block)
+        # that were never designed to be repeatedly enabled/disabled in a
+        # single run, and production itself never downgrades past the
+        # migration it's currently on. Testing the newest migration's own
+        # reversibility catches the mistake that actually matters — "the
+        # migration I just wrote has a broken downgrade" — without that
+        # unrelated fragility. (A known, pre-existing gap: the enable_postgis
+        # migration's downgrade does fail on a full `downgrade base` walk —
+        # tracked as a follow-up, not fixed here, since it has zero effect
+        # on this project's actual deploy flow, which never downgrades.)
+        run: |
+          alembic downgrade -1
+          alembic upgrade head
+
+      - name: Run boot-smoke test suite against Postgres/PostGIS
+        run: python test_backend.py

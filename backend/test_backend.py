@@ -6,13 +6,18 @@ import httpx
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select
 
-# Set environment variables for testing before imports
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_mms.db"
+# Set environment variables for testing before imports. Defaults to the
+# throwaway SQLite DB (no services needed) but respects a pre-set
+# DATABASE_URL — the Postgres/PostGIS CI integration job (ARCHITECTURE_
+# DECISIONS.md §14.2) exports a real Postgres service-container URL before
+# invoking this script, exercising the exact same boot-smoke suite against
+# the engine actually deployed, not just SQLite.
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_mms.db")
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["WEBHOOK_MAX_RETRIES"] = "1"
 
 from app.main import app
-from app.database import Base, engine, get_db
+from app.database import Base, engine, get_db, IS_SQLITE
 from app.models import User, Matatu, Fine, AuditLog, WebhookSubscription, WebhookLog
 from app.auth import get_password_hash
 
@@ -20,17 +25,23 @@ from app.seed import seed_data
 from app.listeners import register_listeners
 
 async def setup_test_db():
-    # Remove existing test DB if any
-    if os.path.exists("./test_mms.db"):
-        os.remove("./test_mms.db")
-        
-    # Re-create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
+    if IS_SQLITE:
+        # Remove existing test DB if any
+        if os.path.exists("./test_mms.db"):
+            os.remove("./test_mms.db")
+        # Re-create tables directly — no Alembic involved for the SQLite
+        # dev/fast-path run.
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    # else: Postgres — the CI job runs `alembic upgrade head` against this
+    # same DATABASE_URL before invoking this script, so the schema already
+    # exists via the real migration chain (the whole point of this path:
+    # prove migrations work against Postgres/PostGIS, not just that the
+    # ORM models can build a schema from scratch).
+
     # Register listeners
     register_listeners()
-        
+
     # Seed data manually
     from app.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
@@ -38,7 +49,7 @@ async def setup_test_db():
 
 async def cleanup_test_db():
     await engine.dispose()
-    if os.path.exists("./test_mms.db"):
+    if IS_SQLITE and os.path.exists("./test_mms.db"):
         os.remove("./test_mms.db")
 
 async def run_tests():
