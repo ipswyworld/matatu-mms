@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 from typing import Any, Dict, List
@@ -9,8 +10,8 @@ from sqlalchemy.future import select
 
 from app.auth import get_current_user
 from app.config import ALGORITHM, SECRET_KEY
-from app.database import get_db
-from app.models import Matatu, User
+from app.database import get_db, AsyncSessionLocal
+from app.models import Matatu, User, VehiclePosition
 from app.realtime import ChannelBroadcaster, get_redis, publish
 
 logger = logging.getLogger("app.routes.telemetry")
@@ -47,6 +48,34 @@ async def update_vehicle(data: Dict[str, Any]) -> None:
     r = await get_redis()
     await r.set(f"{TELEMETRY_KEY_PREFIX}{matatu_id}", json.dumps(data, default=str), ex=STALE_AFTER_SECONDS)
     await publish(TELEMETRY_CHANNEL, {"type": "VEHICLE_POSITION_UPDATE", "vehicle": data})
+    await _persist_position(matatu_id, data)
+
+
+async def _persist_position(matatu_id: str, data: Dict[str, Any]) -> None:
+    """Durable GPS history, separate from the Redis "live position" key
+    above (which only exists for STALE_AFTER_SECONDS). No queue in front of
+    this yet (see ARCHITECTURE_DECISIONS.md §3/§13 — Redis Streams + ARQ is
+    still a later task), so this is a direct write on every telemetry
+    update; fine at current/demo traffic, a real backpressure concern only
+    once ingest volume grows. Best-effort: a write failure here must never
+    break the live map, which only depends on the Redis/broadcast path above.
+    """
+    lat, lng = data.get("lat"), data.get("lng")
+    if lat is None or lng is None:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(VehiclePosition(
+                matatu_id=matatu_id,
+                lat=float(lat),
+                lng=float(lng),
+                speed=data.get("speed"),
+                heading=data.get("bearing"),
+                recorded_at=datetime.datetime.now(datetime.timezone.utc),
+            ))
+            await db.commit()
+    except Exception:
+        logger.exception(f"Failed to persist GPS position for matatu {matatu_id}")
 
 
 @router.get("/matatus")

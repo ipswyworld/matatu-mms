@@ -234,6 +234,29 @@ class CrewAssignment(Base):
     matatu = relationship("Matatu", back_populates="crew_assignments")
 
 
+class VehiclePosition(Base):
+    """GPS history — durable counterpart to the Redis-only "live position"
+    key in app/routes/telemetry.py (which expires after STALE_AFTER_SECONDS
+    and was never persisted anywhere). Plain indexed Postgres table for now;
+    ARCHITECTURE_DECISIONS.md §3 calls for converting this to a TimescaleDB
+    hypertable (see the enable_timescaledb migration) once volume actually
+    requires it — a flat table works fine at current/demo scale and the
+    hypertable conversion is additive, not a rewrite.
+    """
+    __tablename__ = "vehicle_positions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    speed = Column(Float, nullable=True)
+    heading = Column(Float, nullable=True)
+    source = Column(String, default="CREW_GPS")  # CREW_GPS, IRMS (once §1.5 lands)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+
+    matatu = relationship("Matatu")
+
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
