@@ -50,12 +50,15 @@ services:
     healthCheckPath: /api/health
     envVars:
       # Server-side (Server Components/Actions) — read at request time, not
-      # baked into the client bundle, so a same-network service URL is fine.
+      # baked into the client bundle. `fromService: property: host` gives a
+      # bare hostname with no scheme (e.g. "matatu-mms-backend"), which
+      # Node's server-side fetch() cannot parse as a URL on its own — it
+      # needs an absolute URL. Using the public HTTPS URL directly sidesteps
+      # Render's internal-networking hostname format entirely and matches
+      # NEXT_PUBLIC_BACKEND_URL below, so there's one backend URL to keep in
+      # sync, not two different formats.
       - key: BACKEND_URL
-        fromService:
-          type: web
-          name: matatu-mms-backend
-          property: host
+        value: https://matatu-mms-backend.onrender.com
       # Client-side — NEXT_PUBLIC_* vars are inlined into the JS bundle at
       # `npm run build`. Render passes envVars to the Docker build as ARGs
       # when the Dockerfile declares a matching ARG name (already added to
