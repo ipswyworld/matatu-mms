@@ -56,7 +56,7 @@ async def create_activity(
         description=payload.description.strip(),
         location=payload.location.strip(),
         officer_id=current_user.id,
-        timestamp=datetime.datetime.utcnow().isoformat() + "Z"
+        timestamp=datetime.datetime.now(datetime.timezone.utc)
     )
     
     db.add(new_activity)

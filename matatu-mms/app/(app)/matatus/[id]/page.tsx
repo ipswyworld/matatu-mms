@@ -49,7 +49,7 @@ export default async function MatatuDetailPage({ params }: { params: { id: strin
             {saccoMap.get(matatu.saccoId)} · {routeMap.get(matatu.routeId)} · {matatu.capacity} seats
           </p>
           <p className="text-xs text-black/40 mt-1">
-            Registered {matatu.createdAt} · Segment: <span className="font-semibold text-black/70">{matatu.terminalSegment || "CBD Route Terminal Stage"}</span>
+            Registered {new Date(matatu.createdAt).toLocaleDateString()} · Segment: <span className="font-semibold text-black/70">{matatu.terminalSegment || "CBD Route Terminal Stage"}</span>
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -111,7 +111,7 @@ export default async function MatatuDetailPage({ params }: { params: { id: strin
                   <FineStatusPill status={f.status} />
                 </div>
                 <p className="mt-1">{f.reason}</p>
-                <p className="text-xs text-black/40">Issued {f.issuedAt} · Due {f.dueDate}</p>
+                <p className="text-xs text-black/40">Issued {new Date(f.issuedAt).toLocaleDateString()} · Due {f.dueDate}</p>
               </div>
             ))}
           </div>

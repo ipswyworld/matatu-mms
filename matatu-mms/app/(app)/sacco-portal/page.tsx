@@ -198,7 +198,7 @@ export default async function SaccoPortalPage() {
                       )}
                     </td>
                     <td className="p-2.5 text-black/50 font-mono">
-                      {m.createdAt}
+                      {new Date(m.createdAt).toLocaleDateString()}
                     </td>
                     <td className="p-2.5">
                       <RemoveMatatuButton matatuId={m.id} regNumber={m.regNumber} />

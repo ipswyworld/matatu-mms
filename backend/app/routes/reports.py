@@ -54,7 +54,7 @@ async def create_public_comment(
         reporter_phone=reporter_phone or None,
         photo_path=None,
         status="PENDING",
-        created_at=datetime.datetime.utcnow().isoformat() + "Z",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(new_report)
     await db.commit()
@@ -94,7 +94,7 @@ async def create_report(
         reporter_phone=reporter_phone,
         photo_path=photo_path,
         status="PENDING",
-        created_at=datetime.datetime.utcnow().isoformat() + "Z",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(new_report)
     await db.commit()
@@ -137,7 +137,7 @@ async def update_report_status(
             fine_amount_kes=0.0,
             remarks=report.message,
             officer_id=current_user.id,
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
             status="PENDING",
         ))
 

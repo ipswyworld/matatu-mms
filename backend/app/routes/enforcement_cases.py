@@ -182,7 +182,7 @@ async def public_pay_case(case_reference: str, db: AsyncSession = Depends(get_db
 
     case.status = "PAID"
     case.payment_reference = f"PAY-{uuid.uuid4().hex[:10].upper()}"
-    case.paid_at = datetime.datetime.utcnow().isoformat() + "Z"
+    case.paid_at = datetime.datetime.now(datetime.timezone.utc)
     stage_audit_log(
         db, resource_type="enforcement_case", resource_id=case.id, action="FINE_PAID",
         user_id="PUBLIC_PAYER", new_values={"paymentReference": case.payment_reference, "caseReference": case.case_reference},
@@ -263,7 +263,7 @@ async def create_case(
         photo_paths=json.dumps(photo_paths),
         zone_id=zone_id,
         arresting_officer_id=current_user.id,
-        created_at=datetime.datetime.utcnow().isoformat() + "Z",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
         status="ARRESTED",
     )
     db.add(new_case)
@@ -309,7 +309,7 @@ async def release_case(
 
     case.status = "RELEASED"
     case.releasing_officer_id = current_user.id
-    case.released_at = datetime.datetime.utcnow().isoformat() + "Z"
+    case.released_at = datetime.datetime.now(datetime.timezone.utc)
     stage_audit_log(
         db, resource_type="enforcement_case", resource_id=case.id, action="CASE_RELEASED",
         user_id=current_user.id, new_values={"caseReference": case.case_reference},
@@ -377,7 +377,7 @@ async def waive_case(
     case.waived_reason = payload.reason
     case.waived_authorized_by = payload.authorized_by
     case.releasing_officer_id = current_user.id
-    case.released_at = datetime.datetime.utcnow().isoformat() + "Z"
+    case.released_at = datetime.datetime.now(datetime.timezone.utc)
     stage_audit_log(
         db, resource_type="enforcement_case", resource_id=case.id, action="CASE_WAIVED",
         user_id=current_user.id,

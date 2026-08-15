@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, DateTime, Boolean, Text
+from sqlalchemy import Column, String, Integer, Float, Numeric, Date, ForeignKey, DateTime, Boolean, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -17,8 +17,8 @@ class Sacco(Base):
     # Objection before their Road Service License is accepted; EXISTING
     # Saccos already hold county history and skip that requirement.
     sacco_type = Column(String, default="EXISTING")  # NEW, EXISTING
-    created_at = Column(String, nullable=True)
-    application_submitted_at = Column(String, nullable=True)  # set once the operator finishes the onboarding wizard
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    application_submitted_at = Column(DateTime(timezone=True), nullable=True)  # set once the operator finishes the onboarding wizard
 
     # Mandatory Onboarding Verification Documents (file paths under /uploads,
     # served statically — see main.py's StaticFiles mount)
@@ -37,11 +37,11 @@ class Sacco(Base):
     director_mobility_status = Column(String, default="PENDING")  # PENDING, APPROVED, REJECTED
     director_mobility_reason = Column(Text, nullable=True)
     director_mobility_decided_by = Column(String, nullable=True)
-    director_mobility_decided_at = Column(String, nullable=True)
+    director_mobility_decided_at = Column(DateTime(timezone=True), nullable=True)
     chief_officer_status = Column(String, default="PENDING")  # PENDING, APPROVED, REJECTED
     chief_officer_reason = Column(Text, nullable=True)
     chief_officer_decided_by = Column(String, nullable=True)
-    chief_officer_decided_at = Column(String, nullable=True)
+    chief_officer_decided_at = Column(DateTime(timezone=True), nullable=True)
 
     users = relationship("User", back_populates="sacco")
     matatus = relationship("Matatu", back_populates="sacco")
@@ -61,7 +61,7 @@ class User(Base):
     # one; it exists so there's a persisted record of exactly what name the
     # person typed to agree, alongside when.
     terms_accepted = Column(Boolean, default=False)
-    terms_accepted_at = Column(String, nullable=True)
+    terms_accepted_at = Column(DateTime(timezone=True), nullable=True)
     terms_signature = Column(String, nullable=True)
     terms_version = Column(String, nullable=True)
 
@@ -75,7 +75,7 @@ class User(Base):
     # Self-service password reset — token is single-use and time-boxed;
     # cleared after a successful reset or once expired.
     reset_token = Column(String, nullable=True, index=True)
-    reset_token_expires_at = Column(String, nullable=True)
+    reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     sacco = relationship("Sacco", back_populates="users")
     assigned_zone = relationship("Zone")
@@ -87,7 +87,7 @@ class Route(Base):
     code = Column(String, nullable=False, unique=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    fare_kes = Column(Float, default=100.0)
+    fare_kes = Column(Numeric(12, 2), default=100.0)
 
     matatus = relationship("Matatu", back_populates="route")
 
@@ -102,7 +102,7 @@ class Matatu(Base):
     capacity = Column(Integer, nullable=False)
     status = Column(String, default="ACTIVE")  # REGISTRATION_PENDING, ACTIVE, FLAGGED, IMPOUNDED, DECOMMISSIONED
     last_inspection = Column(String, nullable=True)  # Legacy string
-    created_at = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
     driver_name = Column(String, nullable=True)
     driver_license = Column(String, nullable=True)
@@ -125,7 +125,7 @@ class ActivityLog(Base):
     description = Column(Text, nullable=False)
     location = Column(String, nullable=False)
     officer_id = Column(String, ForeignKey("users.id"), nullable=False)
-    timestamp = Column(String, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
 
     matatu = relationship("Matatu", back_populates="activities")
     officer = relationship("User")
@@ -139,10 +139,10 @@ class CrimeRecord(Base):
     driver_name = Column(String, nullable=False)
     driver_license = Column(String, nullable=False)
     location = Column(String, nullable=False)
-    fine_amount_kes = Column(Float, default=0.0)
+    fine_amount_kes = Column(Numeric(12, 2), default=0.0)
     remarks = Column(Text, nullable=True)
     officer_id = Column(String, ForeignKey("users.id"), nullable=False)
-    timestamp = Column(String, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
     status = Column(String, default="PENDING")  # PENDING, PROCESSED, PAID, DISPUTED
     photo_path = Column(String, nullable=True)
 
@@ -155,10 +155,10 @@ class Fine(Base):
     matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
     officer_id = Column(String, ForeignKey("users.id"), nullable=False)
     reason = Column(String, nullable=False)
-    amount_kes = Column(Float, nullable=False)
+    amount_kes = Column(Numeric(12, 2), nullable=False)
     status = Column(String, default="PENDING")
-    issued_at = Column(String, nullable=False)
-    due_date = Column(String, nullable=False)
+    issued_at = Column(DateTime(timezone=True), nullable=False)
+    due_date = Column(Date, nullable=False)  # a calendar date, not a specific moment — no time-of-day meaning
 
     matatu = relationship("Matatu", back_populates="fines")
     officer = relationship("User")
@@ -174,9 +174,9 @@ class Booking(Base):
     phone = Column(String, nullable=False)
     stage_name = Column(String, nullable=False)
     seat_numbers = Column(String, nullable=False)  # comma separated seat ids
-    fare_kes = Column(Float, nullable=False)
+    fare_kes = Column(Numeric(12, 2), nullable=False)
     status = Column(String, default="CONFIRMED")  # CONFIRMED, USED, CANCELLED
-    booked_at = Column(String, nullable=False)
+    booked_at = Column(DateTime(timezone=True), nullable=False)
 
     matatu = relationship("Matatu")
     route = relationship("Route")
@@ -193,7 +193,7 @@ class PassengerReport(Base):
     reporter_phone = Column(String, nullable=True)
     photo_path = Column(String, nullable=True)  # optional evidence photo, /uploads path
     status = Column(String, default="PENDING")  # PENDING, REVIEWED, ESCALATED, DISMISSED
-    created_at = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
@@ -205,7 +205,7 @@ class AuditLog(Base):
     old_values = Column(Text, nullable=True)
     new_values = Column(Text, nullable=True)
     user_id = Column(String, nullable=False)
-    timestamp = Column(String, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
 
 class Zone(Base):
     __tablename__ = "zones"
@@ -219,7 +219,7 @@ class OffenceType(Base):
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    default_fine_kes = Column(Float, nullable=False)
+    default_fine_kes = Column(Numeric(12, 2), nullable=False)
     is_other = Column(Boolean, default=False)  # "Other" needs a free-text description at the scene
 
 class EnforcementCase(Base):
@@ -238,21 +238,21 @@ class EnforcementCase(Base):
     reg_number = Column(String, nullable=False)
     offence_type_id = Column(String, ForeignKey("offence_types.id"), nullable=False)
     offence_description = Column(String, nullable=True)  # required when offence is "Other"
-    fine_amount_kes = Column(Float, nullable=False)  # locked from the offence type at creation time
+    fine_amount_kes = Column(Numeric(12, 2), nullable=False)  # locked from the offence type at creation time
 
     action_taken = Column(String, nullable=False)  # IMPOUND, SELF_DRIVE_IMPOUND, TOLL
     photo_paths = Column(Text, nullable=True)  # JSON list of /uploads paths
 
     zone_id = Column(String, ForeignKey("zones.id"), nullable=True)
     arresting_officer_id = Column(String, ForeignKey("users.id"), nullable=False)
-    created_at = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
     status = Column(String, default="ARRESTED")  # ARRESTED, PAID, RELEASED, DISPUTED, WAIVED
     payment_reference = Column(String, nullable=True)
-    paid_at = Column(String, nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
 
     releasing_officer_id = Column(String, ForeignKey("users.id"), nullable=True)
-    released_at = Column(String, nullable=True)
+    released_at = Column(DateTime(timezone=True), nullable=True)
 
     dispute_reason = Column(Text, nullable=True)
     waived_reason = Column(Text, nullable=True)
@@ -282,4 +282,4 @@ class WebhookLog(Base):
     status_code = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
     attempt = Column(Integer, default=1)
-    timestamp = Column(String, nullable=False)
+    timestamp = Column(DateTime(timezone=True), nullable=False)

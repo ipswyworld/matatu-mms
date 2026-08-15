@@ -129,7 +129,7 @@ async def onboard_operator(
         raise HTTPException(status_code=400, detail="User email already registered")
 
     sacco_id = f"sacco-{uuid.uuid4().hex[:8]}"
-    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    now_iso = datetime.datetime.now(datetime.timezone.utc)
 
     sacco = Sacco(
         id=sacco_id,
@@ -271,7 +271,7 @@ async def submit_application(
         )
 
     if not sacco.application_submitted_at:
-        sacco.application_submitted_at = datetime.datetime.utcnow().isoformat() + "Z"
+        sacco.application_submitted_at = datetime.datetime.now(datetime.timezone.utc)
         stage_audit_log(
             db, resource_type="sacco", resource_id=sacco_id, action="APPLICATION_SUBMITTED",
             user_id=current_user.id, new_values={"applicationSubmittedAt": sacco.application_submitted_at},
@@ -342,7 +342,7 @@ async def decide_director_mobility_stage(
     sacco.director_mobility_status = payload.status
     sacco.director_mobility_reason = payload.reason
     sacco.director_mobility_decided_by = current_user.name
-    sacco.director_mobility_decided_at = datetime.datetime.utcnow().isoformat() + "Z"
+    sacco.director_mobility_decided_at = datetime.datetime.now(datetime.timezone.utc)
 
     if payload.status == "REJECTED":
         sacco.status = "REJECTED"
@@ -405,7 +405,7 @@ async def decide_chief_officer_stage(
     sacco.chief_officer_status = payload.status
     sacco.chief_officer_reason = payload.reason
     sacco.chief_officer_decided_by = current_user.name
-    sacco.chief_officer_decided_at = datetime.datetime.utcnow().isoformat() + "Z"
+    sacco.chief_officer_decided_at = datetime.datetime.now(datetime.timezone.utc)
 
     if payload.status == "APPROVED":
         sacco.status = "ACTIVE"

@@ -35,6 +35,6 @@ def stage_audit_log(
             old_values=json.dumps(old_values, default=str) if old_values else None,
             new_values=json.dumps(new_values, default=str) if new_values else None,
             user_id=str(user_id) if user_id else "SYSTEM",
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
     )

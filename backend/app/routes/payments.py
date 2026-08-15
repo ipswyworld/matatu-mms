@@ -1,5 +1,6 @@
 import hmac
 import logging
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +57,14 @@ async def nairobipay_payment_callback(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     fine_id = payload.reference.strip()
-    amount_paid = float(payload.amount)
+    try:
+        # Decimal, not float — fine.amount_kes is now a Numeric(12,2) column
+        # (decimal.Decimal in Python), and Decimal/float arithmetic raises
+        # TypeError. Parsing straight from the string payload also avoids
+        # ever round-tripping the money value through binary float at all.
+        amount_paid = Decimal(payload.amount)
+    except InvalidOperation:
+        raise HTTPException(status_code=422, detail="amount must be a valid decimal number.")
 
     result = await db.execute(
         select(Fine)
@@ -75,8 +83,8 @@ async def nairobipay_payment_callback(
     if fine.status == "PAID":
         return {"resultCode": 0, "resultDesc": "Already processed: fine already paid."}
 
-    # Verify amount matches (within minor margin for float differences)
-    if abs(fine.amount_kes - amount_paid) > 0.01:
+    # Verify amount matches (within a 1-cent margin)
+    if abs(fine.amount_kes - amount_paid) > Decimal("0.01"):
         return {
             "resultCode": 1,
             "resultDesc": f"Rejected: Expected KES {fine.amount_kes}, got KES {amount_paid}"

@@ -61,8 +61,8 @@ async def issue_fine(
         reason=payload.reason.strip(),
         amount_kes=payload.amount_kes,
         status="PENDING",
-        issued_at=datetime.date.today().isoformat(),
-        due_date=payload.due_date
+        issued_at=datetime.datetime.now(datetime.timezone.utc),
+        due_date=payload.due_date  # already a real date object — Pydantic parses the "YYYY-MM-DD" string
     )
     
     db.add(new_fine)

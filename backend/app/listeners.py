@@ -56,7 +56,18 @@ async def notification_listener(event_type: str, data: dict):
 
 async def post_webhook(client: httpx.AsyncClient, url: str, payload: dict) -> httpx.Response:
     """Performs the actual POST request to the subscriber's webhook endpoint."""
-    response = await client.post(url, json=payload, timeout=5.0)
+    # httpx's `json=` kwarg serializes with the stdlib json.dumps and no
+    # custom encoder, which can't handle the datetime/date/Decimal objects
+    # that now flow into event payloads straight from model attributes
+    # (e.g. Fine.issued_at, Fine.amount_kes). Serialize explicitly with
+    # default=str instead, so a real delivery never silently "fails" with
+    # a TypeError before it even reaches the network.
+    response = await client.post(
+        url,
+        content=json.dumps(payload, default=str),
+        headers={"Content-Type": "application/json"},
+        timeout=5.0,
+    )
     response.raise_for_status()
     return response
 
@@ -68,7 +79,7 @@ async def deliver_webhook_with_resilience(
     breaker: CircuitBreaker
 ):
     """Delivers webhook using circuit breaker & retry with exponential backoff."""
-    timestamp = datetime.datetime.utcnow().isoformat() + "Z"
+    timestamp = datetime.datetime.now(datetime.timezone.utc)  # WebhookLog.timestamp is a real DateTime column
     
     async def make_attempt():
         async with httpx.AsyncClient() as client:
@@ -103,7 +114,13 @@ async def deliver_webhook_with_resilience(
         log = WebhookLog(
             subscription_id=subscription_id,
             event_type=event_type,
-            payload=json.dumps(payload),
+            # default=str: event payloads embed raw model attributes (e.g.
+            # Fine.issued_at, Fine.amount_kes) that are now real datetime/
+            # date/Decimal objects, none of which json.dumps handles by
+            # default. str() is a fine representation for an outbound
+            # webhook log — this is a record of what was sent, not a value
+            # anything parses back.
+            payload=json.dumps(payload, default=str),
             status_code=status_code,
             error_message=error_message,
             attempt=WEBHOOK_MAX_RETRIES,  # Max retries hit or successful retry

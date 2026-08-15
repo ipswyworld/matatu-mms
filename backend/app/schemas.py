@@ -1,3 +1,4 @@
+import datetime
 import re
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
@@ -72,8 +73,8 @@ class SaccoResponse(SaccoBase):
     documents: Optional[SaccoDocuments] = None
     rejection_reason: Optional[str] = None
     sacco_type: Optional[str] = "EXISTING"
-    created_at: Optional[str] = None
-    application_submitted_at: Optional[str] = None
+    created_at: Optional[datetime.datetime] = None
+    application_submitted_at: Optional[datetime.datetime] = None
     doc_registration_cert: Optional[str] = None
     doc_road_service_license: Optional[str] = None
     doc_county_permit: Optional[str] = None
@@ -84,11 +85,11 @@ class SaccoResponse(SaccoBase):
     director_mobility_status: Optional[str] = "PENDING"
     director_mobility_reason: Optional[str] = None
     director_mobility_decided_by: Optional[str] = None
-    director_mobility_decided_at: Optional[str] = None
+    director_mobility_decided_at: Optional[datetime.datetime] = None
     chief_officer_status: Optional[str] = "PENDING"
     chief_officer_reason: Optional[str] = None
     chief_officer_decided_by: Optional[str] = None
-    chief_officer_decided_at: Optional[str] = None
+    chief_officer_decided_at: Optional[datetime.datetime] = None
 
 class SaccoVerificationUpdate(BaseModelCamel):
     status: str  # ACTIVE or REJECTED
@@ -142,7 +143,7 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: str
     terms_accepted: Optional[bool] = False
-    terms_accepted_at: Optional[str] = None
+    terms_accepted_at: Optional[datetime.datetime] = None
     terms_signature: Optional[str] = None
 
 class UserUpdate(BaseModelCamel):
@@ -214,7 +215,7 @@ class MatatuResponse(MatatuBase):
     id: str
     status: str
     last_inspection: Optional[str] = None
-    created_at: str
+    created_at: datetime.datetime
     sacco: Optional[SaccoResponse] = None
     route: Optional[RouteResponse] = None
 
@@ -245,7 +246,7 @@ class ActivityLogCreate(ActivityLogBase):
 class ActivityLogResponse(ActivityLogBase):
     id: str
     officer_id: str
-    timestamp: str
+    timestamp: datetime.datetime
 
 # --- Crime Record Schemas ---
 class CrimeRecordBase(BaseModelCamel):
@@ -261,7 +262,7 @@ class CrimeRecordResponse(CrimeRecordBase):
     id: str
     officer_id: str
     officer_name: Optional[str] = None
-    timestamp: str
+    timestamp: datetime.datetime
     status: str
     photo_path: Optional[str] = None
 
@@ -270,7 +271,7 @@ class FineBase(BaseModelCamel):
     matatu_id: str
     reason: str
     amount_kes: float
-    due_date: str
+    due_date: datetime.date  # a calendar date — Pydantic parses "YYYY-MM-DD" from the frontend directly
 
 class FineCreate(FineBase):
     pass
@@ -279,7 +280,7 @@ class FineResponse(FineBase):
     id: str
     officer_id: str
     status: str
-    issued_at: str
+    issued_at: datetime.datetime
     reg_number: Optional[str] = None
     sacco_id: Optional[str] = None
 
@@ -308,7 +309,7 @@ class BookingResponse(BaseModelCamel):
     seat_numbers: List[int]
     fare_kes: float
     status: str
-    booked_at: str
+    booked_at: datetime.datetime
     reg_number: Optional[str] = None
     route_name: Optional[str] = None
 
@@ -325,7 +326,7 @@ class PassengerReportResponse(BaseModelCamel):
     reporter_phone: Optional[str] = None
     photo_path: Optional[str] = None
     status: str
-    created_at: str
+    created_at: datetime.datetime
 
 # --- Audit Log Schemas ---
 class AuditLogResponse(BaseModelCamel):
@@ -336,7 +337,7 @@ class AuditLogResponse(BaseModelCamel):
     old_values: Optional[str] = None
     new_values: Optional[str] = None
     user_id: str
-    timestamp: str
+    timestamp: datetime.datetime
 
 # --- Zones & Offence Catalog ---
 class ZoneResponse(BaseModelCamel):
@@ -389,13 +390,13 @@ class EnforcementCaseResponse(BaseModelCamel):
     zone_name: Optional[str] = None
     arresting_officer_id: str
     arresting_officer_name: Optional[str] = None
-    created_at: str
+    created_at: datetime.datetime
     status: str
     payment_reference: Optional[str] = None
-    paid_at: Optional[str] = None
+    paid_at: Optional[datetime.datetime] = None
     releasing_officer_id: Optional[str] = None
     releasing_officer_name: Optional[str] = None
-    released_at: Optional[str] = None
+    released_at: Optional[datetime.datetime] = None
     dispute_reason: Optional[str] = None
     waived_reason: Optional[str] = None
     waived_authorized_by: Optional[str] = None
@@ -407,7 +408,7 @@ class PublicCaseResponse(BaseModelCamel):
     offence_name: Optional[str] = None
     fine_amount_kes: float
     status: str
-    created_at: str
+    created_at: datetime.datetime
 
 # --- Webhook Subscription Schemas ---
 class WebhookSubscriptionCreate(BaseModelCamel):
@@ -431,7 +432,7 @@ class WebhookLogResponse(BaseModelCamel):
     status_code: Optional[int] = None
     error_message: Optional[str] = None
     attempt: int
-    timestamp: str
+    timestamp: datetime.datetime
 
 class MatatuDetailResponse(MatatuResponse):
     activities: List[ActivityLogResponse] = []

@@ -191,7 +191,7 @@ async def create_booking(
         seat_numbers=",".join(str(s) for s in payload.seat_numbers),
         fare_kes=route.fare_kes * len(payload.seat_numbers),
         status="CONFIRMED",
-        booked_at=datetime.datetime.utcnow().isoformat() + "Z",
+        booked_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(new_booking)
     await db.commit()

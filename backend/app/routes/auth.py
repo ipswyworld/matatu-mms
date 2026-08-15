@@ -123,7 +123,7 @@ async def register(request: Request, credentials: UserCreate, response: Response
         role=credentials.role,
         sacco_id=credentials.sacco_id,
         terms_accepted=True,
-        terms_accepted_at=datetime.datetime.utcnow().isoformat() + "Z",
+        terms_accepted_at=datetime.datetime.now(datetime.timezone.utc),
         terms_signature=signature,
         terms_version=TERMS_VERSION,
     )
@@ -185,7 +185,7 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: 
 
     if user:
         token = secrets.token_urlsafe(32)
-        expires_at = (datetime.datetime.utcnow() + datetime.timedelta(minutes=RESET_TOKEN_TTL_MINUTES)).isoformat() + "Z"
+        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
         user.reset_token = token
         user.reset_token_expires_at = expires_at
         await db.commit()
@@ -209,8 +209,8 @@ async def reset_password(request: Request, payload: ResetPasswordRequest, db: As
     if not user or not user.reset_token_expires_at:
         raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
-    expires_at = datetime.datetime.fromisoformat(user.reset_token_expires_at.replace("Z", ""))
-    if datetime.datetime.utcnow() > expires_at:
+    expires_at = user.reset_token_expires_at  # already a real tz-aware datetime now, not a string to parse
+    if datetime.datetime.now(datetime.timezone.utc) > expires_at:
         user.reset_token = None
         user.reset_token_expires_at = None
         await db.commit()

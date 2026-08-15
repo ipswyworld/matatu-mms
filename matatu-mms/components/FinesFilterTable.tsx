@@ -128,7 +128,7 @@ export default function FinesFilterTable({ fines, matatus, saccos, isSacco, canU
                   </td>
                   <td>{f.reason}</td>
                   <td className="font-semibold">KES {f.amountKes.toLocaleString()}</td>
-                  <td>{f.issuedAt}</td>
+                  <td>{new Date(f.issuedAt).toLocaleDateString()}</td>
                   <td>{f.dueDate}</td>
                   <td><FineStatusPill status={f.status} /></td>
                   {(canUpdate || canDispute) && (
