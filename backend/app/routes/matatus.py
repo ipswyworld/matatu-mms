@@ -17,6 +17,7 @@ from app.schemas import (
     MatatuDetailResponse,
     BulkImportResult,
     BulkImportRowError,
+    validate_reg_number,
 )
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
@@ -282,7 +283,11 @@ async def bulk_import_matatus(
             errors.append(BulkImportRowError(row=idx, reg_number=row.get("reg_number"), missing_fields=missing, message="Missing or invalid: " + ", ".join(missing)))
             continue
 
-        reg_number = row["reg_number"].upper().strip()
+        try:
+            reg_number = validate_reg_number(row["reg_number"])
+        except ValueError as e:
+            errors.append(BulkImportRowError(row=idx, reg_number=row.get("reg_number"), missing_fields=[], message=str(e)))
+            continue
         existing = await db.execute(select(Matatu).where(Matatu.reg_number == reg_number))
         if existing.scalars().first():
             errors.append(BulkImportRowError(row=idx, reg_number=reg_number, missing_fields=[], message=f"A vehicle with plate {reg_number} is already registered."))

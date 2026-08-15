@@ -1,6 +1,7 @@
 import random
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -64,7 +65,15 @@ async def create_user(
         user_id=current_user.id,
         new_values={"name": new_user.name, "email": new_user.email, "role": new_user.role, "saccoId": new_user.sacco_id},
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Same check-then-insert race as /api/auth/register — the pre-check
+        # above is a friendly message, the unique constraint is the real
+        # guard against two concurrent admin-creation requests for the same
+        # email.
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="User email already exists")
     await db.refresh(new_user)
     return new_user
 

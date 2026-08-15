@@ -1,6 +1,21 @@
+import re
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from pydantic.alias_generators import to_camel
+
+# Kenyan plates are like "KDA 112B" — letters/digits/space/hyphen only, kept
+# generous on length rather than modelling the exact format, since the point
+# is blocking injection (angle brackets, quotes, script content) at the API
+# boundary, not being the plate-format authority. GisMap.tsx renders this
+# value via a DOM API that can't execute markup either way (defense in
+# depth — see that file's comment on why innerHTML was removed there).
+REG_NUMBER_PATTERN = re.compile(r"^[A-Z0-9\- ]{4,12}$")
+
+def validate_reg_number(value: str) -> str:
+    v = value.strip().upper()
+    if not REG_NUMBER_PATTERN.match(v):
+        raise ValueError("Registration number must be 4-12 characters: letters, digits, spaces, or hyphens only.")
+    return v
 
 class BaseModelCamel(BaseModel):
     model_config = ConfigDict(
@@ -8,6 +23,17 @@ class BaseModelCamel(BaseModel):
         populate_by_name=True,
         from_attributes=True
     )
+
+def _normalized_email_validator():
+    """Shared 'before' validator: lowercase + strip email at the schema
+    boundary, once, so no call site can forget. Postgres uniqueness on
+    User.email is case-sensitive, so without this, "John@x.com" and
+    "john@x.com" register as two different accounts, and login silently
+    fails for anyone who signed up with one casing and later types another.
+    """
+    def _normalize(cls, v):
+        return v.strip().lower() if isinstance(v, str) else v
+    return field_validator("email", mode="before")(classmethod(_normalize))
 
 # --- Sacco Schemas ---
 class SaccoBase(BaseModelCamel):
@@ -83,6 +109,8 @@ class OperatorOnboardingRegister(BaseModelCamel):
     terms_accepted: Optional[bool] = False
     terms_signature: Optional[str] = None
 
+    _normalize_email = _normalized_email_validator()
+
 class SaccoOfficialsUpdate(BaseModelCamel):
     chairperson_name: str
     chairperson_phone: str
@@ -101,6 +129,8 @@ class UserBase(BaseModelCamel):
     email: EmailStr
     role: str  # ADMIN, ENFORCEMENT, SACCO_OPERATOR, VIEWER, PASSENGER, CREW
     sacco_id: Optional[str] = None
+
+    _normalize_email = _normalized_email_validator()
 
 class UserCreate(UserBase):
     password: str
@@ -122,12 +152,18 @@ class UserUpdate(BaseModelCamel):
     sacco_id: Optional[str] = None
     new_password: Optional[str] = None
 
+    _normalize_email = _normalized_email_validator()
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+    _normalize_email = _normalized_email_validator()
+
 class ForgotPasswordRequest(BaseModelCamel):
     email: EmailStr
+
+    _normalize_email = _normalized_email_validator()
 
 class ResetPasswordRequest(BaseModelCamel):
     token: str
@@ -168,6 +204,11 @@ class MatatuBase(BaseModelCamel):
 
 class MatatuCreate(MatatuBase):
     status: Optional[str] = "ACTIVE"
+
+    @field_validator("reg_number")
+    @classmethod
+    def _validate_reg_number(cls, v: str) -> str:
+        return validate_reg_number(v)
 
 class MatatuResponse(MatatuBase):
     id: str

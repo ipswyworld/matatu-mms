@@ -5,6 +5,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -161,7 +162,15 @@ async def onboard_operator(
         user_id=user_id, new_values={"name": payload.sacco_name, "saccoType": payload.sacco_type},
     )
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Same check-then-insert race as auth.py's /register — the pre-check
+        # above is a friendly message, the unique constraint is the real
+        # guard. Without this, a concurrent onboarding submission for the
+        # same email surfaces as an unhandled 500 instead of a clean 400.
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="User email already registered")
     await db.refresh(user)
 
     dispatcher.dispatch("SACCO_ONBOARDING_SUBMITTED", {"sacco_id": sacco_id, "user_id": user_id})

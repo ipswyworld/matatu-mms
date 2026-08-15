@@ -2,6 +2,7 @@ import datetime
 import logging
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import base64
@@ -62,8 +63,22 @@ async def login(response: Response, credentials: UserLogin, db: AsyncSession = D
         user=user_resp
     )
 
+SELF_REGISTRATION_ALLOWED_ROLES = {"PASSENGER"}
+
 @router.post("/register", response_model=Token)
 async def register(credentials: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
+    # Only Passengers self-register here. Crew accounts are issued by the
+    # operator when they onboard a vehicle (see saccos.py's crew-assignment
+    # endpoint) — a driver/conductor never creates their own login. Staff
+    # and admin roles are never self-service. This must be enforced here,
+    # not just by which tabs the /register UI happens to show, since this
+    # endpoint accepts `role` directly from the request body.
+    if credentials.role not in SELF_REGISTRATION_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Self-registration is only available for passengers. Crew accounts are issued by your operator; staff accounts are issued by the county.",
+        )
+
     # Self-registration requires genuine, recorded consent: the checkbox
     # alone isn't enough — a typed signature must also be present. This is
     # server-side enforcement, not just a disabled submit button in the UI.
@@ -111,7 +126,19 @@ async def register(credentials: UserCreate, response: Response, db: AsyncSession
     )
 
     db.add(user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # The pre-check above (line ~88) is a friendly-message convenience,
+        # not the real guard — two concurrent registrations for the same
+        # email can both pass it. The unique constraint is the actual
+        # source of truth; without this, a race here surfaces as an
+        # unhandled 500 instead of the intended 400.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User email already registered"
+        )
     await db.refresh(user)
 
     token_data = {
