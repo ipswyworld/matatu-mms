@@ -9,6 +9,17 @@ load_dotenv()
 logger = logging.getLogger("app.config")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./mms.db")
+# Hosted Postgres providers (Render, Heroku, Railway, Neon...) hand out a
+# bare "postgresql://" or "postgres://" connection string. SQLAlchemy's
+# create_async_engine needs an explicit async driver suffix — without it,
+# it silently picks the sync psycopg2 driver, which isn't installed here
+# (only asyncpg is), and fails at engine-creation time with a confusing
+# ModuleNotFoundError. Normalize once, here, rather than requiring every
+# deploy target to know to hand-edit its connection string.
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 # Recorded before the auto-generated fallbacks below overwrite these — the
