@@ -110,6 +110,37 @@ class Route(Base):
 
     matatus = relationship("Matatu", back_populates="route")
     stage_links = relationship("RouteStage", back_populates="route", order_by="RouteStage.sequence")
+    fare_stages = relationship("FareStage", back_populates="route")
+
+
+class FareStage(Base):
+    """One fare between a boarding/alighting stage pair within a route —
+    the structured replacement for `Route.fare_kes` as a single flat number
+    (ARCHITECTURE_DECISIONS.md §29.2). Real matatu fares vary by distance/
+    stage, not by route alone.
+
+    from_stage_id/to_stage_id link to real `Stage` rows when the chart's
+    text matches a known stage name; from_label/to_label always hold the
+    raw text as parsed, so an unmatched stage name is never silently
+    dropped — it's just unresolved until stage data or a manual fix links
+    it. direction mirrors RouteStage's OUTBOUND/RETURN asymmetry.
+    """
+    __tablename__ = "fare_stages"
+
+    id = Column(String, primary_key=True, index=True)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    from_stage_id = Column(String, ForeignKey("stages.id"), nullable=True)
+    to_stage_id = Column(String, ForeignKey("stages.id"), nullable=True)
+    from_label = Column(String, nullable=False)
+    to_label = Column(String, nullable=False)
+    fare_kes = Column(Numeric(12, 2), nullable=False)
+    direction = Column(String, nullable=True)  # OUTBOUND, RETURN, or null (both)
+    source = Column(String, default="MANUAL")  # MANUAL, PDF_UPLOAD
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    route = relationship("Route", back_populates="fare_stages")
+    from_stage = relationship("Stage", foreign_keys=[from_stage_id])
+    to_stage = relationship("Stage", foreign_keys=[to_stage_id])
 
 
 class Stage(Base):

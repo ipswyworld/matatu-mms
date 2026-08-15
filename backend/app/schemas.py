@@ -226,6 +226,32 @@ class RouteResponse(RouteBase):
     id: str
     vehicle_count: Optional[int] = 0
 
+# --- Fare Stage Schemas ---
+class FareStageCreate(BaseModelCamel):
+    from_label: str
+    to_label: str
+    fare_kes: float
+    direction: Optional[str] = None
+    from_stage_id: Optional[str] = None
+    to_stage_id: Optional[str] = None
+
+class FareStageResponse(BaseModelCamel):
+    id: str
+    route_id: str
+    from_stage_id: Optional[str] = None
+    to_stage_id: Optional[str] = None
+    from_label: str
+    to_label: str
+    fare_kes: float
+    direction: Optional[str] = None
+    source: str
+    created_at: datetime.datetime
+
+class FareStageUploadResult(BaseModelCamel):
+    created: List[FareStageResponse]
+    unmatched_rows: int
+    total_rows: int
+
 # --- Matatu Schemas ---
 class MatatuBase(BaseModelCamel):
     reg_number: str
