@@ -30,23 +30,35 @@ const dictionary = {
   "footer.terms": { en: "Terms & Conditions", sw: "Sheria na Masharti" },
   "footer.rights": { en: "All rights reserved.", sw: "Haki zote zimehifadhiwa." },
 
-  // Login page
-  "login.heading": { en: "One county, one live view of every matatu.", sw: "Kaunti moja, mwonekano mmoja wa moja kwa moja wa kila matatu." },
-  "login.subheading": {
-    en: "Fleet registration, live GPS telemetry, seat booking, fare compliance and enforcement, all on one real-time backbone connecting officers, operators, crew and commuters. Smart and connected mobility for the whole county.",
-    sw: "Usajili wa magari, ufuatiliaji wa GPS wa moja kwa moja, uhifadhi wa viti, utii wa nauli na utekelezaji wa sheria, yote kwenye mfumo mmoja wa wakati halisi unaounganisha maafisa, waendeshaji, wafanyakazi na abiria. Usafiri wenye akili na uunganisho kwa kaunti nzima.",
-  },
+  // Shared sign-in form (used by both the public portal and staff sign-in)
   "login.signIn": { en: "Sign in", sw: "Ingia" },
   "login.signingIn": { en: "Signing in...", sw: "Inaingia..." },
-  "login.useCredentials": { en: "Use your county-issued credentials to continue.", sw: "Tumia vitambulisho vyako vya kaunti kuendelea." },
   "login.email": { en: "Email", sw: "Barua pepe" },
   "login.password": { en: "Password", sw: "Nenosiri" },
   "login.forgotPassword": { en: "Forgot password?", sw: "Umesahau nenosiri?" },
-  "login.registerLink": { en: "New here? Register as Commuter or Matatu Crew →", sw: "Mgeni hapa? Jisajili kama Abiria au Wafanyakazi wa Matatu →" },
-  "login.onboardingLink": { en: "Operator? Start Onboarding & Verification →", sw: "Mwendeshaji? Anza Usajili na Uthibitisho →" },
   "login.demoAccounts": { en: "Demo accounts", sw: "Akaunti za mfano" },
   "login.helpFaq": { en: "Help & FAQ", sw: "Msaada na Maswali" },
   "login.termsConditions": { en: "Terms & Conditions", sw: "Sheria na Masharti" },
+
+  // Public portal ("/") — passengers, crew (info only, no self-registration), sacco operators
+  "portal.heading": { en: "One county, one live view of every matatu.", sw: "Kaunti moja, mwonekano mmoja wa moja kwa moja wa kila matatu." },
+  "portal.subheading": {
+    en: "Book a seat, track your matatu live, check your fare, or register your Sacco for county verification. Smart and connected mobility for the whole county.",
+    sw: "Hifadhi kiti, fuatilia matatu yako moja kwa moja, angalia nauli yako, au sajili Sacco yako kwa uthibitisho wa kaunti. Usafiri wenye akili na uunganisho kwa kaunti nzima.",
+  },
+  "portal.useCredentials": { en: "Sign in to book, manage your fleet, or check your account.", sw: "Ingia ili kuhifadhi, kusimamia magari yako, au kuangalia akaunti yako." },
+  "portal.registerLink": { en: "New here? Register as a Commuter →", sw: "Mgeni hapa? Jisajili kama Abiria →" },
+  "portal.onboardingLink": { en: "Operator? Start Onboarding & Verification →", sw: "Mwendeshaji? Anza Usajili na Uthibitisho →" },
+  "portal.staffLink": { en: "County staff? Sign in to the internal portal →", sw: "Wafanyakazi wa kaunti? Ingia kwenye ukurasa wa ndani →" },
+
+  // Staff sign-in ("/login") — admin, enforcement, director/chief officer, viewer
+  "staff.heading": { en: "One console for licensing, enforcement, and revenue.", sw: "Dashibodi moja kwa usajili, utekelezaji wa sheria, na mapato." },
+  "staff.subheading": {
+    en: "Operator verification, fleet compliance, citation management, and county-wide revenue reporting for Nairobi's matatu sector, on one real-time backbone.",
+    sw: "Uthibitisho wa waendeshaji, utii wa magari, usimamizi wa faini, na taarifa za mapato kwa kaunti nzima za sekta ya matatu ya Nairobi, kwenye mfumo mmoja wa wakati halisi.",
+  },
+  "staff.useCredentials": { en: "Use your county-issued credentials to continue.", sw: "Tumia vitambulisho vyako vya kaunti kuendelea." },
+  "staff.publicLink": { en: "Looking to book a ride or manage your Sacco? Go to the public portal →", sw: "Unatafuta kuhifadhi safari au kusimamia Sacco yako? Nenda kwenye ukurasa wa umma →" },
 } as const;
 
 export type TranslationKey = keyof typeof dictionary;

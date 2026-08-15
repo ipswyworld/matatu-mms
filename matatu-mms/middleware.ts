@@ -2,7 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAndExtractPayload } from "./lib/sessionSign";
 
 const SESSION_COOKIE_NAME = "mms_session";
+
+// Never add "/" here. This list is matched with `startsWith`, and every
+// path starts with "/" — doing so would silently mark the entire app as
+// public and disable auth enforcement everywhere. Root is handled as its
+// own exact-match case below instead (see the public/staff front-door
+// split decision).
 const PUBLIC_PATHS = ["/login", "/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password"];
+
+const ENFORCEMENT_ROLES = ["ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"];
+const ADMIN_TIER_ROLES = ["ADMIN", "SUPERADMIN"];
+
+// Single source of truth for "where does this role land by default" — used
+// both for the admin-tier-page fallback redirects below and for sending an
+// already-authenticated user away from the public/staff landing pages.
+function homeForRole(role: string): string {
+  if (role === "PASSENGER") return "/passenger-portal";
+  if (role === "CREW") return "/crew-portal";
+  if (role === "SACCO_OPERATOR") return "/sacco-portal";
+  if (role === "DIRECTOR_MOBILITY" || role === "CHIEF_OFFICER") return "/saccos/verify";
+  if (ENFORCEMENT_ROLES.includes(role)) return "/enforcement";
+  return "/dashboard";
+}
 
 /**
  * Verifies the HMAC signature before trusting anything in the cookie. A
@@ -28,9 +49,8 @@ async function readVerifiedRole(request: NextRequest): Promise<string | null> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public paths + Next.js internals + any static file in /public (identified by file extension)
+  // Next.js internals + any static file in /public (identified by file extension)
   if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|woff2?|ttf)$/i.test(pathname)
@@ -39,6 +59,19 @@ export async function middleware(request: NextRequest) {
   }
 
   const role = await readVerifiedRole(request);
+
+  // Root is the public portal (booking, registration, staff-link) — shown
+  // to guests. An already-authenticated user hitting "/" gets sent to their
+  // own home instead of the marketing/sign-in page (mirrors the existing
+  // behaviour of not double-redirecting a logged-in user off /login).
+  if (pathname === "/") {
+    if (!role) return NextResponse.next();
+    return NextResponse.redirect(new URL(homeForRole(role), request.url));
+  }
+
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
 
   if (!role) {
     const loginUrl = new URL("/login", request.url);
@@ -65,25 +98,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/saccos/verify", request.url));
   }
 
-  const ENFORCEMENT_ROLES = ["ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"];
-  const defaultHomeFor = (r: string) =>
-    r === "SACCO_OPERATOR" ? "/sacco-portal" : ENFORCEMENT_ROLES.includes(r) ? "/enforcement" : "/dashboard";
-
-  const ADMIN_TIER_ROLES = ["ADMIN", "SUPERADMIN"];
-
   // Admin-tier-only system management pages
   if (pathname.startsWith("/users") && !ADMIN_TIER_ROLES.includes(role)) {
-    return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
+    return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
   if (pathname.startsWith("/audit-logs") && !ADMIN_TIER_ROLES.includes(role)) {
-    return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
+    return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
   if (pathname.startsWith("/saccos/verify") && ![...ADMIN_TIER_ROLES, "DIRECTOR_MOBILITY", "CHIEF_OFFICER"].includes(role)) {
-    return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
+    return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
   // Super Admin-only console: system health, config, admin-account management
   if (pathname.startsWith("/system") && role !== "SUPERADMIN") {
-    return NextResponse.redirect(new URL(defaultHomeFor(role), request.url));
+    return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
 
   // Enforcement-family roles land and stay on their own Overview — /dashboard
