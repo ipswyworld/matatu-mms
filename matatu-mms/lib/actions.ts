@@ -773,6 +773,22 @@ export async function getTakenSeatsAction(matatuId: string): Promise<number[]> {
   }
 }
 
+export async function getTimeseriesAction(
+  metric: "fines" | "bookings",
+  days: number,
+  grouping: "day" | "week" | "month" = "day"
+): Promise<{ points: { bucket: string; count: number; value: number }[]; error?: string }> {
+  try {
+    const data = await apiWrite<{ points: { bucket: string; count: number; value: number }[] }>(
+      `/api/analytics/timeseries?metric=${metric}&days=${days}&grouping=${grouping}`,
+      "GET"
+    );
+    return { points: data.points };
+  } catch (err: any) {
+    return { points: [], error: err.message || "Could not load chart data." };
+  }
+}
+
 export async function createBookingAction(input: {
   matatuId: string;
   routeId: string;

@@ -14,6 +14,7 @@ import CorridorHealth from "@/components/dashboard/CorridorHealth";
 import BookingsPanel from "@/components/dashboard/BookingsPanel";
 import FleetLiveStatus from "@/components/dashboard/FleetLiveStatus";
 import DashboardLiveRefresh from "@/components/DashboardLiveRefresh";
+import FinesTrendChart from "@/components/dashboard/FinesTrendChart";
 
 export default async function DashboardPage() {
   const session = readSession()!;
@@ -198,6 +199,9 @@ export default async function DashboardPage() {
             waived={waivedKes}
             collectionRate={collectionRate}
           />
+          {/* Interactive Recharts time-series (ARCHITECTURE_DECISIONS.md §23) —
+              server-pre-aggregated, not raw rows charted client-side. */}
+          <FinesTrendChart />
         </div>
 
         <ActivityFeed

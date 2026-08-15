@@ -312,3 +312,15 @@ export interface Booking {
   bookedAt: string;
   status: "CONFIRMED" | "USED" | "CANCELLED";
 }
+
+export interface TimeseriesPoint {
+  bucket: string;
+  count: number;
+  value: number;
+}
+
+export interface TimeseriesResponse {
+  metric: string;
+  grouping: string;
+  points: TimeseriesPoint[];
+}

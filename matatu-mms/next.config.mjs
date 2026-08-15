@@ -4,6 +4,44 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Security headers (ARCHITECTURE_DECISIONS.md §15.4) — applied here so
+// they're present regardless of deploy path. nginx/nginx.conf already sets
+// these for the self-hosted docker-compose stack, but Render's actual live
+// deployment (render.yaml) serves this app directly, bypassing that nginx
+// layer entirely — without this, the live demo shipped with none of them.
+//
+// CSP is real but deliberately not maximally strict: this app loads TomTom
+// map tiles/SDK assets and reports to Sentry, both from domains not
+// hardcoded anywhere in this codebase (configured via env/the SDK
+// internally), so a byte-for-byte allowlist can't be derived by
+// inspection alone and risks silently breaking the map or error reporting
+// without a live browser check to verify against — not something to ship
+// unverified. `script-src 'self'` is the load-bearing rule here (blocks
+// injected inline scripts, the structural mitigation for §15.3's XSS
+// findings); img-src/connect-src stay at `https:` broadly for the map
+// tile/Sentry domains. Tightening those two to an exact allowlist is real
+// follow-up work once verified live.
+const SECURITY_HEADERS = [
+  {
+    key: "Content-Security-Policy",
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https: wss: ws:",
+      "frame-ancestors 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; "),
+  },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // @tomtom-org/maps-sdk does `import { version } from "maplibre-gl/package.json"`,
@@ -14,6 +52,9 @@ const nextConfig = {
   webpack: (config) => {
     config.resolve.alias["maplibre-gl/package.json$"] = path.resolve(__dirname, "lib/maplibre-version-shim.js");
     return config;
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
 };
 

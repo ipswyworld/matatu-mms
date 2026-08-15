@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -83,6 +83,16 @@ export async function getMatatuById(id: string): Promise<Matatu | undefined> {
 
 export async function getCrewAssignments(activeOnly = true): Promise<CrewAssignment[]> {
   return apiFetch<CrewAssignment[]>(`/api/crew?active_only=${activeOnly}`);
+}
+
+// Server-pre-aggregated chart data (ARCHITECTURE_DECISIONS.md §23.3) — never
+// fetch raw rows to chart client-side; the backend buckets by day/week/month.
+export async function getTimeseries(
+  metric: "fines" | "bookings",
+  days = 30,
+  grouping: "day" | "week" | "month" = "day"
+): Promise<TimeseriesResponse> {
+  return apiFetch<TimeseriesResponse>(`/api/analytics/timeseries?metric=${metric}&days=${days}&grouping=${grouping}`);
 }
 
 // Backend defaults to the most recent 200 records, not the whole table.
