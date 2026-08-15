@@ -139,6 +139,7 @@ export default async function DashboardPage() {
           label="Registered vehicles"
           value={matatus.length.toString()}
           delta={{ label: `${activeCount} in service`, tone: "positive" }}
+          href="/matatus"
         />
         <KpiCard
           label="Fleet compliance"
@@ -148,12 +149,14 @@ export default async function DashboardPage() {
             tone: flagged.length > 0 ? "negative" : "positive",
           }}
           accent="green"
+          href="/matatus"
         />
         <KpiCard
           label="Outstanding fines"
           value={`KES ${(pendingKes / 1000).toFixed(0)}k`}
           delta={{ label: `${pendingFines.length} pending citations`, tone: "negative" }}
           accent="red"
+          href="/revenue"
         />
         {!isSacco && (
           <KpiCard
@@ -173,6 +176,7 @@ export default async function DashboardPage() {
             value={reports.filter((r) => r.matatuRegNumber && allMatatus.some((m) => matatuIds.has(m.id) && m.regNumber === r.matatuRegNumber)).length.toString()}
             delta={{ label: `${pendingReports.length} pending review`, tone: "attention" }}
             accent="yellow"
+            href="/passengers"
           />
         )}
       </div>

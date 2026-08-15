@@ -17,12 +17,21 @@ const REPORT_STATUS_STYLES: Record<string, string> = {
 
 export default async function PassengersPage() {
   const session = readSession()!;
+  const isSacco = session.role === "SACCO_OPERATOR";
 
-  const [routes, matatus, reports] = await Promise.all([
+  const [routes, allMatatus, allReports] = await Promise.all([
     getRoutes(),
     getMatatus(),
     can(session.role, "view_reports") ? getReports() : Promise.resolve([]),
   ]);
+
+  // Scoped once, server-side: an operator's complaint data never leaves the
+  // server for other operators' vehicles — same pattern as /revenue and
+  // /matatus. Route definitions themselves aren't operator-exclusive data,
+  // so `routes` stays unfiltered.
+  const matatus = isSacco ? allMatatus.filter((m) => m.saccoId === session.saccoId) : allMatatus;
+  const myRegNumbers = new Set(matatus.map((m) => m.regNumber));
+  const reports = isSacco ? allReports.filter((r) => r.matatuRegNumber && myRegNumbers.has(r.matatuRegNumber)) : allReports;
 
   const activeMatatus = matatus.filter((m) => m.status === "ACTIVE").length;
   const complianceRating = Math.round((activeMatatus / (matatus.length || 1)) * 100);
