@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import CrimeRecord, User, Matatu, Fine
 from app.schemas import CrimeRecordResponse
-from app.auth import get_current_user, requires_permission
+from app.auth import requires_permission
 from app.audit import stage_audit_log
 
 router = APIRouter(prefix="/api/enforcement/crimes", tags=["Enforcement Crimes"])
@@ -21,13 +21,23 @@ UPLOAD_ROOT = os.path.join(os.getcwd(), "uploads", "crime_records")
 @router.get("", response_model=List[CrimeRecordResponse])
 async def get_crimes(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    # Was `Depends(get_current_user)` — any authenticated account, including
+    # PASSENGER, could read every crime/enforcement record county-wide with
+    # no permission check and no Sacco scoping at all. `view_reports` is
+    # granted to exactly the role set that should see this (staff/
+    # enforcement unscoped, Sacco Operator/Crew scoped to their own fleet
+    # below) — reused rather than adding a near-duplicate permission.
+    current_user: User = Depends(requires_permission("view_reports")),
 ):
-    result = await db.execute(
+    query = (
         select(CrimeRecord)
         .options(selectinload(CrimeRecord.officer))
         .order_by(CrimeRecord.timestamp.desc())
     )
+    if current_user.role in ("SACCO_OPERATOR", "CREW"):
+        own_reg_numbers = select(Matatu.reg_number).where(Matatu.sacco_id == current_user.sacco_id)
+        query = query.where(CrimeRecord.reg_number.in_(own_reg_numbers))
+    result = await db.execute(query)
     crimes = result.scalars().all()
     
     for c in crimes:

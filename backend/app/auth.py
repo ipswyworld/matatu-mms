@@ -32,7 +32,13 @@ def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] 
         expire = datetime.datetime.utcnow() + expires_delta
     else:
         expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    # "iat" (issued-at) — the only addition session revocation (§19) needs:
+    # a per-user "revoked before" timestamp in Redis can reject any token
+    # issued before it, without a per-token denylist. Set explicitly rather
+    # than relying on pyjwt to add it, since we need the exact same value
+    # to compare against in get_current_user.
+    issued_at = datetime.datetime.utcnow()
+    to_encode.update({"exp": expire, "iat": issued_at})
     # pyjwt library
     encoded_jwt = pyjwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -60,11 +66,23 @@ async def get_current_user(
         # Decode the token
         payload = pyjwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("userId") or payload.get("sub")
+        issued_at = payload.get("iat")
         if user_id is None:
             raise credentials_exception
     except Exception:
         raise credentials_exception
-        
+
+    # Session revocation (§19, app/session_revocation.py) — a token issued
+    # before the user's last "revoke all sessions" action is rejected here
+    # even though it hasn't expired yet. issued_at is None for a token
+    # minted before this claim existed (pre-deploy tokens) — those simply
+    # can't be revoked this way, which is fine: they expire on their own
+    # normal schedule regardless.
+    if issued_at is not None:
+        from app.session_revocation import is_token_revoked
+        if await is_token_revoked(user_id, float(issued_at)):
+            raise credentials_exception
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if user is None:

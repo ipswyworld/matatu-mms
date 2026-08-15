@@ -73,6 +73,11 @@ async def _persist_position(matatu_id: str, data: Dict[str, Any]) -> None:
                 heading=data.get("bearing"),
                 recorded_at=datetime.datetime.now(datetime.timezone.utc),
             ))
+            # Route-deviation check (§1.6/§29.4) — same session/commit as
+            # the position write above; best-effort, like everything else
+            # in this function (see check_deviation's own docstring).
+            from app.deviation import check_deviation
+            await check_deviation(db, matatu_id, float(lat), float(lng))
             await db.commit()
     except Exception:
         logger.exception(f"Failed to persist GPS position for matatu {matatu_id}")

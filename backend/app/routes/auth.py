@@ -228,6 +228,17 @@ async def logout(response: Response):
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return {"message": "Logged out successfully"}
 
+@router.post("/revoke-sessions")
+async def revoke_my_sessions(response: Response, current_user: User = Depends(get_current_user)):
+    """"Log out everywhere" (§19) — for a user who suspects their account is
+    compromised, distinct from a normal single-device logout above. Every
+    token issued before this call is rejected on its next use, regardless
+    of its own expiry."""
+    from app.session_revocation import revoke_all_sessions
+    await revoke_all_sessions(current_user.id)
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    return {"message": "All sessions revoked. You've been signed out everywhere, including this device."}
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user

@@ -428,6 +428,69 @@ class OfficerAssignmentResponse(BaseModelCamel):
     assigned_zone_id: Optional[str] = None
     commander_title: Optional[str] = None
 
+# --- Beats (ARCHITECTURE_DECISIONS.md §22) ---
+class BeatCreate(BaseModelCamel):
+    name: str
+    route_id: str
+    from_stage_id: str
+    to_stage_id: str
+    zone_id: Optional[str] = None
+
+class BeatResponse(BaseModelCamel):
+    id: str
+    name: str
+    route_id: str
+    from_stage_id: str
+    to_stage_id: str
+    zone_id: Optional[str] = None
+    created_at: datetime.datetime
+
+class BeatAssignmentCreate(BaseModelCamel):
+    officer_id: str
+    beat_id: str
+    shift_date: datetime.date
+    shift_start: datetime.datetime
+    shift_end: datetime.datetime
+
+class BeatAssignmentResponse(BaseModelCamel):
+    id: str
+    officer_id: str
+    officer_name: str
+    beat_id: str
+    beat_name: str
+    shift_date: datetime.date
+    shift_start: datetime.datetime
+    shift_end: datetime.datetime
+    assigned_by: str
+    created_at: datetime.datetime
+
+# --- Route deviation (§1.6, §29.4) ---
+class RouteDetourCreate(BaseModelCamel):
+    route_id: str
+    from_stage_id: str
+    to_stage_id: str
+    alternate_description: str
+
+class RouteDetourResponse(BaseModelCamel):
+    id: str
+    route_id: str
+    from_stage_id: str
+    to_stage_id: str
+    alternate_description: str
+    active: bool
+    created_at: datetime.datetime
+
+class DeviationAlertResponse(BaseModelCamel):
+    id: str
+    matatu_id: str
+    reg_number: str
+    route_id: str
+    lat: float
+    lng: float
+    distance_meters: float
+    detected_at: datetime.datetime
+    resolved: bool
+
 # --- Enforcement Cases (Arrest -> Release workflow) ---
 class EnforcementCaseCreate(BaseModelCamel):
     reg_number: str
@@ -509,3 +572,14 @@ class DashboardStats(BaseModelCamel):
     pending_fines_count: int
     pending_fines_value: float
     recent_activity: List[ActivityLogResponse]
+
+# --- Analytics rollups (ARCHITECTURE_DECISIONS.md §23.3) ---
+class TimeseriesPoint(BaseModelCamel):
+    bucket: datetime.date
+    count: int
+    value: float
+
+class TimeseriesResponse(BaseModelCamel):
+    metric: str
+    grouping: str
+    points: List[TimeseriesPoint]

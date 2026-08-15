@@ -15,6 +15,16 @@ from sqlalchemy import select
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_mms.db")
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["WEBHOOK_MAX_RETRIES"] = "1"
+# Distinct from DATABASE_URL/IS_SQLITE: this suite deliberately registers a
+# loopback webhook target (127.0.0.1:9999) to simulate a delivery failure
+# in TEST 8/9, which the webhook SSRF guard (app/security.py, Task 25)
+# would otherwise correctly reject regardless of which database backs the
+# run — that guard's job is exactly to block loopback/private targets, so
+# gating it on the database engine was the wrong signal. TESTING is the
+# right one: "are we deliberately running the test suite," independent of
+# whether that suite happens to run against SQLite or a real Postgres
+# service container (the Postgres/PostGIS CI integration job, Task 12).
+os.environ["TESTING"] = "1"
 
 from app.main import app
 from app.database import Base, engine, get_db, IS_SQLITE

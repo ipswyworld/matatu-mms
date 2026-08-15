@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models import PassengerReport, CrimeRecord, User
+from app.models import PassengerReport, CrimeRecord, Matatu, User
 from app.schemas import PassengerReportResponse, PassengerReportStatusUpdate
 from app.auth import requires_permission
 from app.audit import stage_audit_log
@@ -29,7 +29,18 @@ async def get_reports(
     current_user: User = Depends(requires_permission("view_reports")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(PassengerReport).order_by(PassengerReport.created_at.desc()))
+    query = select(PassengerReport).order_by(PassengerReport.created_at.desc())
+    # PassengerReport.matatu_reg_number is a plain string, not a Matatu FK
+    # (the report can reference a vehicle from any Sacco) — so scoping a
+    # Sacco Operator/Crew account to their own fleet needs an explicit
+    # subquery on reg_number rather than the usual join-on-sacco_id
+    # pattern (app.abac.sacco_scope_query doesn't fit this shape). Without
+    # this, any operator account could read every passenger complaint
+    # county-wide, not just ones about their own vehicles.
+    if current_user.role in ("SACCO_OPERATOR", "CREW"):
+        own_reg_numbers = select(Matatu.reg_number).where(Matatu.sacco_id == current_user.sacco_id)
+        query = query.where(PassengerReport.matatu_reg_number.in_(own_reg_numbers))
+    result = await db.execute(query)
     return result.scalars().all()
 
 @router.post("/public-comment", status_code=status.HTTP_201_CREATED)

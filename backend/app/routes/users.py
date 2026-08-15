@@ -11,6 +11,7 @@ from app.schemas import UserResponse, UserCreate, UserUpdate
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
 from app.rbac import ADMIN_TIER_ROLES, can
+from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/users", tags=["Users Management"])
 
@@ -19,7 +20,16 @@ async def get_users(
     current_user: User = Depends(requires_permission("view_users")),
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(User))
+    # Was completely unscoped: any account with "view_users" — which
+    # includes SACCO_OPERATOR — got back every user in the system, staff
+    # and every other Sacco's accounts included, emails and all. Scope a
+    # Sacco Operator to their own Sacco's users (their own account plus
+    # their Crew) the same way every other list endpoint scopes to
+    # sacco_id; unscoped stays correct for the staff/admin roles that
+    # actually need full user management.
+    query = select(User)
+    query = sacco_scope_query(current_user, query, User.sacco_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -141,3 +151,25 @@ async def update_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+@router.post("/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_user_sessions(
+    user_id: str,
+    current_user: User = Depends(requires_permission("manage_users")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-triggered "log this account out everywhere" (§19) — for a
+    discovered-compromised account, distinct from a password reset (which
+    doesn't invalidate tokens already issued)."""
+    from app.session_revocation import revoke_all_sessions
+    target = (await db.execute(select(User).where(User.id == user_id))).scalars().first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role in ADMIN_TIER_ROLES and not can(current_user.role, "manage_admins"):
+        raise HTTPException(status_code=403, detail="Only a Super Admin can revoke another Admin's sessions")
+    await revoke_all_sessions(user_id)
+    stage_audit_log(
+        db, resource_type="user", resource_id=user_id, action="SESSIONS_REVOKED",
+        user_id=current_user.id, new_values={"revokedBy": current_user.id},
+    )
+    await db.commit()

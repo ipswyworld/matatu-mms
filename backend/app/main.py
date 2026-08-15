@@ -1,5 +1,6 @@
+import asyncio
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -59,6 +60,11 @@ from app.routes.telemetry import broadcaster as telemetry_broadcaster
 from app.routes.system import router as system_router
 from app.routes.crew import router as crew_router
 from app.routes.fare_stages import router as fare_stages_router
+from app.routes.beats import router as beats_router
+from app.routes.analytics import router as analytics_router
+from app.routes.search import router as search_router
+from app.routes.demand import router as demand_router
+from app.routes.deviations import router as deviations_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -83,6 +89,26 @@ async def lifespan(app: FastAPI):
     dashboard_broadcaster.start()
     notifications_broadcaster.start()
     logger.info("Real-time broadcasters started.")
+
+    # 1c. Durable event consumer (app/streams.py, §4.2) — Postgres/prod mode
+    # only, matching the IS_SQLITE convention used throughout (fast/no-
+    # services SQLite path is unaffected). Task reference kept for a clean
+    # cancel on shutdown, same pattern as the broadcasters above.
+    event_consumer_task = None
+    arq_worker_task = None
+    if not IS_SQLITE:
+        from app.streams import consume_events_forever
+        event_consumer_task = asyncio.create_task(consume_events_forever("consumer-1"))
+        logger.info("Durable event consumer started.")
+
+        # 1d. ARQ task queue (§4.2) — embedded in-process, see app/worker.py
+        # docstring for why. Available for new background job types
+        # (fare-chart parsing, report generation, ...) to enqueue into via
+        # app.worker.get_arq_pool(); existing direct-call flows are
+        # unchanged.
+        from app.worker import run_worker
+        arq_worker_task = asyncio.create_task(run_worker())
+        logger.info("ARQ task worker started.")
 
     # 2. Create database schema tables. Postgres schema is now owned by
     # Alembic migrations (run `alembic upgrade head` before starting the
@@ -109,6 +135,10 @@ async def lifespan(app: FastAPI):
     telemetry_broadcaster.stop()
     dashboard_broadcaster.stop()
     notifications_broadcaster.stop()
+    if event_consumer_task is not None:
+        event_consumer_task.cancel()
+    if arq_worker_task is not None:
+        arq_worker_task.cancel()
     await close_redis()
     await engine.dispose()
     logger.info("Shutdown complete.")
@@ -120,6 +150,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# OpenTelemetry distributed tracing (§8) — see app/tracing.py for why this
+# is added now rather than after the service split, and how it degrades
+# safely with no tracing backend deployed.
+from app.tracing import setup_tracing
+setup_tracing(app)
+
 # Rate limiting — per-client-IP, Redis-backed so limits hold across replicas
 # (see app/rate_limit.py). Individual limits are applied per-route via
 # @limiter.limit(...) on the endpoints that need it (auth, booking,
@@ -127,6 +163,20 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+# Security response headers (§15.4) — API-side counterpart to
+# matatu-mms/next.config.mjs's headers() for the frontend; direct API
+# clients (or anything inspecting backend responses specifically) get the
+# same protection. No CSP here deliberately: CSP governs how a *page*
+# renders/executes content, meaningless on a JSON API response.
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
 
 # Configure CORS for Next.js frontend communication. Extra origins (e.g. a
 # deployed frontend URL) come from CORS_ORIGINS as a comma-separated list —
@@ -167,6 +217,11 @@ app.include_router(notifications_router)
 app.include_router(system_router)
 app.include_router(crew_router)
 app.include_router(fare_stages_router)
+app.include_router(beats_router)
+app.include_router(analytics_router)
+app.include_router(search_router)
+app.include_router(demand_router)
+app.include_router(deviations_router)
 
 # Serve uploaded verification/onboarding documents (dev-only local disk
 # storage — will move to object storage e.g. S3/GCS behind Postgres+Redis

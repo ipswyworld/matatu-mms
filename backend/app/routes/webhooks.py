@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from app.schemas import WebhookSubscriptionCreate, WebhookSubscriptionResponse, 
 from app.auth import get_current_user
 from app.events import dispatcher
 from app.abac import sacco_scope_query, enforce_own_sacco
+from app.security import validate_public_webhook_url, UnsafeWebhookUrlError
 
 router = APIRouter(prefix="/api/webhooks", tags=["Webhooks Simulator"])
 
@@ -22,6 +24,18 @@ async def create_subscription(
     db: AsyncSession = Depends(get_db)
 ):
     enforce_own_sacco(current_user, payload.sacco_id, "Sacco Operators can only subscribe for their own fleet events.")
+
+    # SSRF guard (§21.3) — skipped only when TESTING=1 (set explicitly by
+    # test_backend.py, which deliberately registers a loopback URL to
+    # simulate a delivery failure), never based on which database is in
+    # use — a Postgres-backed test run (Task 12's CI job) still shouldn't
+    # accept a real production webhook target pointed at an internal
+    # address just because it happens to be running against Postgres.
+    if os.getenv("TESTING") != "1":
+        try:
+            validate_public_webhook_url(payload.url)
+        except UnsafeWebhookUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
     # Verify Sacco exists

@@ -257,6 +257,56 @@ class VehiclePosition(Base):
     matatu = relationship("Matatu")
 
 
+class RouteDetour(Base):
+    """A pre-approved alternate road segment for a known incident-prone
+    stretch of one route (ARCHITECTURE_DECISIONS.md §29.4). Deliberately
+    NOT a route variant — routes 2, 2A, 18A etc. are separate, permanently
+    numbered official routes (§1.3); this is a temporary detour within one
+    route's identity, activated only when an incident actually intersects
+    the stretch it covers. Conflating the two would corrupt the official
+    route registry with ad-hoc detour noise, per the doc's explicit
+    warning — hence a wholly separate table rather than another Route row.
+    """
+    __tablename__ = "route_detours"
+
+    id = Column(String, primary_key=True, index=True)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    from_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    to_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    alternate_description = Column(Text, nullable=False)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    route = relationship("Route")
+    from_stage = relationship("Stage", foreign_keys=[from_stage_id])
+    to_stage = relationship("Stage", foreign_keys=[to_stage_id])
+
+
+class DeviationAlert(Base):
+    """A vehicle position that fell outside its route's expected corridor
+    past a tolerance (§1.6's "buffered polygon, alert if straying" —
+    implemented here as a plain lat/lng distance-to-route-segment check
+    rather than a true PostGIS buffered polygon, since precise route
+    polylines beyond stage waypoints don't exist yet; same honest-
+    approximation posture as Stage.geocoded — see §29.4's own note that
+    detection was "already scoped in §1.6," this is that scoping realized
+    with the geometry actually available today).
+    """
+    __tablename__ = "deviation_alerts"
+
+    id = Column(String, primary_key=True, index=True)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    distance_meters = Column(Float, nullable=False)
+    detected_at = Column(DateTime(timezone=True), nullable=False)
+    resolved = Column(Boolean, default=False)
+
+    matatu = relationship("Matatu")
+    route = relationship("Route")
+
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
@@ -354,6 +404,76 @@ class Zone(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+
+
+class DemandSignal(Base):
+    """One origin-destination search or booking — the raw material for the
+    demand-intelligence aggregation in ARCHITECTURE_DECISIONS.md §27.3.
+    "Passenger search and booking activity is itself the data source":
+    aggregating these reproduces the BRN report's one-time 3,991-passenger
+    survey continuously and live instead of as a point-in-time snapshot.
+    Deliberately a flat append-only log (indexed for the two aggregate
+    queries that read it) rather than anything normalized further — this
+    table exists to be GROUP BY'd, not joined deeply.
+    """
+    __tablename__ = "demand_signals"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    from_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    to_stage_id = Column(String, ForeignKey("stages.id"), nullable=True)  # null for a boarding-only signal
+    source = Column(String, nullable=False)  # SEARCH, BOOKING
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class Beat(Base):
+    """An enforcement beat — a route-segment, not a polygon
+    (ARCHITECTURE_DECISIONS.md §22.2): an ordered slice of one route's
+    corridor between two stages. Reuses the Stage/RouteStage geometry
+    already digitized from the BRN report (Task 8) rather than inventing a
+    parallel geometry system — "this stretch to this stretch" is just two
+    positions along one route's existing stage sequence. `zone_id` is kept
+    as an optional coarse administrative grouping per §22.2's decision to
+    keep Zone alongside, not fork it.
+    """
+    __tablename__ = "beats"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    from_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    to_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    zone_id = Column(String, ForeignKey("zones.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    route = relationship("Route")
+    from_stage = relationship("Stage", foreign_keys=[from_stage_id])
+    to_stage = relationship("Stage", foreign_keys=[to_stage_id])
+    zone = relationship("Zone")
+
+
+class BeatAssignment(Base):
+    """Time-boxed officer-to-beat assignment (§22.3) — replaces the single
+    sticky `User.assigned_zone_id` field's "one zone, no shift window, no
+    history" limitation with a real assignment record, additive alongside
+    it (assigned_zone_id stays as-is; nothing currently reading it breaks).
+    Yields a real roster/coverage-timeline view and an assignment history,
+    neither of which a single mutable field can provide.
+    """
+    __tablename__ = "beat_assignments"
+
+    id = Column(String, primary_key=True, index=True)
+    officer_id = Column(String, ForeignKey("users.id"), nullable=False)
+    beat_id = Column(String, ForeignKey("beats.id"), nullable=False)
+    shift_date = Column(Date, nullable=False)
+    shift_start = Column(DateTime(timezone=True), nullable=False)
+    shift_end = Column(DateTime(timezone=True), nullable=False)
+    assigned_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    officer = relationship("User", foreign_keys=[officer_id])
+    beat = relationship("Beat")
+    assigner = relationship("User", foreign_keys=[assigned_by])
+
 
 class OffenceType(Base):
     __tablename__ = "offence_types"
