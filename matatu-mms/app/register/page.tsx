@@ -1,24 +1,23 @@
 "use client";
 
 import { useFormState } from "react-dom";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { registerAction, getPublicSaccosAction } from "@/lib/actions";
+import { registerAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import PublicFooter from "@/components/PublicFooter";
 
+// Passenger self-registration only. Crew accounts are issued by the
+// operator when they onboard a vehicle (see the Sacco Operator dashboard's
+// crew-assignment flow) — a driver/conductor never creates their own
+// login, and the backend rejects self-registration with any role other
+// than PASSENGER regardless of what this form sends.
 export default function RegisterPage() {
   const [state, formAction] = useFormState(registerAction, undefined);
-  const [selectedRole, setSelectedRole] = useState<"PASSENGER" | "CREW">("PASSENGER");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [fullName, setFullName] = useState("");
   const [signature, setSignature] = useState("");
-  const [saccos, setSaccos] = useState<{ id: string; name: string }[]>([]);
-
-  useEffect(() => {
-    getPublicSaccosAction().then(setSaccos);
-  }, []);
 
   const signatureMatches =
     signature.trim().length > 0 && signature.trim().toLowerCase() === fullName.trim().toLowerCase();
@@ -44,45 +43,15 @@ export default function RegisterPage() {
           <NairobiCrest size={52} className="mx-auto drop-shadow-lg" />
           <h1 className="text-xl font-extrabold tracking-tight text-white">Nairobi City County</h1>
           <p className="text-xs font-semibold text-county-yellow uppercase tracking-widest">
-            Create Independent Portal Account
+            Create Your Commuter Account
           </p>
         </div>
 
         {/* Form Container */}
         <div className="bg-white/[0.06] border border-white/10 p-6 rounded-2xl shadow-2xl space-y-5">
-          {/* Role Selection Tabs */}
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-white/70 block mb-2">
-              Select Your Portal Account Type
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedRole("PASSENGER")}
-                className={`p-3 rounded-xl border text-center transition-all text-xs ${
-                  selectedRole === "PASSENGER"
-                    ? "bg-county-green border-county-green text-white font-bold shadow-md"
-                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
-                }`}
-              >
-                <div className="font-extrabold text-sm">Commuter</div>
-                <div className="text-[10px] opacity-80 mt-0.5">Passenger Portal</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedRole("CREW")}
-                className={`p-3 rounded-xl border text-center transition-all text-xs ${
-                  selectedRole === "CREW"
-                    ? "bg-county-blue border-county-blue text-white font-bold shadow-md"
-                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
-                }`}
-              >
-                <div className="font-extrabold text-sm">Matatu Crew</div>
-                <div className="text-[10px] opacity-80 mt-0.5">Driver / Conductor</div>
-              </button>
-            </div>
-          </div>
+          <p className="text-xs text-white/60 leading-relaxed">
+            Book seats, track your matatu live, and report issues directly to County Traffic Enforcement.
+          </p>
 
           {state?.error && (
             <div className="bg-county-red/20 border border-county-red/40 text-red-200 text-xs p-3 rounded-lg font-semibold text-center">
@@ -91,7 +60,7 @@ export default function RegisterPage() {
           )}
 
           <form action={formAction} className="space-y-4">
-            <input type="hidden" name="role" value={selectedRole} />
+            <input type="hidden" name="role" value="PASSENGER" />
 
             <div>
               <label className="text-xs font-semibold text-white/70 block mb-1">Full Name</label>
@@ -101,7 +70,7 @@ export default function RegisterPage() {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder={selectedRole === "PASSENGER" ? "e.g. John Kamau" : "e.g. James Omwamba"}
+                placeholder="e.g. John Kamau"
                 className="w-full bg-black/40 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-county-green"
               />
             </div>
@@ -112,31 +81,10 @@ export default function RegisterPage() {
                 type="email"
                 name="email"
                 required
-                placeholder={selectedRole === "PASSENGER" ? "commuter@domain.com" : "crew@umoinner.co.ke"}
+                placeholder="commuter@domain.com"
                 className="w-full bg-black/40 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-county-green"
               />
             </div>
-
-            {selectedRole === "CREW" && (
-              <div>
-                <label className="text-xs font-semibold text-white/70 block mb-1">Assigned Operator</label>
-                <select
-                  name="saccoId"
-                  required
-                  defaultValue=""
-                  className="w-full bg-slate-900 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white focus:outline-none focus:border-county-blue font-bold"
-                >
-                  <option value="" disabled>
-                    {saccos.length > 0 ? "Select your operator" : "Loading operators..."}
-                  </option>
-                  {saccos.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             <div>
               <label className="text-xs font-semibold text-white/70 block mb-1">Password</label>
@@ -162,9 +110,6 @@ export default function RegisterPage() {
                   <Link href="/terms" target="_blank" className="font-bold text-county-yellow hover:underline">
                     Terms &amp; Conditions
                   </Link>
-                  {selectedRole === "CREW" && (
-                    <> and understand this includes GPS location broadcasting, seat reporting, and fare-handling obligations for Crew.</>
-                  )}
                 </span>
               </label>
 
@@ -193,21 +138,22 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={!canSubmit}
-              className={`w-full py-2.5 rounded-lg font-extrabold text-sm text-white shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                selectedRole === "PASSENGER"
-                  ? "bg-county-green hover:bg-county-green/90"
-                  : "bg-county-blue hover:bg-county-blue/90"
-              }`}
+              className="w-full py-2.5 rounded-lg font-extrabold text-sm text-white shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-county-green hover:bg-county-green/90"
             >
-              Sign & Register — Access {selectedRole === "PASSENGER" ? "Passenger Portal" : "Crew Dashboard"}
+              Sign & Register — Access Passenger Portal
             </button>
           </form>
 
-          <div className="text-center text-xs text-white/50 pt-2 border-t border-white/10">
-            Already have an account?{" "}
-            <Link href="/login" className="font-bold text-county-yellow hover:underline">
-              Sign in to Portal →
-            </Link>
+          <div className="text-center text-xs text-white/50 pt-2 border-t border-white/10 space-y-1.5">
+            <p>
+              Already have an account?{" "}
+              <Link href="/login" className="font-bold text-county-yellow hover:underline">
+                Sign in to Portal →
+              </Link>
+            </p>
+            <p>
+              Matatu crew: your operator issues your login when they onboard your vehicle — no need to register here.
+            </p>
           </div>
         </div>
       </div>

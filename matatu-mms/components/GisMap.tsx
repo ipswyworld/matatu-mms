@@ -48,6 +48,11 @@ function stageMarkerElement(selected: boolean) {
   return el;
 }
 
+// Builds marker content via createElement/textContent rather than innerHTML.
+// reg_number is operator-controlled (set at vehicle registration and bulk
+// import) — interpolating it into innerHTML would let an operator run
+// script in the browser of every user viewing the live map, including
+// county admins. textContent can never be interpreted as markup.
 function matatuMarkerElement(reg: string, speed: number) {
   const el = document.createElement("div");
   el.style.background = "#0F47AF";
@@ -63,7 +68,19 @@ function matatuMarkerElement(reg: string, speed: number) {
   el.style.flexDirection = "column";
   el.style.alignItems = "center";
   el.style.lineHeight = "1.2";
-  el.innerHTML = `<span>🚐 ${reg}</span><span style="color:#FCDD07;font-size:9px;">${speed} km/h</span>`;
+
+  const regLabel = document.createElement("span");
+  regLabel.className = "matatu-marker-reg";
+  regLabel.textContent = `🚐 ${reg}`;
+
+  const speedLabel = document.createElement("span");
+  speedLabel.className = "matatu-marker-speed";
+  speedLabel.style.color = "#FCDD07";
+  speedLabel.style.fontSize = "9px";
+  speedLabel.textContent = `${speed} km/h`;
+
+  el.appendChild(regLabel);
+  el.appendChild(speedLabel);
   return el;
 }
 
@@ -200,7 +217,10 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
         if (existing) {
           existing.setLngLat([v.lng, v.lat]);
           const el = existing.getElement();
-          el.innerHTML = `<span>🚐 ${v.reg_number}</span><span style="color:#FCDD07;font-size:9px;">${v.speed} km/h</span>`;
+          const regLabel = el.querySelector<HTMLElement>(".matatu-marker-reg");
+          const speedLabel = el.querySelector<HTMLElement>(".matatu-marker-speed");
+          if (regLabel) regLabel.textContent = `🚐 ${v.reg_number}`;
+          if (speedLabel) speedLabel.textContent = `${v.speed} km/h`;
         } else {
           const marker = new maplibregl.Marker({ element: matatuMarkerElement(v.reg_number, v.speed) })
             .setLngLat([v.lng, v.lat])
