@@ -1,0 +1,61 @@
+# Additive override for canary/blue-green deploys on the stateless API tier
+# (ARCHITECTURE_DECISIONS.md §13.4). Does not modify docker-compose.yml's
+# default single-instance setup — combine explicitly:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
+#
+# Adds a second backend instance ("green", the new candidate version) beside
+# the existing "backend" service (treated as "blue", the current live
+# version) and points nginx at a weighted-upstream config instead of the
+# single-server one, so traffic can be shifted gradually via
+# scripts/canary-promote.sh rather than an instant cutover.
+#
+# The database is shared and does not get a colour (§13.3) — both
+# instances run against the same Postgres/Redis, so any migration deployed
+# alongside a canary must be backward-compatible with the version still
+# receiving the other 90%+ of traffic (expand/contract, §11.3).
+services:
+  backend_green:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      SECRET_KEY: ${BACKEND_SECRET_KEY}
+      NAIROBIPAY_CALLBACK_SECRET: ${NAIROBIPAY_CALLBACK_SECRET}
+      SESSION_COOKIE_NAME: mms_session
+      TERMS_VERSION: ${TERMS_VERSION:-2026-07-25}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backend_data:/app/data
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks: [internal]
+
+  nginx:
+    volumes:
+      # Overrides the base service's nginx.conf mount with the
+      # weighted-upstream variant — same file list otherwise.
+      - ./nginx/nginx.canary.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - nginx_logs:/var/log/nginx
+      - certbot_webroot:/var/www/certbot
+    depends_on:
+      - backend
+      - backend_green
+      - frontend
+
+volumes:
+  backend_data:
+  backend_uploads:
