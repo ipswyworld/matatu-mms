@@ -77,6 +77,8 @@ class User(Base):
     reset_token = Column(String, nullable=True, index=True)
     reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
 
+    crew_assignments = relationship("CrewAssignment", back_populates="user")
+
     sacco = relationship("Sacco", back_populates="users")
     assigned_zone = relationship("Zone")
 
@@ -176,6 +178,30 @@ class Matatu(Base):
     route = relationship("Route", back_populates="matatus")
     activities = relationship("ActivityLog", back_populates="matatu")
     fines = relationship("Fine", back_populates="matatu")
+    crew_assignments = relationship("CrewAssignment", back_populates="matatu")
+
+
+class CrewAssignment(Base):
+    """Links a real CREW `User` login to a `Matatu`. The pre-existing
+    Matatu.driver_name/conductor_name fields are plain free-text (kept for
+    display) and were never tied to a login — this is the real link.
+    A join table rather than a single FK on User, because a crew member
+    plausibly moves between vehicles over time and a single FK can't
+    represent that history; unassigned_at = NULL means currently active.
+    (ARCHITECTURE_DECISIONS.md §29.1.)
+    """
+    __tablename__ = "crew_assignments"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
+    crew_role = Column(String, nullable=False)  # DRIVER, CONDUCTOR
+    assigned_at = Column(DateTime(timezone=True), nullable=False)
+    unassigned_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="crew_assignments")
+    matatu = relationship("Matatu", back_populates="crew_assignments")
+
 
 class ActivityLog(Base):
     __tablename__ = "activity_logs"

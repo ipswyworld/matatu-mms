@@ -57,6 +57,7 @@ from app.routes.notifications import router as notifications_router
 from app.routes.notifications import broadcaster as notifications_broadcaster
 from app.routes.telemetry import broadcaster as telemetry_broadcaster
 from app.routes.system import router as system_router
+from app.routes.crew import router as crew_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -163,6 +164,7 @@ app.include_router(dashboard_events_router)
 app.include_router(enforcement_cases_router)
 app.include_router(notifications_router)
 app.include_router(system_router)
+app.include_router(crew_router)
 
 # Serve uploaded verification/onboarding documents (dev-only local disk
 # storage — will move to object storage e.g. S3/GCS behind Postgres+Redis

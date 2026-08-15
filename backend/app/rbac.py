@@ -36,6 +36,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_audit_logs",
         "view_system_health",
         "manage_system_config",
+        "manage_crew",
     ],
     "ADMIN": [
         "view_dashboard",
@@ -64,6 +65,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "decide_enforcement_case",
         "manage_officer_assignments",
         "view_audit_logs",
+        "manage_crew",
     ],
     "DIRECTOR_MOBILITY": [
         "view_dashboard",
@@ -136,6 +138,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "manage_sacco_documents",
         "remove_matatu",
         "view_users",
+        "manage_crew",
     ],
     "VIEWER": [
         "view_dashboard",

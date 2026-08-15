@@ -161,6 +161,43 @@ class UserLogin(BaseModel):
 
     _normalize_email = _normalized_email_validator()
 
+# --- Crew Assignment Schemas ---
+class CrewIssueRequest(BaseModelCamel):
+    """Operator-issued crew login + vehicle assignment in one call
+    (ARCHITECTURE_DECISIONS.md §29.1). No client-supplied password —
+    the server generates one and returns it exactly once."""
+    name: str
+    email: EmailStr
+    phone: Optional[str] = None
+    license_number: Optional[str] = None
+    matatu_id: str
+    crew_role: str  # DRIVER, CONDUCTOR
+
+    _normalize_email = _normalized_email_validator()
+
+    @field_validator("crew_role")
+    @classmethod
+    def _validate_crew_role(cls, v: str) -> str:
+        v = v.strip().upper()
+        if v not in ("DRIVER", "CONDUCTOR"):
+            raise ValueError("crew_role must be DRIVER or CONDUCTOR")
+        return v
+
+class CrewAssignmentResponse(BaseModelCamel):
+    id: str
+    user_id: str
+    matatu_id: str
+    crew_role: str
+    assigned_at: datetime.datetime
+    unassigned_at: Optional[datetime.datetime] = None
+    user_name: str
+    user_email: str
+    matatu_reg_number: str
+
+class CrewIssueResponse(BaseModelCamel):
+    assignment: CrewAssignmentResponse
+    generated_password: str
+
 class ForgotPasswordRequest(BaseModelCamel):
     email: EmailStr
 

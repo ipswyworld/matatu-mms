@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Booking, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -79,6 +79,10 @@ export async function getMatatus(): Promise<Matatu[]> {
 
 export async function getMatatuById(id: string): Promise<Matatu | undefined> {
   return apiFetch<Matatu>(`/api/matatus/${id}`);
+}
+
+export async function getCrewAssignments(activeOnly = true): Promise<CrewAssignment[]> {
+  return apiFetch<CrewAssignment[]>(`/api/crew?active_only=${activeOnly}`);
 }
 
 // Backend defaults to the most recent 200 records, not the whole table.

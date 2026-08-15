@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { readSession } from "@/lib/session";
-import { getMatatus, getRoutes, getSaccos, getFines } from "@/lib/data";
+import { getMatatus, getRoutes, getSaccos, getFines, getCrewAssignments } from "@/lib/data";
 import StatCard from "@/components/StatCard";
 import { MatatuStatusPill } from "@/components/StatusPill";
 import OnboardVehicleModal from "@/components/OnboardVehicleModal";
@@ -12,17 +12,20 @@ import SaccoDocumentUploadRow from "@/components/SaccoDocumentUploadRow";
 import SaccoOfficialsForm from "@/components/SaccoOfficialsForm";
 import BulkImportVehiclesModal from "@/components/BulkImportVehiclesModal";
 import RemoveMatatuButton from "@/components/RemoveMatatuButton";
+import IssueCrewCredentialsModal from "@/components/IssueCrewCredentialsModal";
+import RevokeCrewAssignmentButton from "@/components/RevokeCrewAssignmentButton";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Operator Dashboard" };
 
 export default async function SaccoPortalPage() {
   const session = readSession()!;
-  const [allMatatus, saccos, routes, fines] = await Promise.all([
+  const [allMatatus, saccos, routes, fines, crewAssignments] = await Promise.all([
     getMatatus(),
     getSaccos(),
     getRoutes(),
     getFines(),
+    getCrewAssignments(),
   ]);
 
   // Backend already scopes SACCO_OPERATOR to their own Sacco; ADMIN/ENFORCEMENT browsing this
@@ -50,6 +53,7 @@ export default async function SaccoPortalPage() {
   const saccoMatatus = allMatatus.filter((m) => m.saccoId === sacco.id);
   const saccoMatatuIds = new Set(saccoMatatus.map((m) => m.id));
   const saccoFines = fines.filter((f) => saccoMatatuIds.has(f.matatuId));
+  const saccoCrew = crewAssignments.filter((c) => saccoMatatuIds.has(c.matatuId));
   const routeMap = new Map(routes.map((r) => [r.id, r]));
 
   const primaryRoute = routeMap.get(sacco.primaryRouteId || "route-1");
@@ -210,6 +214,58 @@ export default async function SaccoPortalPage() {
                 <tr>
                   <td colSpan={8} className="text-center py-6 text-black/40">
                     No vehicles onboarded yet under {sacco.name}. Click &quot;+ Onboard New Vehicle&quot; to add your first matatu.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Crew Accounts — real login-linked driver/conductor accounts, distinct
+          from the plain-text driver/conductor fields in the registry table
+          above. Operator issues a login the moment they assign someone to a
+          vehicle (ARCHITECTURE_DECISIONS.md §29.1); crew never self-register. */}
+      <div className="card p-5 space-y-3">
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="font-bold text-sm text-county-black">Crew Accounts</h3>
+            <p className="text-xs text-black/50">Login credentials issued to drivers and conductors, tied to a vehicle.</p>
+          </div>
+          <IssueCrewCredentialsModal matatus={saccoMatatus} />
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-black/5 text-black/60 uppercase text-[10px]">
+              <tr>
+                <th className="p-2.5">Name</th>
+                <th className="p-2.5">Login Email</th>
+                <th className="p-2.5">Role</th>
+                <th className="p-2.5">Vehicle</th>
+                <th className="p-2.5">Assigned</th>
+                <th className="p-2.5"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/5">
+              {saccoCrew.map((c) => (
+                <tr key={c.id} className="hover:bg-black/[0.02]">
+                  <td className="p-2.5 font-semibold">{c.userName}</td>
+                  <td className="p-2.5 font-mono text-black/60">{c.userEmail}</td>
+                  <td className="p-2.5">
+                    <span className="badge bg-black/5 text-black/70 font-bold">{c.crewRole}</span>
+                  </td>
+                  <td className="p-2.5 font-bold font-mono">{c.matatuRegNumber}</td>
+                  <td className="p-2.5 text-black/50 font-mono">{new Date(c.assignedAt).toLocaleDateString()}</td>
+                  <td className="p-2.5">
+                    <RevokeCrewAssignmentButton assignmentId={c.id} />
+                  </td>
+                </tr>
+              ))}
+              {saccoCrew.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-6 text-black/40">
+                    No crew logins issued yet. Click &quot;+ Issue Crew Login&quot; to assign a driver or conductor.
                   </td>
                 </tr>
               )}

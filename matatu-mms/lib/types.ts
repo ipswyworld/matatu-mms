@@ -163,6 +163,22 @@ export interface Route {
   vehicleCount?: number;
 }
 
+export type CrewRole = "DRIVER" | "CONDUCTOR";
+
+// Real login-linked crew, distinct from Matatu.driverName/conductorName
+// (plain free text). See ARCHITECTURE_DECISIONS.md §29.1.
+export interface CrewAssignment {
+  id: string;
+  userId: string;
+  matatuId: string;
+  crewRole: CrewRole;
+  assignedAt: string;
+  unassignedAt: string | null;
+  userName: string;
+  userEmail: string;
+  matatuRegNumber: string;
+}
+
 export type ActivityType = "TRIP" | "INSPECTION" | "INCIDENT";
 
 export interface ActivityLog {

@@ -981,3 +981,56 @@ export async function resetPasswordAction(
     return { error: "Could not process your request. Please try again." };
   }
 }
+
+type CrewIssueState = {
+  error?: string;
+  success?: { crewName: string; crewEmail: string; generatedPassword: string; matatuRegNumber: string };
+};
+
+// Doesn't redirect (unlike onboardSaccoVehicleAction) — the generated
+// password is shown to the operator exactly once, so the modal that calls
+// this stays open on success to display it.
+export async function issueCrewCredentialsAction(
+  _prevState: CrewIssueState | undefined,
+  formData: FormData
+): Promise<CrewIssueState> {
+  const name = String(formData.get("name") || "").trim();
+  const email = String(formData.get("email") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
+  const licenseNumber = String(formData.get("licenseNumber") || "").trim();
+  const matatuId = String(formData.get("matatuId") || "");
+  const crewRole = String(formData.get("crewRole") || "DRIVER");
+
+  if (!name || !email || !matatuId) {
+    return { error: "Name, email, and vehicle are required." };
+  }
+
+  try {
+    const data = await apiWrite<{ assignment: { userName: string; userEmail: string; matatuRegNumber: string }; generatedPassword: string }>(
+      "/api/crew",
+      "POST",
+      { name, email, phone: phone || undefined, licenseNumber: licenseNumber || undefined, matatuId, crewRole }
+    );
+    revalidatePath("/sacco-portal");
+    return {
+      success: {
+        crewName: data.assignment.userName,
+        crewEmail: data.assignment.userEmail,
+        generatedPassword: data.generatedPassword,
+        matatuRegNumber: data.assignment.matatuRegNumber,
+      },
+    };
+  } catch (err: any) {
+    return { error: err.message || "Could not issue crew credentials." };
+  }
+}
+
+export async function revokeCrewAssignmentAction(assignmentId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/crew/${assignmentId}/revoke`, "PATCH");
+  } catch (err: any) {
+    return { error: err.message || "Could not revoke this crew assignment." };
+  }
+  revalidatePath("/sacco-portal");
+  return {};
+}
