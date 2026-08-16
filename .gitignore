@@ -11,11 +11,18 @@ backend/mms.db
 backend/uploads/
 backend/*.log
 
-# Frontend
+# Frontend — staff app
 matatu-mms/node_modules/
 matatu-mms/.next/
 matatu-mms/.env.local
 matatu-mms/*.log
+
+# Frontend — public app
+matatu-mms-public/node_modules/
+matatu-mms-public/.next/
+matatu-mms-public/.env.local
+matatu-mms-public/*.log
+matatu-mms-public/tsconfig.tsbuildinfo
 
 # OS/editor
 .DS_Store

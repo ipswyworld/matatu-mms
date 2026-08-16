@@ -2,9 +2,10 @@ export type Language = "en" | "sw";
 
 export const LANGUAGE_STORAGE_KEY = "nccg_lang";
 
-// A focused dictionary covering shared app chrome (sidebar, header, footer)
-// and the highest-traffic public pages (login), rather than every string in
-// the app — the pieces every user sees regardless of role or page.
+// This dictionary belongs to the staff app only — county staff (admin,
+// enforcement, director/chief officer, viewer). The separate public app
+// (passengers, crew, Sacco operators) has its own copy of this file with
+// only the keys it needs.
 const dictionary = {
   // Sidebar navigation
   "nav.overview": { en: "Overview", sw: "Muhtasari" },
@@ -15,9 +16,6 @@ const dictionary = {
   "nav.revenueFines": { en: "Revenue & Fines", sw: "Mapato na Faini" },
   "nav.routes": { en: "Routes", sw: "Njia" },
   "nav.users": { en: "Users & Roles", sw: "Watumiaji na Majukumu" },
-  "nav.operatorDashboard": { en: "Operator Dashboard", sw: "Dashibodi ya Mwendeshaji" },
-  "nav.passengerPortal": { en: "Passenger Portal", sw: "Ukurasa wa Abiria" },
-  "nav.crewDashboard": { en: "Crew Dashboard", sw: "Dashibodi ya Wafanyakazi" },
   "nav.signOut": { en: "Sign out", sw: "Toka" },
 
   // Header
@@ -30,7 +28,7 @@ const dictionary = {
   "footer.terms": { en: "Terms & Conditions", sw: "Sheria na Masharti" },
   "footer.rights": { en: "All rights reserved.", sw: "Haki zote zimehifadhiwa." },
 
-  // Shared sign-in form (used by both the public portal and staff sign-in)
+  // Sign-in form
   "login.signIn": { en: "Sign in", sw: "Ingia" },
   "login.signingIn": { en: "Signing in...", sw: "Inaingia..." },
   "login.email": { en: "Email", sw: "Barua pepe" },
@@ -39,16 +37,6 @@ const dictionary = {
   "login.demoAccounts": { en: "Demo accounts", sw: "Akaunti za mfano" },
   "login.helpFaq": { en: "Help & FAQ", sw: "Msaada na Maswali" },
   "login.termsConditions": { en: "Terms & Conditions", sw: "Sheria na Masharti" },
-
-  // Public portal ("/") — passengers, crew (info only, no self-registration), sacco operators
-  "portal.heading": { en: "One county, one live view of every matatu.", sw: "Kaunti moja, mwonekano mmoja wa moja kwa moja wa kila matatu." },
-  "portal.subheading": {
-    en: "Book a seat, track your matatu live, check your fare, or register your Sacco for county verification. Smart and connected mobility for the whole county.",
-    sw: "Hifadhi kiti, fuatilia matatu yako moja kwa moja, angalia nauli yako, au sajili Sacco yako kwa uthibitisho wa kaunti. Usafiri wenye akili na uunganisho kwa kaunti nzima.",
-  },
-  "portal.useCredentials": { en: "Sign in to book, manage your fleet, or check your account.", sw: "Ingia ili kuhifadhi, kusimamia magari yako, au kuangalia akaunti yako." },
-  "portal.registerLink": { en: "New here? Register as a Commuter →", sw: "Mgeni hapa? Jisajili kama Abiria →" },
-  "portal.onboardingLink": { en: "Operator? Start Onboarding & Verification →", sw: "Mwendeshaji? Anza Usajili na Uthibitisho →" },
 
   // Staff sign-in ("/login") — admin, enforcement, director/chief officer, viewer
   "staff.heading": { en: "One console for licensing, enforcement, and revenue.", sw: "Dashibodi moja kwa usajili, utekelezaji wa sheria, na mapato." },

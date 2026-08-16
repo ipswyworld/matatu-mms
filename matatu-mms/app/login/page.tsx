@@ -6,6 +6,12 @@ import LoginForm from "@/components/LoginForm";
 import DemoAccountsList from "@/components/DemoAccountsList";
 import { useLanguage } from "@/components/LanguageProvider";
 
+// The public app is a separate deployment/origin now — a plain relative
+// link can't reach it, so its full URL has to come from an env var (same
+// pattern as BACKEND_URL). Falls back to the local public app's default
+// dev port for local development.
+const PUBLIC_APP_URL = process.env.NEXT_PUBLIC_PUBLIC_APP_URL || "http://localhost:3001";
+
 const STAFF_DEMO_ACCOUNTS = [
   { role: "Admin", email: "admin@nairobi.go.ke", password: "admin123" },
   { role: "Enforcement Officer", email: "enforcement@nairobi.go.ke", password: "enforce123" },
@@ -34,9 +40,9 @@ export default function StaffLoginPage() {
       <LoginForm tagline={t("staff.useCredentials")} />
 
       <div className="text-center">
-        <Link href="/" className="block text-xs font-extrabold text-county-green hover:underline">
+        <a href={PUBLIC_APP_URL} className="block text-xs font-extrabold text-county-green hover:underline">
           {t("staff.publicLink")}
-        </Link>
+        </a>
       </div>
 
       <DemoAccountsList accounts={STAFF_DEMO_ACCOUNTS} />

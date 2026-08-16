@@ -180,11 +180,17 @@ async def add_security_headers(request: Request, call_next):
 
 # Configure CORS for Next.js frontend communication. Extra origins (e.g. a
 # deployed frontend URL) come from CORS_ORIGINS as a comma-separated list —
-# the localhost defaults always stay allowed for local dev.
+# the localhost defaults always stay allowed for local dev. Port 3000 is the
+# staff app's default dev port, 3001 the public app's (see the split into
+# two separate frontends: matatu-mms/ and matatu-mms-public/).
 _extra_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", *_extra_cors_origins],
+    allow_origins=[
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:3001", "http://127.0.0.1:3001",
+        *_extra_cors_origins,
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

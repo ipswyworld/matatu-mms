@@ -34,13 +34,19 @@ services:
         value: mms_session
       - key: TERMS_VERSION
         value: "2026-07-25"
-      # Must match the frontend's actual Render URL. Render assigns
-      # https://<name>.onrender.com by default (subject to a random suffix
-      # if that exact name is taken) — after first deploy, confirm the real
-      # frontend URL in the Render dashboard and update this if it differs.
+      # Must match both frontends' actual Render URLs (comma-separated —
+      # app/main.py splits on ","). Render assigns https://<name>.onrender.com
+      # by default (subject to a random suffix if that exact name is taken)
+      # — after first deploy, confirm the real URLs in the Render dashboard
+      # and update this if either differs.
       - key: CORS_ORIGINS
-        value: https://matatu-mms-frontend.onrender.com
+        value: https://matatu-mms-frontend.onrender.com,https://matatu-mms-public.onrender.com
 
+  # Staff app — county government back-office (admin, enforcement,
+  # director/chief officer, viewer). Front door is /login. Split from the
+  # public app below so each has its own deployment, URL, and (locally) port
+  # — a Sacco operator or passenger never shares infrastructure with staff
+  # beyond the same backend API.
   - type: web
     name: matatu-mms-frontend
     runtime: docker
@@ -68,7 +74,40 @@ services:
         value: https://matatu-mms-backend.onrender.com
       - key: NEXT_PUBLIC_WS_URL
         value: wss://matatu-mms-backend.onrender.com
+      # The "Looking to book a ride?" link on the staff sign-in page has to
+      # cross to the separate public app's own origin now, not a relative path.
+      - key: NEXT_PUBLIC_PUBLIC_APP_URL
+        value: https://matatu-mms-public.onrender.com
+      # Signs the session cookie (see lib/sessionSign.ts). Was previously
+      # unset in production, silently falling back to the hardcoded
+      # dev-only default — every deploy effectively shared one fixed,
+      # public (checked into git) signing key. Each frontend gets its own
+      # generated secret; cookies aren't shared across the two origins
+      # anyway, so there's no reason for them to share a key either.
+      - key: SESSION_SECRET
+        generateValue: true
       # Set manually in the Render dashboard (not committed — restrict this
       # key to the deployed frontend domain in the TomTom console too).
+      - key: NEXT_PUBLIC_TOMTOM_API_KEY
+        sync: false
+
+  # Public app — passengers, crew, and Sacco operators. Front door is "/"
+  # (booking, live tracking, registration, operator onboarding, pay-fine).
+  - type: web
+    name: matatu-mms-public
+    runtime: docker
+    plan: free
+    dockerfilePath: ./matatu-mms-public/Dockerfile
+    dockerContext: ./matatu-mms-public
+    healthCheckPath: /api/health
+    envVars:
+      - key: BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      - key: NEXT_PUBLIC_BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://matatu-mms-backend.onrender.com
+      - key: SESSION_SECRET
+        generateValue: true
       - key: NEXT_PUBLIC_TOMTOM_API_KEY
         sync: false

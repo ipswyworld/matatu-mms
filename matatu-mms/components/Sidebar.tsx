@@ -14,9 +14,6 @@ import {
   Route as RouteIcon,
   Users,
   Settings,
-  Ticket,
-  UserCog,
-  Building2,
   ClipboardList,
   FileWarning,
   FolderOpen,
@@ -27,16 +24,12 @@ import { Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { useLanguage } from "./LanguageProvider";
 import { logoutAction } from "@/lib/actions";
-import TalkToUsPanel from "./TalkToUsPanel";
 
 // One icon per destination, keyed by href — a handful of hrefs (e.g.
 // /matatus, /enforcement) are shared across several roles' nav lists with
 // different labels, so keying by href instead of by label keeps the
 // mapping a single source of truth instead of repeating per role.
 const NAV_ICONS: Record<string, LucideIcon> = {
-  "/passenger-portal": Ticket,
-  "/crew-portal": UserCog,
-  "/sacco-portal": Building2,
   "/matatus": Bus,
   "/revenue": Wallet,
   "/enforcement": ShieldAlert,
@@ -85,24 +78,10 @@ export default function Sidebar({
     });
   };
 
+  // This is the staff app (county government back-office) — Passenger,
+  // Crew, and Sacco Operator roles sign in through the separate public app
+  // and never reach this Sidebar.
   const getNavItems = () => {
-    if (role === "PASSENGER") {
-      return [
-        { href: "/passenger-portal", label: t("nav.passengerPortal"), action: "view_passenger_portal" as const },
-      ];
-    }
-    if (role === "CREW") {
-      return [
-        { href: "/crew-portal", label: t("nav.crewDashboard"), action: "view_crew_portal" as const },
-      ];
-    }
-    if (role === "SACCO_OPERATOR") {
-      return [
-        { href: "/sacco-portal", label: t("nav.operatorDashboard"), action: "view_sacco_portal" as const },
-        { href: "/matatus", label: t("nav.fleetRegistry"), action: "view_matatus" as const },
-        { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue" as const },
-      ];
-    }
     if (role === "ENFORCEMENT") {
       return [
         { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" as const },
@@ -254,7 +233,6 @@ export default function Sidebar({
             <div className="text-[9px] font-bold text-center text-white/40 uppercase tracking-[0.2em]">
               Official County Portal
             </div>
-            {role === "PASSENGER" && <TalkToUsPanel dark />}
           </>
         )}
         <form action={logoutAction}>
