@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Wallet, Coins, AlertCircle, Scale, CircleSlash, Plus } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getSaccos } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -43,14 +44,16 @@ export default async function RevenuePage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={Wallet}
         eyebrow="Nairobi City County · Revenue"
         title="Revenue & Fines Management Hub"
         subtitle="County treasury fine collection ledger, seasonal Operator ticket permits, and citation settlements."
         action={
           <>
             {can(session.role, "issue_fine") && (
-              <Link href="/fines/new" className="rounded-lg px-3.5 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors">
-                + Issue Citation Fine
+              <Link href="/fines/new" className="rounded-lg px-3.5 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors flex items-center gap-1.5">
+                <Plus size={14} strokeWidth={2.5} />
+                Issue Citation Fine
               </Link>
             )}
           </>
@@ -59,10 +62,10 @@ export default async function RevenuePage() {
 
       {/* Revenue Financial Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Collected Fines Revenue" value={`KES ${paidKes.toLocaleString()}`} hint="Successfully settled fines" />
-        <StatCard label="Pending Fines Value" value={`KES ${pendingKes.toLocaleString()}`} accent="red" hint="Outstanding citations due" />
-        <StatCard label="Disputed Value" value={`KES ${disputedKes.toLocaleString()}`} hint="Under review by county" />
-        <StatCard label="Waived Fines Value" value={`KES ${waivedKes.toLocaleString()}`} hint="Official policy waivers" />
+        <StatCard label="Collected Fines Revenue" value={`KES ${paidKes.toLocaleString()}`} hint="Successfully settled fines" icon={Coins} />
+        <StatCard label="Pending Fines Value" value={`KES ${pendingKes.toLocaleString()}`} accent="red" hint="Outstanding citations due" icon={AlertCircle} />
+        <StatCard label="Disputed Value" value={`KES ${disputedKes.toLocaleString()}`} hint="Under review by county" icon={Scale} />
+        <StatCard label="Waived Fines Value" value={`KES ${waivedKes.toLocaleString()}`} hint="Official policy waivers" icon={CircleSlash} />
       </div>
 
       <RevenueBarChart

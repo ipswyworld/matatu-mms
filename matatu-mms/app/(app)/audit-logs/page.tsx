@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { History } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getAuditLogs, getMatatus, getUsers } from "@/lib/data";
 import PageBanner from "@/components/PageBanner";
@@ -48,6 +49,7 @@ export default async function AuditLogsPage() {
   return (
     <div className="space-y-4">
       <PageBanner
+        icon={History}
         eyebrow="Nairobi City County · System Audit"
         title="Audit Trail"
         subtitle={

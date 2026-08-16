@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BadgeCheck } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getSaccos, getRoutes, getMatatus } from "@/lib/data";
 import SaccoVerificationCard from "@/components/SaccoVerificationCard";
@@ -29,6 +30,7 @@ export default async function SaccoVerifyPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={BadgeCheck}
         eyebrow="Nairobi City County · Oversight"
         title="Operator Onboarding Verification Hub"
         subtitle="Reviewing mandatory registration documents, bonafide officials, and route licenses for every Operator."

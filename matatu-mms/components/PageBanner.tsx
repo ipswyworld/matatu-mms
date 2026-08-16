@@ -1,9 +1,12 @@
+import type { LucideIcon } from "lucide-react";
+
 interface PageBannerProps {
   eyebrow: string;
   title: string;
   titleBadge?: React.ReactNode;
   subtitle?: string;
   action?: React.ReactNode;
+  icon?: LucideIcon;
 }
 
 /**
@@ -12,7 +15,7 @@ interface PageBannerProps {
  * decorative hexagon lattice — a nod to the reference site without lifting
  * imagery. Used consistently across all dashboards.
  */
-export default function PageBanner({ eyebrow, title, titleBadge, subtitle, action }: PageBannerProps) {
+export default function PageBanner({ eyebrow, title, titleBadge, subtitle, action, icon: Icon }: PageBannerProps) {
   return (
     <div className="relative overflow-hidden rounded-2xl bg-county-green-deep text-white shadow-elevated ring-1 ring-black/5">
       {/* Hexagon lattice, decorative — same shape family the reference uses */}
@@ -58,6 +61,11 @@ export default function PageBanner({ eyebrow, title, titleBadge, subtitle, actio
             {eyebrow}
           </div>
           <div className="flex flex-wrap items-center gap-3 mt-2">
+            {Icon && (
+              <span className="hidden sm:flex h-10 w-10 shrink-0 rounded-xl bg-white/10 ring-1 ring-white/15 items-center justify-center text-county-yellow">
+                <Icon size={20} strokeWidth={2} />
+              </span>
+            )}
             <h1 className="text-[28px] md:text-[34px] leading-[1.05] font-black tracking-tight text-white text-balance">
               {title}
             </h1>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ShieldAlert, UserCog, Gavel, Ban, AlertTriangle } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -66,6 +67,7 @@ export default async function EnforcementPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={ShieldAlert}
         eyebrow="Nairobi City County · Enforcement"
         title="Enforcement Operations Hub"
         subtitle="Officer deployments, crime recording, impoundment logs, and field compliance checkpoints, all fed by real fleet and passenger-report data."
@@ -122,10 +124,10 @@ export default async function EnforcementPage() {
 
       {/* Enforcement Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Active Patrol Officers" value={officerUsers.length} hint="Assigned county personnel" />
-        <StatCard label="Recorded Offences / Crimes" value={crimes.length} accent="red" hint="Total traffic & compliance citations" />
-        <StatCard label="Impounded Vehicles" value={impoundedVehicles.length} accent="red" hint="Holding yard status" />
-        <StatCard label="Flagged for Stop" value={flaggedVehicles.length} accent="red" hint="Pending compliance review" />
+        <StatCard label="Active Patrol Officers" value={officerUsers.length} hint="Assigned county personnel" icon={UserCog} />
+        <StatCard label="Recorded Offences / Crimes" value={crimes.length} accent="red" hint="Total traffic & compliance citations" icon={Gavel} />
+        <StatCard label="Impounded Vehicles" value={impoundedVehicles.length} accent="red" hint="Holding yard status" icon={Ban} />
+        <StatCard label="Flagged for Stop" value={flaggedVehicles.length} accent="red" hint="Pending compliance review" icon={AlertTriangle} />
       </div>
 
       {/* Crime & Offence Ledger Table */}

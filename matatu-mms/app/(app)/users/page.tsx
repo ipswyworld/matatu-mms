@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Users as UsersIcon } from "lucide-react";
 import { getSaccos, getUsers } from "@/lib/data";
 import { readSession } from "@/lib/session";
 import NewUserForm from "./NewUserForm";
@@ -17,6 +18,7 @@ export default async function UsersPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={UsersIcon}
         eyebrow="Nairobi City County · Administration"
         title="Users & Roles"
         subtitle={`${users.length} account${users.length !== 1 ? "s" : ""} across every role in the system.`}

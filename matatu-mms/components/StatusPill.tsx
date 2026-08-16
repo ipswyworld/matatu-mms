@@ -1,3 +1,4 @@
+import { Clock, CheckCircle2, AlertTriangle, Ban, Archive, AlertCircle, CircleSlash, type LucideIcon } from "lucide-react";
 import { FineStatus, MatatuStatus } from "@/lib/types";
 
 const MATATU_STYLES: Record<MatatuStatus, string> = {
@@ -8,6 +9,14 @@ const MATATU_STYLES: Record<MatatuStatus, string> = {
   DECOMMISSIONED: "bg-black/10 text-black/50",
 };
 
+const MATATU_ICONS: Record<MatatuStatus, LucideIcon> = {
+  REGISTRATION_PENDING: Clock,
+  ACTIVE: CheckCircle2,
+  FLAGGED: AlertTriangle,
+  IMPOUNDED: Ban,
+  DECOMMISSIONED: Archive,
+};
+
 const FINE_STYLES: Record<FineStatus, string> = {
   PENDING: "bg-amber-100 text-amber-700",
   PAID: "bg-county-green/10 text-county-green",
@@ -15,11 +24,30 @@ const FINE_STYLES: Record<FineStatus, string> = {
   WAIVED: "bg-black/10 text-black/50",
 };
 
+const FINE_ICONS: Record<FineStatus, LucideIcon> = {
+  PENDING: Clock,
+  PAID: CheckCircle2,
+  DISPUTED: AlertCircle,
+  WAIVED: CircleSlash,
+};
+
 export function MatatuStatusPill({ status }: { status: MatatuStatus }) {
   const displayStatus = status === "REGISTRATION_PENDING" ? "REGISTRATION PENDING" : status;
-  return <span className={`badge ${MATATU_STYLES[status] || "bg-black/10 text-black/50"}`}>{displayStatus}</span>;
+  const Icon = MATATU_ICONS[status];
+  return (
+    <span className={`badge inline-flex items-center gap-1 ${MATATU_STYLES[status] || "bg-black/10 text-black/50"}`}>
+      {Icon && <Icon size={11} strokeWidth={2.5} />}
+      {displayStatus}
+    </span>
+  );
 }
 
 export function FineStatusPill({ status }: { status: FineStatus }) {
-  return <span className={`badge ${FINE_STYLES[status]}`}>{status}</span>;
+  const Icon = FINE_ICONS[status];
+  return (
+    <span className={`badge inline-flex items-center gap-1 ${FINE_STYLES[status]}`}>
+      {Icon && <Icon size={11} strokeWidth={2.5} />}
+      {status}
+    </span>
+  );
 }

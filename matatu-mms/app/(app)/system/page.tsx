@@ -1,17 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Settings, CheckCircle2, XCircle } from "lucide-react";
 import { getSystemHealth } from "@/lib/data";
 import PageBanner from "@/components/PageBanner";
 
 export const metadata: Metadata = { title: "System" };
 
 function StatusBadge({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; badLabel: string }) {
+  const Icon = ok ? CheckCircle2 : XCircle;
   return (
     <span
-      className={`badge font-extrabold text-[10px] ${
+      className={`badge font-extrabold text-[10px] inline-flex items-center gap-1 ${
         ok ? "bg-county-green/10 text-county-green" : "bg-county-red/10 text-county-red"
       }`}
     >
+      <Icon size={11} strokeWidth={2.5} />
       {ok ? okLabel : badLabel}
     </span>
   );
@@ -34,6 +37,7 @@ export default async function SystemPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={Settings}
         eyebrow="Nairobi City County · Super Admin"
         title="System Console"
         subtitle="Live infrastructure health, security configuration, and the access-control policies actually enforced by this deployment."

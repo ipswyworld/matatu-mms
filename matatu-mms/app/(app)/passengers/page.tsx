@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MessageSquare, ShieldCheck, MessageSquareWarning, CheckCircle2, Route as RouteIcon } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getRoutes, getMatatus, getReports } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -53,16 +54,17 @@ export default async function PassengersPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={MessageSquare}
         eyebrow="Nairobi City County · Commuter Feedback"
         title="Passenger & Commuter Service Portal"
         subtitle="Real complaints submitted directly from the Passenger Portal app, cross-referenced against fleet and route data."
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Route Fleet Quality" value={`${complianceRating}%`} hint="Overall fleet compliance index" />
-        <StatCard label="Public Complaints (Total)" value={reports.length} accent="red" hint="Submitted via the Passenger Portal" />
-        <StatCard label="Handled Reports" value={handledReports.length} accent="green" hint="Reviewed, escalated, or dismissed" />
-        <StatCard label="Active Routes Monitored" value={routes.length} hint="County matatu corridors" />
+        <StatCard label="Route Fleet Quality" value={`${complianceRating}%`} hint="Overall fleet compliance index" icon={ShieldCheck} />
+        <StatCard label="Public Complaints (Total)" value={reports.length} accent="red" hint="Submitted via the Passenger Portal" icon={MessageSquareWarning} />
+        <StatCard label="Handled Reports" value={handledReports.length} accent="green" hint="Reviewed, escalated, or dismissed" icon={CheckCircle2} />
+        <StatCard label="Active Routes Monitored" value={routes.length} hint="County matatu corridors" icon={RouteIcon} />
       </div>
 
       <div className="card p-5">

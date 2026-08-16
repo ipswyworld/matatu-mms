@@ -18,6 +18,7 @@ export default async function RoutesPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={RouteIcon}
         eyebrow="Nairobi City County · Routes"
         title="Route Corridors"
         subtitle={`${routes.length} licensed route corridor${routes.length !== 1 ? "s" : ""} across the matatu network.`}

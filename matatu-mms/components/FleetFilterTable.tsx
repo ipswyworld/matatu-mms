@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Search, X, ArrowRight } from "lucide-react";
 import { MatatuStatusPill } from "./StatusPill";
 import { Matatu, Route, Sacco } from "@/lib/types";
 
@@ -37,13 +38,16 @@ export default function FleetFilterTable({ matatus, routes, saccos, isSacco }: F
       <div className="flex flex-wrap gap-4 items-end bg-black/5 p-4 rounded-lg">
         <div className="flex-1 min-w-[200px]">
           <label className="text-xs font-semibold text-black/50 block mb-1">Search Plate Number</label>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="e.g. KDA 112B"
-            className="w-full text-sm border border-black/10 rounded px-3 py-1.5 focus:outline-none focus:border-county-green bg-white"
-          />
+          <div className="relative">
+            <Search size={14} strokeWidth={2} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-black/30 pointer-events-none" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. KDA 112B"
+              className="w-full text-sm border border-black/10 rounded pl-8 pr-3 py-1.5 focus:outline-none focus:border-county-green bg-white"
+            />
+          </div>
         </div>
         <div className="w-56 shrink-0">
           <label className="text-xs font-semibold text-black/50 block mb-1">Filter by Route</label>
@@ -85,8 +89,9 @@ export default function FleetFilterTable({ matatus, routes, saccos, isSacco }: F
               setRouteId("");
               setSaccoId("");
             }}
-            className="btn-secondary !py-1.5 shrink-0"
+            className="btn-secondary !py-1.5 shrink-0 flex items-center gap-1"
           >
+            <X size={13} strokeWidth={2} />
             Clear
           </button>
         )}
@@ -125,8 +130,9 @@ export default function FleetFilterTable({ matatus, routes, saccos, isSacco }: F
                   <td>{m.capacity} seats</td>
                   <td><MatatuStatusPill status={m.status} /></td>
                   <td>
-                    <Link href={`/matatus/${m.id}`} className="text-xs font-bold text-county-green hover:underline">
-                      Details →
+                    <Link href={`/matatus/${m.id}`} className="text-xs font-bold text-county-green hover:underline inline-flex items-center gap-1">
+                      Details
+                      <ArrowRight size={12} strokeWidth={2.5} />
                     </Link>
                   </td>
                 </tr>

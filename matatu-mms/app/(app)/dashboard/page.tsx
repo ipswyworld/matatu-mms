@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock } from "lucide-react";
+import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -38,6 +38,7 @@ export default async function DashboardPage() {
     return (
       <div className="space-y-6">
         <PageBanner
+          icon={BadgeCheck}
           eyebrow="Nairobi City County Government"
           title={isDirector ? "Director of Mobility — Operator Verification" : "Chief Officer — Final Operator Verification"}
           subtitle={`Welcome back, ${session.name}. ${isDirector ? "You review Operator onboarding applications first." : "You give the final approval once the Director of Mobility has signed off."}`}
@@ -131,6 +132,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-4 md:space-y-6">
       <PageBanner
+        icon={LayoutDashboard}
         eyebrow="Nairobi City County Government"
         title={isSacco ? "Your fleet at a glance" : "Matatu public service managing system"}
         subtitle={`Welcome back, ${session.name}. This view updates itself in real time as bookings, fines, and approvals happen across ${isSacco ? "your fleet" : "Nairobi's matatu sector"}.`}

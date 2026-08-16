@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getEnforcementCases } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -25,6 +26,7 @@ export default async function EnforcementCasesPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={FolderOpen}
         eyebrow="Nairobi City County · Enforcement"
         title="Case Queue"
         subtitle={

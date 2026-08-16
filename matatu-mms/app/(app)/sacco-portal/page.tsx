@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Building2, Bus, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getMatatus, getRoutes, getSaccos, getFines, getCrewAssignments } from "@/lib/data";
 import StatCard from "@/components/StatCard";
@@ -73,6 +74,7 @@ export default async function SaccoPortalPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={Building2}
         eyebrow="Nairobi City County · Operator Operations"
         title={`${sacco.name} Portal`}
         titleBadge={
@@ -91,10 +93,10 @@ export default async function SaccoPortalPage() {
 
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Registered Fleet" value={saccoMatatus.length} hint="Vehicles under Operator" />
-        <StatCard label="Active in Service" value={activeVehicles.length} accent="green" hint="Roadworthy matatus" />
-        <StatCard label="Registration Pending" value={pendingVehicles.length} hint="Awaiting county verification" />
-        <StatCard label="Flagged / Impounded" value={flaggedVehicles.length} accent="red" hint="Requires resolution" />
+        <StatCard label="Total Registered Fleet" value={saccoMatatus.length} hint="Vehicles under Operator" icon={Bus} />
+        <StatCard label="Active in Service" value={activeVehicles.length} accent="green" hint="Roadworthy matatus" icon={CheckCircle2} />
+        <StatCard label="Registration Pending" value={pendingVehicles.length} hint="Awaiting county verification" icon={Clock} />
+        <StatCard label="Flagged / Impounded" value={flaggedVehicles.length} accent="red" hint="Requires resolution" icon={AlertTriangle} />
       </div>
 
       {/* Route Licensing & Multi-Route Assignments */}
