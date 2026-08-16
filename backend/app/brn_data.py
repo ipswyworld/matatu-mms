@@ -6,11 +6,20 @@ Nov 2023 (NTU International A/S for NCCG Mobility & Works) — Table 5
 Source of truth: `Bus Route Network Final Report (Nov 2023) (2).pdf` and
 `Bus Route Network 9.png` (see ARCHITECTURE_DECISIONS.md §1.3, §8).
 
-This is a genuine but partial digitization — the report lists 120 routes;
-this covers a real, verified sample (serials 1-20 plus their lettered
-variants), not the full set. Extend STAGE_COORDS and ROUTES incrementally
-rather than attempting the remaining ~100 in one pass — each addition is
-independently useful (see seed_brn_data() below, which is idempotent).
+This covers all 101 numbered day routes (Table 5, serials 1-89C including
+lettered variants) and all 20 night routes (Table 6, serials 90-109) from
+the Nov 2023 report, transcribed from a second, more complete rendering of
+the same report (`routes.md`). The 5 groups of "Operator-Proposed
+Cross-City Routes" (Annex C) are explicitly unofficial/aspirational in the
+source document and are NOT included here.
+
+Serials 1-20 (plus 2A/18A/19A) were hand-digitized against the original
+PDF/map with corridor assignments read from the report's colour legend.
+Serials 21-89C and 90-109 were added later from routes.md's table alone,
+which does not carry that colour-legend data — their `corridor` field is
+left as None rather than guessed. Route entries whose source "Return
+Routing Through CBD" cell was an orbital/non-CBD marker or "Direct" (no
+real CBD-return stage list given) have `return: []`.
 
 Coordinate honesty: STAGE_COORDS holds real, well-known Nairobi landmarks
 with coordinates I have genuine confidence in (major CBD junctions,
@@ -297,4 +306,591 @@ ROUTES = [
         "return": _stages("GPO", "Ambassadeur", "Moi Ave", "Kimathi St", "Kenyatta Ave", "GPO", "Ngong Rd",
                            "Community", "KMTC"),
     },
-]
+    {
+        "brn_serial": '21', "start": 'Lucky Summer', "end": 'Kibera - Ayany',
+        "corridor": None,
+        "outbound": _stages('Baba Dogo Rd', 'Thika Rd', 'Allsops', "Murang'a Rd", 'Globe Roundabout', 'Tom Mboya St', 'Old Posta', 'Cabral St', 'Kenyatta Ave', 'GPO', 'Serena', 'Ngong Rd', 'KMTC', 'Ring Rd Kilimani', 'Kibera Drive'),
+        "return": _stages('GPO', 'Kenyatta Ave', 'Mondlane St', 'Old Posta', "Murang'a Rd"),
+    },
+    {
+        "brn_serial": '22', "start": 'Mathare North NYSEI', "end": 'Kangemi',
+        "corridor": None,
+        "outbound": _stages('Mathare North Rd', 'Redeemed Church', 'Juja Rd', 'MAB', "St. Teresa's Church", 'Kariokor Mkt', 'Ring Rd Ngara', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'S-Lane Nkrumah Ave', 'Jeevanjee', 'University Way', "St. Paul's Church", 'Waiyaki Way', 'Chiromo', 'Westlands', 'ABC', 'Waruku'),
+        "return": _stages('GPO', 'Ambassadeur', 'Moi Ave', 'Haile Selassie', 'KPCU', 'Athusi', 'Kariokor Mkt'),
+    },
+    {
+        "brn_serial": '23', "start": 'Ngong', "end": 'Jericho',
+        "corridor": None,
+        "outbound": _stages('Ngong Rd', 'Karen', 'Racecourse', 'Junction Mall', 'Adams', 'Prestige Mall', 'KMTC', 'Maktaba Kuu', 'Haile Selassie Ave', 'Green Park', 'Agip', 'KPCU', 'Landhies Rd', 'Jogoo Rd', 'City Stadium', 'Nyasa Rd', 'Maringo', 'Jericho', 'Rabai Rd', 'Nile Rd'),
+        "return": _stages('Landhies', 'Haile Selassie', 'KPCU', 'Green Park'),
+    },
+    {
+        "brn_serial": '24', "start": 'Ngong', "end": 'Baba Dogo',
+        "corridor": None,
+        "outbound": _stages('Ngong Rd', 'Karen', 'Racecourse', 'Junction Mall', 'Adams', 'Prestige Mall', 'KMTC', 'Community', 'Kenyatta Ave', 'GPO', 'ICEA', 'Ambassadeur', 'Ronald Ngala St', 'Racecourse Rd', 'Kariokor Mkt', 'Park Rd', 'Pangani', 'Thika Rd', 'Allsops', 'Baba Dogo Rd'),
+        "return": _stages('Race Course', 'St Peters Clavers', 'Uyoma St', 'Tusker', 'Kencom'),
+    },
+    {
+        "brn_serial": '25', "start": 'Ongata Rongai', "end": 'Baba Dogo',
+        "corridor": None,
+        "outbound": _stages('Magadi Rd', 'Bomas', 'Langata Rd', 'Wilson Airport', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'KPCU', 'Athusi', 'Kariokor Mkt', 'Thika Rd', 'Allsops', 'Baba Dogo Rd'),
+        "return": _stages('Kamukunji', 'KPCU', 'Haile Selassie Ave'),
+    },
+    {
+        "brn_serial": '26', "start": 'Ongata Rongai', "end": 'Westlands',
+        "corridor": None,
+        "outbound": _stages('Magadi Rd', 'Bomas', 'Langata Rd', 'Kungu Karumba Rd', 'Kibera', 'Ring Rd Kilimani', 'Yaya', 'Likoni Rd', 'Oloitoktok Rd', 'Ring Rd Kileleshwa', 'Riverside', 'Ring Rd Westlands'),
+        "return": [],
+    },
+    {
+        "brn_serial": '27', "start": "Otiende - St. Mary's", "end": 'Embakasi',
+        "corridor": None,
+        "outbound": _stages('Kungu Karumba', 'Langata Rd', 'Wilson Airport', 'Mbagathi Way', 'Ngong Rd', 'KMTC', 'Community', 'Kenyatta Ave', 'GPO', 'ICEA', 'Ambassadeur', 'Ronald Ngala St', 'OTC', 'Landhies Rd', 'Jogoo Rd', 'City Stadium', 'Makadara', 'Donholm', 'Outering Rd', 'Taj Mall', 'Airport North Rd', 'Embakasi Rd'),
+        "return": _stages('Landhies', 'St. Peter Clavers', 'Uyoma', 'Tusker', 'Kencom', 'Kimathi St', 'GPO'),
+    },
+    {
+        "brn_serial": '27A', "start": 'Otiende - Southlands', "end": 'Embakasi',
+        "corridor": None,
+        "outbound": _stages('Kungu Karumba', 'Kitengela Rd', 'Southlands', 'Langata Rd', 'Wilson Airport', 'Mbagathi Way', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'KPCU', 'Landhies Rd', 'Jogoo Rd', 'City Stadium', 'Makadara', 'Donholm', 'Outering Rd', 'Taj Mall', 'Airport North Rd', 'Embakasi Rd'),
+        "return": _stages('Landhies', 'KPCU', 'Govt Printers'),
+    },
+    {
+        "brn_serial": '28', "start": 'Outer Ring - Buruburu', "end": 'Ngumo',
+        "corridor": None,
+        "outbound": _stages('Mumias South Rd', 'Rabai Rd', 'Uhuru Estate', 'Wangu Ave', 'Heshima Ave', '1st Ave', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'St. Peter Clavers Church', 'Uyoma St', 'Tusker', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'KMTC', 'Mbagathi Way', 'Mbagathi Rd', 'Mtongwe Rd'),
+        "return": _stages('GPO', 'Ambassadeur', 'Ronald Ngala', 'OTC'),
+    },
+    {
+        "brn_serial": '29', "start": 'Pipeline', "end": 'Ngumo',
+        "corridor": None,
+        "outbound": _stages('Outering Rd', 'Taj Mall', 'Cabanas', 'Mombasa Rd', 'Bellevue', 'Nyayo Stadium', 'Haile Selassie Ave', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'KMTC', 'Mbagathi Way', 'Mbagathi Rd', 'Mtongwe Rd'),
+        "return": _stages('GPO', 'Ambassadeur', 'Gill House', 'Haile Selassie'),
+    },
+    {
+        "brn_serial": '30', "start": 'Pipeline', "end": 'Kangemi',
+        "corridor": None,
+        "outbound": _stages('Outering Rd', 'Donholm', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'S-Lane Nkrumah Ave', 'Jeevanjee', 'University Way', 'Uhuru Hwy', "St. Paul's", 'Waiyaki Way', 'Chiromo', 'Westlands', 'ABC', 'Waruku'),
+        "return": _stages('GPO', 'Ambassadeur', 'Gill House', 'Haile Selassie'),
+    },
+    {
+        "brn_serial": '30A', "start": 'Pipeline', "end": 'KNH - Ngumo',
+        "corridor": None,
+        "outbound": _stages('Outering Rd', 'Lunga Lunga Rd', 'Enterprise Rd', 'Lusaka Rd', 'Bunyala Rd', 'Elgon Rd', 'Hospital Rd', 'KNH', 'Ngong Rd', 'KMTC', 'Mbagathi Way', 'Mbagathi Rd', 'Mtongwe Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '31', "start": 'Riruta Satellite', "end": 'Outering',
+        "corridor": None,
+        "outbound": _stages('Kinyanjui Rd', 'Wanyee Rd', 'Ngong Rd', 'Junction Mall', 'Adams', 'Prestige Mall', 'KMTC', 'Maktaba Kuu', 'Green Park', 'Haile Selassie Ave', 'Agip', 'KPCU', 'Pumwani Rd', 'Gikomba', 'Digo Rd', 'Lamu Rd', 'Ahero Rd', 'Ambira Rd', 'Heshima Ave', 'Wangu Ave', 'Buruburu Rd', 'Rabai Rd', 'Mumias South Rd'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Green Park'),
+    },
+    {
+        "brn_serial": '32', "start": 'Riruta Satellite - Kabiria', "end": 'Kariobangi',
+        "corridor": None,
+        "outbound": _stages('Kinyanjui Rd', 'Wanyee Rd', 'Naivasha Rd', 'Junction Mall', 'Ngong Rd', 'Adams', 'Prestige Mall', 'KMTC', 'Community', 'Serena', 'Kenyatta Ave', 'GPO', 'ICEA', 'Ambassadeur', 'Ronald Ngala St', 'Racecourse Rd', 'Kariokor Mkt', 'Juja Rd', "St. Teresa's Church", 'Huruma Rd', 'Kariobangi Roundabout', 'Outering Rd', 'Kamunde Rd'),
+        "return": _stages('Race Course', 'St. Peters Clavers', 'Uyoma', 'Tusker', 'Kencom'),
+    },
+    {
+        "brn_serial": '33', "start": 'Kamulu', "end": 'Ngumo',
+        "corridor": None,
+        "outbound": _stages('Kangundo Rd', 'Ruai', 'Outering Rd', 'Donholm', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'Govt Printers', 'Green Park', 'Ngong Rd', 'Mbagathi Way', 'Mbagathi Rd', 'Mtongwe Rd'),
+        "return": _stages('Green Park', 'Haile Selassie', 'KPCU'),
+    },
+    {
+        "brn_serial": '33A', "start": 'Kamulu', "end": 'Ngumo',
+        "corridor": None,
+        "outbound": _stages('Kangundo Rd', 'Ruai', 'Outering Rd', 'Kariobangi Roundabout', 'Juja Rd', 'Huruma', "St. Teresa's Church", 'Kariokor Mkt', 'Racecourse Rd', 'St. Peters Clavers Church', 'Uyoma St', 'Tusker', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'KMTC', 'Mbagathi Way', 'Mbagathi Rd', 'Mtongwe Rd'),
+        "return": _stages('GPO', 'Ambassadeur', 'Ronald Ngala', 'Racecourse'),
+    },
+    {
+        "brn_serial": '34', "start": 'Ruaka', "end": 'Upper Hill / KNH',
+        "corridor": None,
+        "outbound": _stages('Limuru Rd', 'Village Market Mall', 'Muthaiga Mkt', 'Parklands', 'Ngara', "Murang'a Rd", 'Globe Roundabout', 'Tom Mboya St', 'Old Posta', 'Cabral St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'Ragati Rd', 'Mara Rd', 'Elgon Rd', 'Hospital Rd'),
+        "return": _stages('GPO', 'Kenyatta Ave', 'Mondlane St', 'Old Posta', "Murang'a Rd"),
+    },
+    {
+        "brn_serial": '35', "start": 'Ruiru', "end": 'Upper Hill / KNH',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', 'Githurai', 'Allsops', 'Muthaiga', "Murang'a Rd", 'Globe Roundabout', 'Tom Mboya St', 'Old Posta', 'Cabral St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'Ragati Rd', 'Mara Rd', 'Elgon Rd', 'Hospital Rd'),
+        "return": _stages('GPO', 'Kenyatta Ave', 'Mondlane St', 'Old Posta', "Murang'a Rd"),
+    },
+    {
+        "brn_serial": '36', "start": 'Umoja', "end": 'Kibera - Ayany',
+        "corridor": None,
+        "outbound": _stages('Loop anticlockwise via Outering / Manyanja Rd', 'Donholm', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'City Hall Way', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'KMTC', 'Ring Rd Kilimani', 'Kibera Drive'),
+        "return": _stages('GPO', 'Ambassadeur', 'Moi Ave', 'Haile Selassie', 'KPCU', 'Athusi', 'Kariokor'),
+    },
+    {
+        "brn_serial": '36A', "start": 'Umoja', "end": 'Kibera - Ayany Via Ind. Area',
+        "corridor": None,
+        "outbound": _stages('Loop anticlockwise via Outering / Manyanja Rd', 'Donholm', 'Lunga Lunga Rd', 'Enterprise Rd', 'Lusaka Rd', 'Bunyala Rd', 'Elgon Rd', 'Hospital Rd', 'KNH', 'Ngong Rd', 'KMTC', 'Ring Rd Kilimani', 'Kibera Drive'),
+        "return": [],
+    },
+    {
+        "brn_serial": '37', "start": 'Utawala - Githunguri', "end": 'Kangemi',
+        "corridor": None,
+        "outbound": _stages('Kinka', 'Benedicta', 'Eastern Bypass', 'Airport North Rd', 'Mombasa Rd', 'Cabanas', 'GM', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Moi Ave', 'S-Lane Nkrumah Ave', 'Jeevanjee', 'University Way', 'Uhuru Hwy', "St. Paul's Church", 'Waiyaki Way', 'Chiromo', 'Westlands', 'ABC', 'Waruku'),
+        "return": _stages('GPO', 'Ambassadeur', 'Gill House', 'Haile Selassie'),
+    },
+    {
+        "brn_serial": '38', "start": 'Utawala - Airways', "end": 'Kangemi',
+        "corridor": None,
+        "outbound": _stages('MCA', 'Kinka', 'Benedicta', 'Eastern Bypass', 'Airport North Rd', 'Mombasa Rd', 'Cabanas', 'GM', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Moi Ave', 'S-Lane Nkrumah Ave', 'Jeevanjee', 'University Way', 'Uhuru Hwy', "St. Paul's Church", 'Waiyaki Way', 'Chiromo', 'Westlands', 'ABC', 'Waruku'),
+        "return": _stages('GPO', 'Ambassadeur', 'Gill House', 'Haile Selassie'),
+    },
+    {
+        "brn_serial": '39', "start": 'Wangige - Lower Kabete', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Western Bypass', "King'eero", 'Lower Kabete Rd', 'Sarit', 'Westlands Triangle', 'Parklands Rd', 'Ojijo Rd', 'Kipande Rd', 'Old Posta', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tusker', 'Tom Mboya', 'Old Posta'),
+    },
+    {
+        "brn_serial": '39A', "start": 'Wangige - Mwimuto', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Getathuru Rd', 'Mwimuto', 'Ngecha Rd', 'Lower Kabete Rd', 'Sarit', 'Westlands Triangle', 'Parklands Rd', 'Ojijo', 'Kipande Rd', 'Old Posta', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tusker', 'Tom Mboya', 'Old Posta'),
+    },
+    {
+        "brn_serial": '40', "start": 'Thika - Makongeni', "end": 'Westlands Loop',
+        "corridor": None,
+        "outbound": _stages('Garissa Rd', 'Thika Rd', 'Juja', 'Githurai', 'Allsops', 'Wangari Maathai Rd', 'Ojijo Rd', 'Parklands Rd', 'Ring Rd Parklands', 'Waiyaki Way (Return via Museum)'),
+        "return": [],
+    },
+    {
+        "brn_serial": '41', "start": 'Githurai', "end": 'South C',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', 'TRM Mall', 'Allsops', 'Outering Rd', 'Kariobangi Roundabout', 'Juja Rd', "St. Teresa's Church", '1st Ave Eastleigh', 'Muinami St', 'Digo Rd', 'Pumwani Rd', 'St. Peter Clavers Church', 'Tusker', 'Moi Ave', 'Haile Selassie Ave', 'KPCU', 'Govt Printers', 'Uhuru Hwy', 'Mombasa Rd', 'Popo Rd', 'Muhoho Ave', 'Ole Shapara Ave', 'Kiganjo Ave'),
+        "return": _stages('Uhuru Hwy', 'Haile Selassie', 'Agip', 'KPCU', 'Retail', 'Pumwani Rd'),
+    },
+    {
+        "brn_serial": '42', "start": 'Riruta Satellite', "end": 'Kahawa West',
+        "corridor": None,
+        "outbound": _stages('Kinyanjui Rd', 'Naivasha Rd', 'Ngong Rd', 'Junction Mall', 'Adams', 'Prestige Mall', 'Adams KMTC', 'Community', 'Kenyatta Ave', 'GPO', 'ICEA', 'Moi Ave', 'Gill House', 'KPCU', 'Athusi', 'Park Rd', 'Pangani', 'Thika Rd', 'Roysambu', 'Kamiti Rd'),
+        "return": _stages('Park Rd', 'Ring Rd Ngara', 'Kamukunji', 'KPCU', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd'),
+    },
+    {
+        "brn_serial": '43', "start": 'Gatina - Lavington', "end": 'Outering Rd Estate',
+        "corridor": None,
+        "outbound": _stages('Chalbi Dr', 'Isaac Gathanju Rd', 'James Gichuru Rd', 'Riverside Dr', 'Chiromo', 'Waiyaki Way', 'Uhuru Hwy', 'University Way', 'Slip Rd', 'Globe RA', 'Tom Mboya St', 'Ronald Ngala St', 'OTC', 'Landhies Rd', 'City Stadium', 'Jogoo Rd', 'Rabai Rd', 'Mumias South Rd'),
+        "return": _stages('Landhies', 'St Peter Clavers', 'Uyoma', 'Tusker', 'Commercial', 'Slip Rd', 'University Way', 'Uhuru Hwy', 'Waiyaki Way'),
+    },
+    {
+        "brn_serial": '44', "start": 'Kanungaga - Kileleshwa', "end": 'Komarock Estate',
+        "corridor": None,
+        "outbound": _stages('Macharia Rd', 'Gitanga Rd', 'Othaya Rd', 'Nyeri Rd', 'Gatundu Rd', 'Mandera Rd', 'Ring Rd Kileleshwa', 'Riverside Dr', 'Waiyaki Way', 'Uhuru Hwy', 'University Way', 'Globe RA', 'Tom Mboya St', 'Ronald Ngala St', 'OTC', 'Landhies Rd', 'City Stadium', 'Jogoo Rd', 'Donholm', 'Green Field', 'Jacaranda', 'Spine Rd'),
+        "return": _stages('Landhies', 'St Peter Clavers', 'Uyoma', 'Tusker', 'Commercial', 'Slip Rd', 'University Way', 'Uhuru Hwy', 'Waiyaki Way'),
+    },
+    {
+        "brn_serial": '45', "start": 'Gatina - Lavington', "end": 'South C',
+        "corridor": None,
+        "outbound": _stages('Chalbi Dr', 'Isaac Gathanju Rd', 'James Gichuru Rd', 'Riverside Dr', 'Chiromo', 'Waiyaki Way', 'Uhuru Hwy', 'Museum', 'Kipande Rd', 'Globe RA', 'Tom Mboya St', 'Cabral St', 'Moi Ave', 'Gill House', 'Govt Printers', 'Uhuru Hwy', 'Mombasa Rd', 'Popo Rd', 'Muhoho Ave', 'Ole Shapara Ave', 'Kiganjo Ave'),
+        "return": _stages('Haile Selassie', 'Agip', 'Tom Mboya', 'Commercial', 'Globe RA', 'Kipande Rd', 'Museum', 'Waiyaki Way'),
+    },
+    {
+        "brn_serial": '46', "start": 'Kanungaga - Kileleshwa', "end": 'Huruma Estate',
+        "corridor": None,
+        "outbound": _stages('Macharia Rd', 'Gitanga Rd', 'Othaya Rd', 'Nyeri Rd', 'Gatundu Rd', 'Mandera Rd', 'Ring Rd Kileleshwa', 'Riverside Dr', 'Waiyaki Way', 'Uhuru Hwy', 'Kipande Rd', 'Globe RA', 'Tom Mboya St', 'Ronald Ngala St', 'Riverside', 'Kariokor Mkt', 'Juja Rd', "St. Teresa's", 'Mathare Rd'),
+        "return": _stages('Kariokor', 'Racecourse Rd', 'St Peters Clavers', 'Uyoma', 'Ronald Ngala', 'Tom Mboya', 'Commercial', 'Globe RA', 'Kipande Rd', 'Museum', 'Uhuru Hwy', 'Waiyaki Way'),
+    },
+    {
+        "brn_serial": '47', "start": 'Umoja', "end": 'Highridge - Deep Sea',
+        "corridor": None,
+        "outbound": _stages('Moi Drive (loop clockwise)', 'Kangundo Rd', 'Outering Rd', 'Mumias South Rd', 'Buruburu', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies Rd', 'St Peter Clavers Church', 'Uyoma St', 'Tusker', 'Tom Mboya St', 'Globe RA', "Murang'a Rd", 'Limuru Rd', '3rd Parklands Ave', 'Mpaka Rd', 'Deep Sea', '6th Parklands Ave'),
+        "return": _stages("Murang'a Rd", 'Globe RA', 'Tom Mboya', 'Ronald Ngala', 'OTC', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '48', "start": 'Umoja', "end": 'Community - Green Park',
+        "corridor": None,
+        "outbound": _stages('Moi Drive (loop clockwise)', 'Kangundo Rd', 'Mumias South Rd', 'Rabai Rd', 'Wangu Ave', 'Heshima Ave', '1st Ave Eastleigh', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'Railway Club outside stop'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '49', "start": 'Kayole', "end": 'Uthiru Shops',
+        "corridor": None,
+        "outbound": _stages('Spine Rd (clockwise from Masimba)', 'Mayanja Rd', 'Donholm', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'City Hall Way', 'Kimathi St', 'GPO', 'Ngong Rd', 'Naivasha Rd', 'ILRI'),
+        "return": _stages('GPO', 'Ambassadeur', 'Moi Ave', 'Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '49A', "start": 'Kayole', "end": 'Uthiru Shops',
+        "corridor": None,
+        "outbound": _stages('Spine Rd (clockwise from Masimba)', 'Mayanja Rd', 'Donholm', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Nkrumah Ave', 'Jeevanjee Gardens', 'University Way', 'Uhuru Hwy', 'Waiyaki Way', 'Westlands', 'Kangemi', 'Kabete Technical College', 'ILRI'),
+        "return": _stages('GPO', 'Ambassadeur', 'Moi Ave', 'Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '50', "start": 'Kayole', "end": 'Highridge - Deep Sea',
+        "corridor": None,
+        "outbound": _stages('Spine Rd (clockwise from Masimba)', 'Mayanja Rd', 'Donholm', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'St Peter Clavers', 'Uyoma St', 'Tusker', 'Tom Mboya St', 'Commercial', 'Globe RA', "Murang'a Rd", 'Limuru Rd', '6th Parklands Ave', 'Deep Sea', 'Mpaka Rd', '3rd Parklands Ave'),
+        "return": _stages("Murang'a Rd", 'Globe RA', 'Tom Mboya', 'Ronald Ngala', 'OTC', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '51', "start": 'Pipeline', "end": 'Community - Green Park',
+        "corridor": None,
+        "outbound": _stages('Taj Mall turning loop', 'Outering Rd', 'Donholm', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'Ngong Rd', 'Community', 'Green Park Bus Stop'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '52', "start": 'Komarock', "end": 'Highridge - Deep Sea',
+        "corridor": None,
+        "outbound": _stages('Kangundo Rd', 'Outering Rd', 'Juja Rd', 'Kariokor', 'Racecourse Rd', 'St Peter Clavers Church', 'Uyoma St', 'Tusker', 'Tom Mboya St', 'Commercial', 'Old Posta', 'Globe RA', "Murang'a Rd", 'Limuru Rd', '3rd Parklands Ave', 'Mpaka Rd', 'Deep Sea', '6th Parklands Ave'),
+        "return": _stages("Murang'a Rd", 'Globe RA', 'Tom Mboya', 'Ronald Ngala', 'OTC', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '53', "start": 'Dandora', "end": 'Ngumo',
+        "corridor": None,
+        "outbound": _stages('Komarock Rd', 'Kariobangi South', 'Mumias South Rd', 'Buruburu', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies Rd', 'St. Peter Clavers Church', 'Tusker', 'Moi Ave', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'KMTC', 'Mbagathi Way', 'Mbagathi Rd', 'Mtongwe Rd'),
+        "return": _stages('GPO', 'Ambassadeur', 'Ronald Ngala', 'OTC'),
+    },
+    {
+        "brn_serial": '54', "start": 'Dandora', "end": 'South C',
+        "corridor": None,
+        "outbound": _stages('Komarock Rd', 'Kariobangi Roundabout', 'Juja Rd', "St. Teresa's Church", 'Kariokor Mkt', 'Kamukunji', 'Haile Selassie Ave', 'Uhuru Hwy', 'Mombasa Rd', 'Popo Rd', 'Muhoho Ave', 'Ole Shapara Ave', 'Kiganjo Ave'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '55', "start": 'Kariobangi', "end": 'Madaraka',
+        "corridor": None,
+        "outbound": _stages('Kamunde Rd', 'Outering Rd', 'Kariobangi Roundabout', 'Juja Rd', 'Huruma', "St. Teresa's Church", 'Ring Rd Ngara', 'Kariokor Mkt', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Govt Printers', 'Uhuru Hwy', 'Langata Rd', 'Muthaiti Ave', 'Gandhi Ave', 'Ole Sangale Ave', 'Mbagathi Way', 'Langata Rd'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '56', "start": 'Kariobangi', "end": 'Community - Green Park',
+        "corridor": None,
+        "outbound": _stages('Kamunde Rd', 'Outering Rd', 'Kariobangi Roundabout', 'Juja Rd', 'Huruma', "St. Teresa's Church", '1st Ave Eastleigh', 'Gen. Waruingi St', 'Muinami St', 'Digo Rd', 'Gikomba', 'Retail Mkt', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'Railway Club outside stop'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '57', "start": 'Huruma', "end": 'South B',
+        "corridor": None,
+        "outbound": _stages('Mathare Rd', 'Juja Rd', "St. Teresa's Church", 'Ring Rd Ngara', 'Kariokor Mkt', 'Racecourse Rd', 'St Peter Clavers Church', 'Uyoma St', 'Tusker', 'Moi Ave', 'Gill House', 'Haile Selassie Ave', 'Govt Printers', 'Uhuru Hwy', 'Bunyala Rd', 'Dunga Rd', 'Mater Hospital', 'Hazina', 'South B Shopping Centre'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '58', "start": 'Njiru', "end": 'Community - Green Park',
+        "corridor": None,
+        "outbound": _stages('Kangundo Rd', 'Outering Rd', 'Donholm', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'Kimathi St', 'Kenyatta Ave', 'GPO', 'Ngong Rd', 'Community', 'Railway Club outside bus stop'),
+        "return": _stages('Haile Selassie', 'KPCU', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '59', "start": 'Kawangware 46', "end": 'Eastleigh Via Gikomba',
+        "corridor": None,
+        "outbound": _stages('Kawangware Rd', 'Gitanga Rd', 'James Gichuru Rd', 'Waiyaki Way', 'Westlands', 'Uhuru Hwy', 'University Way', 'Slip Rd', 'Globe RA', 'Tom Mboya St', 'Ronald Ngala St', 'OTC', 'Pumwani Rd', 'Digo Rd', 'Muinami St', 'Gen Waruingi St', '1st Ave Eastleigh (anticlockwise circular)'),
+        "return": _stages('St Peters Clavers', 'Uyoma', 'Tusker', 'Commercial', 'Slip Rd', 'University Way'),
+    },
+    {
+        "brn_serial": '59A', "start": 'Kawangware 46', "end": 'Eastleigh Via Kariokor',
+        "corridor": None,
+        "outbound": _stages('Kawangware Rd', 'Gitanga Rd', 'James Gichuru Rd', 'Waiyaki Way', 'Westlands', 'Uhuru Hwy', 'University Way', 'Slip Rd', 'Globe RA', 'Tom Mboya St', 'Ronald Ngala St', 'Race Course Rd', 'Ring Rd Ngara', 'Kariokor Mkt', 'Juja Rd', "St Teresa's Church", '1st Ave Eastleigh (clockwise circular)'),
+        "return": _stages('Race Course', 'St Peters Clavers', 'Uyoma', 'Tusker', 'Commercial', 'Old Posta', 'Slip Rd', 'University Way'),
+    },
+    {
+        "brn_serial": '62', "start": 'Mwiki - Kasarani', "end": 'Westlands Loop',
+        "corridor": None,
+        "outbound": _stages('Mwiki Rd', 'Thika Rd', 'TRM Mall', 'Allsops', 'Park Rd', 'Ring Rd Ngara', 'Kamukunji Police', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Nkrumah Ave', 'Jeevanjee', 'University Way', 'Uhuru Hwy', 'Museum', 'Ojijo Rd', 'Parklands Rd', 'Ring Rd Parklands', 'Waiyaki Way'),
+        "return": _stages('Uhuru Hwy', 'Kenyatta Ave', 'Gill House', 'Haile Selassie Ave', 'KPCU'),
+    },
+    {
+        "brn_serial": '63', "start": 'South B', "end": 'Highridge - Deep Sea',
+        "corridor": None,
+        "outbound": _stages('Mater Hospital (clockwise loop)', 'Hazina', 'South B Shopping Centre', 'Dunga Rd', 'Bunyala Rd', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Tom Mboya St', 'Commercial', 'Old Posta', "Murang'a Rd", 'Limuru Rd', '6th Parklands Ave', 'Deep Sea', 'Mpaka Rd', '3rd Parklands Ave'),
+        "return": _stages('Tom Mboya St', 'Cabral St', 'Moi Ave', 'Gill House', 'Haile Selassie Ave'),
+    },
+    {
+        "brn_serial": '63A', "start": 'South B', "end": 'Highridge - Deep Sea',
+        "corridor": None,
+        "outbound": _stages('Mater Hospital (anticlockwise loop)', 'Hazina', 'South B Shopping Centre', 'Dunga Rd', 'Bunyala Rd', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Tom Mboya St', 'Commercial', 'Old Posta', "Murang'a Rd", 'Limuru Rd', '3rd Parklands Ave', 'Mpaka Rd', 'Deep Sea', '6th Parklands Ave'),
+        "return": _stages('Tom Mboya St', 'Cabral St', 'Moi Ave', 'Gill House', 'Haile Selassie Ave'),
+    },
+    {
+        "brn_serial": '64', "start": 'Dagoretti Centre - Karinde', "end": 'Bomas',
+        "corridor": None,
+        "outbound": _stages('Kikuyu Rd', 'Dagoretti Rd', 'Langata Rd', 'Langata South Rd', 'Bogani Rd', 'Colleges', 'Bomas'),
+        "return": [],
+    },
+    {
+        "brn_serial": '65', "start": 'Mathare North NYSEI', "end": 'Sameer Park / GM',
+        "corridor": None,
+        "outbound": _stages('Mathare North Rd', 'Redeemed Church', 'Juja Rd', 'MAB', '1st Ave Eastleigh', 'Jogoo Rd', 'Likoni Rd', 'Enterprise Rd', 'General Motors', 'Sameer Park'),
+        "return": [],
+    },
+    {
+        "brn_serial": '66', "start": 'Kikuyu Town', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kikuyu Rd', 'Waithaka', 'Naivasha Rd', 'Kawangware', 'Ngong Rd', 'Junction Mall', 'Adams Arcade', 'Prestige Mall', 'KMTC', 'Community', 'Serena', 'Kenyatta Ave', 'GPO', 'Ambassadeur', 'Tom Mboya', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave'),
+    },
+    {
+        "brn_serial": '67', "start": 'Kikuyu Town', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kikuyu Rd', 'Gitaru', 'A104', 'Waiyaki Way', 'Kangemi', 'Westlands', 'Uhuru Hwy', 'University Slip Rd', 'Globe Roundabout', 'Tom Mboya St', 'Hakati Rd'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave'),
+    },
+    {
+        "brn_serial": '68', "start": 'Ruiru', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', 'Githurai', 'Allsops', 'Muthaiga', "Murang'a Rd", 'Globe Roundabout', 'Tom Mboya St', 'Old Posta', 'Tom Mboya', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tusker', 'Tom Mboya', 'Old Posta'),
+    },
+    {
+        "brn_serial": '69', "start": 'Kitengela', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Nairobi-Namanga Rd', 'Mombasa Rd', 'Mlolongo', 'Cabanas', 'GM', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'Haile Selassie Ave', 'Govt Printers'),
+    },
+    {
+        "brn_serial": '70', "start": 'Athi River', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Nairobi-Namanga Rd', 'Mombasa Rd', 'Mlolongo', 'Cabanas', 'GM', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'Haile Selassie Ave', 'Govt Printers'),
+    },
+    {
+        "brn_serial": '71', "start": 'Kiserian - Ngong', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Ngong Rd', 'Matasia', 'Ngong', 'Karen', 'Racecourse', 'Junction Mall', 'Adams', 'Prestige Mall', 'KMTC', 'Community', 'Kenyatta Ave', 'GPO', 'ICEA', 'Ambassadeur', 'Moi Ave', 'Haile Selassie Ave', 'Mfangano St', 'Hakati Rd', 'Temple'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'City Hall Way', 'Kencom', 'Kimathi St', 'Kenyatta Ave'),
+    },
+    {
+        "brn_serial": '72', "start": 'Kiserian - Ongata Rongai', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Magadi Rd', 'Bomas', 'Langata Rd', 'Wilson Airport', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'Haile Selassie Ave', 'Govt Printers'),
+    },
+    {
+        "brn_serial": '73', "start": 'Ongata Rongai - Gataka', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Rongai Tassia Supermarket (Magadi Rd)', 'Gataka Rd', 'Bogani Rd', 'Bomas', 'Langata', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Temple', 'Uyoma', 'Tusker', 'Moi Ave', 'Haile Selassie Ave', 'Govt Printers'),
+    },
+    {
+        "brn_serial": '74', "start": 'Joska - Kamulu', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kangundo Rd', 'Ruai', 'Outering Rd', 'Juja Rd', 'MAB', "St. Teresa's Church", 'Pangani', 'Kariokor', 'Ring Rd Ngara', 'Haile Selassie Ave', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Racecourse', 'Ring Rd Ngara'),
+    },
+    {
+        "brn_serial": '75', "start": 'Thika - Makongeni', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Garissa Rd', 'Thika Rd', 'Juja', 'Githurai', 'Allsops', 'Park Rd', 'Ring Rd Ngara', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Racecourse Rd', 'Ring Rd Ngara'),
+    },
+    {
+        "brn_serial": '76', "start": 'Gachie', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Redhill Rd (peak ext to Karura Kanyungu)', 'Limuru Rd', 'Muthaiga Mkt', 'Parklands', 'Ngara', "Murang'a Rd", 'Globe Roundabout', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tusker', 'Tom Mboya', 'Old Posta'),
+    },
+    {
+        "brn_serial": '76A', "start": 'Gichagi', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Redhill Rd', 'Westlands-Redhill Bypass', 'Waiyaki Way', 'ABC', 'Westlands Triangle', 'Parklands Police', 'Ojijo Rd', 'Kipande Rd', 'Globe RA', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tusker', 'Tom Mboya', 'Old Posta'),
+    },
+    {
+        "brn_serial": '77', "start": 'Kiambu Town', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kiambu Rd', 'Ridgeways', 'Thika Rd', 'Park Rd', 'Ring Rd Ngara', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Racecourse Rd', 'Ring Rd Ngara'),
+    },
+    {
+        "brn_serial": '78', "start": 'Mwiki - Kasarani', "end": 'Gikomba Market',
+        "corridor": None,
+        "outbound": _stages('Mwiki Rd', 'Kasarani', 'Thika Rd', 'Juja', 'Githurai', 'Allsops', 'Ring Rd Ngara', 'Kariokor', 'Kinyanjui St', 'Digo Rd', 'Meru Rd', 'Gen. Waruingi St', 'Ring Rd Ngara'),
+        "return": [],
+    },
+    {
+        "brn_serial": '79', "start": 'Kiambu Town', "end": 'Gikomba Market',
+        "corridor": None,
+        "outbound": _stages('Kiambu Rd', 'Ridgeways', 'Thika Rd', 'Juja', 'Githurai', 'Allsops', 'Ring Rd Ngara', 'Kariokor', 'Kinyanjui St', 'Digo Rd', 'Meru Rd', 'Gen. Waruingi St', 'Ring Rd Ngara'),
+        "return": [],
+    },
+    {
+        "brn_serial": '80', "start": 'Thika Town', "end": 'Gikomba Market',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', 'Juja', 'Githurai', 'Allsops', 'Ring Rd Ngara', 'Kariokor', 'Kinyanjui St', 'Digo Rd', 'Meru Rd', 'Gen Waruingi St', 'Ring Rd Ngara'),
+        "return": [],
+    },
+    {
+        "brn_serial": '81', "start": 'Ruiru', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', "Murang'a Rd", 'Globe RA', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tom Mboya St', 'Globe Cinema'),
+    },
+    {
+        "brn_serial": '82', "start": "Kenol - Murang'a", "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Meru-Nairobi Hwy', 'Thika Rd', 'Juja', 'Githurai', 'Allsops', 'Park Rd', 'Ring Rd Ngara', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Racecourse Rd', 'Ring Rd Ngara'),
+    },
+    {
+        "brn_serial": '83', "start": 'Limuru Town - Zambezi', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('A104', 'Gitaru', 'Uthiru Shops', 'ILRI', 'Naivasha Rd', 'Junction Shopping Mall', 'Ngong Rd', 'Kenyatta Ave', 'GPO', 'Kimathi St', 'Ambassadeur', 'Tom Mboya', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Racecourse Rd', 'Moi Ave', 'Kimathi St', 'Kenyatta Ave', 'GPO'),
+    },
+    {
+        "brn_serial": '84', "start": 'Limuru Town - Kabuku', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kiambu Rd', 'Kabuku', 'Ndenderu', 'Ruaka', 'Redhill Rd', 'Village Market', 'Limuru Rd', 'Parklands', "Murang'a Rd", 'Globe RA', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tom Mboya St', 'Globe Cinema'),
+    },
+    {
+        "brn_serial": '85', "start": 'Nazareth - Banana Hill', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Raini', 'Banana Hill', 'Mucatha', 'Ruaka', 'Redhill Rd', 'Village Market', 'Limuru Rd', 'Parklands', "Murang'a Rd", 'Globe RA', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Tom Mboya St', 'Globe Cinema'),
+    },
+    {
+        "brn_serial": '86', "start": 'Imara Daima - Inda', "end": 'Kangemi',
+        "corridor": None,
+        "outbound": _stages('Mombasa Rd', 'GM', 'Enterprise Rd', 'Lusaka Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Nkrumah Ave', 'Jeevanjee Gardens', 'University Way', 'Uhuru Hwy', 'Waiyaki Way', 'Muratha Rd'),
+        "return": _stages('KBC', 'Uhuru Hwy', 'Kenyatta Ave', 'Kimathi St', 'Moi Ave', 'Gill House', 'Haile Selassie', 'Landhies'),
+    },
+    {
+        "brn_serial": '87', "start": 'Githunguri Town', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('C65', 'Gathanje', 'Ikinu', 'Tinganga', 'Ndumberi', 'Kiambu Rd', 'Kiambu', 'Muthaiga', 'Thika Rd', 'Park Rd', 'Ring Rd Ngara', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma', 'Ronald Ngala St', 'Racecourse Rd', 'Ring Rd Ngara'),
+    },
+    {
+        "brn_serial": '88', "start": 'Lavington - Dennis Pritt', "end": 'Kahawa West',
+        "corridor": None,
+        "outbound": _stages('Mugumoini Rd', 'Lavington Primary', 'Olenguruone Rd', 'Likoni Rd', 'Dennis Pritt Rd', 'Milimani Rd', 'Kenyatta Ave', 'GPO', 'Mondlane', 'Tom Mboya', 'Globe', "Murang'a Rd", 'Thika Rd', 'Roysambu', 'Kamiti Rd'),
+        "return": _stages("Murang'a Rd", 'Tom Mboya St', 'Old Posta', 'Cabral St', 'Kenyatta Ave', 'GPO'),
+    },
+    {
+        "brn_serial": '89', "start": 'Katani Shopping Centre', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Katani Rd', 'Mombasa Rd', 'General Motors (GM)', 'Enterprise Rd', 'DT Dobie', 'Lusaka Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave RA', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma St', 'Ronald Ngala St', 'OTC', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '89B', "start": 'Katani Shopping Centre', "end": 'Central Bus Station / Hakati',
+        "corridor": None,
+        "outbound": _stages('Katani Rd', 'Mombasa Rd', 'General Motors (GM)', 'Likoni Rd', 'Enterprise Rd', 'DT Dobie', 'Lusaka Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave RA', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": _stages('Uyoma St', 'Ronald Ngala St', 'OTC', 'Landhies Rd'),
+    },
+    {
+        "brn_serial": '89C', "start": 'Katani Shopping Centre', "end": 'Westlands',
+        "corridor": None,
+        "outbound": _stages('Katani Rd', 'Mombasa Rd', 'Cabanas', 'Expressway - Museum Hill', 'Uhuru Hwy', 'Ojijo', 'Parklands Rd', 'Westlands Triangle', 'Ring Rd Parklands', 'Expressway'),
+        "return": _stages('Expressway'),
+    },
+    {
+        "brn_serial": '90', "start": 'Utawala', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Main Utawala Rd', 'Eastern Bypass', 'Airport North Rd', 'Mombasa Rd', 'Cabanas', 'GM', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '91', "start": 'Kitengela', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Nairobi-Namanga Rd', 'Mombasa Rd', 'Mlolongo', 'Cabanas', 'GM', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '92', "start": 'Ongata Rongai', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Magadi Rd', 'Bomas', 'Langata Rd', 'Wilson Airport', 'Nyayo Stadium', 'Uhuru Hwy', 'Haile Selassie Ave', 'Agip', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '93', "start": 'Pipeline', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Taj Mall turning loop', 'Outering Rd', 'Donholm', 'Jogoo Rd', 'Makadara', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'Kencom', 'Simba St', 'Moi Ave', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '94', "start": 'Ngong Town', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Ngong Rd', 'Karen', 'Racecourse', 'Junction Mall', 'Adams', 'Prestige Mall', 'KMTC', 'Community', 'Kenyatta Ave', 'GPO', 'Ambassadeur', 'Moi Ave', 'Haile Selassie Ave', 'Mfangano St', 'Hakati Rd', 'Temple'),
+        "return": [],
+    },
+    {
+        "brn_serial": '95', "start": 'Kikuyu - Waithaka', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kikuyu Rd', 'Waithaka', 'Naivasha Rd', 'Kawangware', 'Ngong Rd', 'Junction Mall', 'Adams Arcade', 'Prestige Mall', 'KMTC', 'Community', 'Kenyatta Ave', 'GPO', 'Ambassadeur', 'Tom Mboya', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '96', "start": 'Umoja - Kayole - Komarock', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Moi Drv (Umoja 1 & 2)', 'Spine Rd', 'Mama Lucy Hospital', 'Komarock Estate entrance', 'Kayole loop (Masimba)', 'Mayanja Rd', 'Donholm', 'Jogoo Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave', 'City Hall Way', 'Simba St', 'Moi Ave', 'Ambassadeur', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '97', "start": 'Joska - Kamulu', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kangundo Rd', 'Mama Lucy Hospital', 'Outering Rd', 'Juja Rd', 'MAB', '1st Ave Eastleigh', 'Muinami St', 'Digo Rd', 'Pumwani Rd', 'Haile Selassie Ave', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '98', "start": 'Pangani - Dandora', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Komarock Rd', 'Kariobangi Roundabout', 'Juja Rd', "St. Teresa's Church", 'Kariokor Mkt', 'Kamukunji', 'Haile Selassie Ave', 'Moi Ave RA', 'City Hall Way', 'Simba St', 'Moi Ave', 'Ambassadeur Hotel', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '99', "start": 'Ruaka - Banana', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Banana Laini Rd', 'Limuru Rd', 'Village Market Mall', 'Muthaiga Mkt', 'Parklands', 'Ngara', "Murang'a Rd", 'Globe Roundabout', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '100', "start": 'Kiambu - Ndumberi', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kiambu Rd', 'Ridgeways', 'Thika Rd', 'Park Rd', 'Ring Rd Ngara', 'Kamukunji', 'Haile Selassie Ave', 'KPCU', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '101', "start": 'Kinoo - Waiyaki Way', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('A104', 'Uthiru', 'Waiyaki Way', 'Kangemi', 'Westlands', 'Uhuru Hwy', 'Kenyatta Ave', 'GPO', 'Kimathi St', 'Ambassadeur'),
+        "return": [],
+    },
+    {
+        "brn_serial": '102', "start": 'Thika Road - Ruiru', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', 'Park Rd', 'Ring Rd Ngara', 'Race Course Rd', 'Uyoma St', 'Ronald Ngala', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '103', "start": 'Thika Road - Kahawa West', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', "Murang'a Rd", 'Globe RA', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '104', "start": 'Thika Rd - Mwiki', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Thika Rd', 'Park Rd', 'Ring Rd Ngara', 'Race Course Rd', 'Uyoma St', 'Ronald Ngala', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '105', "start": 'Eastleigh - Gikomba', "end": 'Eastleigh Circular',
+        "corridor": None,
+        "outbound": _stages('1st Ave', 'Gen Waruingi', 'Muinami St', 'Digo Rd', 'Pumwani Rd', 'Racecourse Rd', 'St Peter Clavers Church', 'Uyoma St', 'Ronald Ngala St', 'Tom Mboya St', 'Commercial', 'Cabral St', 'Moi Ave', 'Mondlane St', 'Commercial', 'Ronald Ngala St', 'Race Course', 'Ring Rd Ngara', 'Park Rd', 'Juja Rd', "St. Teresa's Church"),
+        "return": [],
+    },
+    {
+        "brn_serial": '106', "start": 'Eastleigh - Gikomba', "end": 'Eastleigh Circular',
+        "corridor": None,
+        "outbound": _stages("St. Teresa's Church", 'Juja Rd', 'Park Rd', 'Ngara Rd', "Murang'a Rd", 'Globe RA', 'Tom Mboya St', 'Ronald Ngala St', 'OTC', 'Pumwani Rd', 'Digo Rd', 'Muinami St', 'Gen Waruingi St', '1st Ave Eastleigh'),
+        "return": [],
+    },
+    {
+        "brn_serial": '107', "start": 'Kibera', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Kibera Drive', 'Ring Rd Kilimani', 'Ngong Rd', 'Hospital Rd', 'Kenyatta Hospital', 'Ngong Rd', 'Kenyatta Ave', 'Kimathi St', 'Ambassadeur Hotel', 'Tom Mboya', 'Hakati Rd', 'Temple'),
+        "return": [],
+    },
+    {
+        "brn_serial": '108', "start": 'Kawangware 46', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Macharia Rd', 'Gitanga Rd', 'Valley Arcade', 'Argwings Kodhek Rd', 'Valley Rd', 'Kenyatta Ave', 'GPO', 'Kimathi St', 'Moi Ave', 'Ambassadeur Hotel', 'Tom Mboya St', 'Hakati Rd', 'Temple Rd'),
+        "return": [],
+    },
+    {
+        "brn_serial": '109', "start": 'Imara Daima - Inda', "end": 'Central Bus Stn / Hakati',
+        "corridor": None,
+        "outbound": _stages('Mombasa Rd', 'GM', 'Enterprise Rd', 'Lusaka Rd', 'City Stadium', 'Landhies Rd', 'Haile Selassie Ave', 'KPCU', 'Moi Ave Roundabout', 'Mfangano St', 'Hakati', 'Temple Rd'),
+        "return": [],
+    },]
