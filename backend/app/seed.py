@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage
+from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage, Beat
 from app.auth import get_password_hash
 from app.brn_data import STAGE_COORDS, ROUTES as BRN_ROUTES
 import datetime
@@ -104,8 +104,53 @@ async def seed_brn_data(db: AsyncSession):
     await db.commit()
 
 
+async def seed_zones_and_beats(db: AsyncSession):
+    """Enforcement zones (coarse corridor labels, no polygon/boundary data)
+    and a starter beat per zone. Idempotent per-row (checked by id, not an
+    all-or-nothing guard) for the same reason seed_brn_data() is — an
+    already-seeded database (e.g. live Render Postgres) must still pick up
+    new zones/beats added here on its next boot, not silently skip them
+    because seed_data()'s Sacco check already returned. Depends on
+    seed_brn_data() having already run (it has — called first in both
+    seed_data() and here) so the stage/route ids these beats reference
+    already exist.
+    """
+    existing_zone_ids = set((await db.execute(select(Zone.id))).scalars().all())
+    zones = [
+        Zone(id="zone-cbd", name="CBD Corridor", description="Nairobi CBD and immediate approach roads"),
+        Zone(id="zone-thika-road", name="Thika Road Corridor", description="Thika Road from CBD to Kasarani/Roysambu"),
+        Zone(id="zone-langata", name="Langata Corridor", description="Langata Road and Rongai approach"),
+        Zone(id="zone-outer-ring", name="Outer Ring Corridor", description="Outer Ring Road / Kawangware / Waiyaki Way"),
+    ]
+    for z in zones:
+        if z.id not in existing_zone_ids:
+            db.add(z)
+
+    # Real route/stage pairs from the digitized BRN data (both stages
+    # genuinely geocoded, not fabricated coordinates) — one per zone so the
+    # enforcement live map has something to draw on first boot.
+    existing_beat_ids = set((await db.execute(select(Beat.id))).scalars().all())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    beats = [
+        Beat(id="beat-cbd-1", name="GPO - ICEA (CBD)", route_id="brn-route-11",
+             from_stage_id="stage-gpo", to_stage_id="stage-icea", zone_id="zone-cbd", created_at=now),
+        Beat(id="beat-thika-1", name="Mwiki - Kasarani (Thika Rd)", route_id="brn-route-10",
+             from_stage_id="stage-mwiki", to_stage_id="stage-kasarani", zone_id="zone-thika-road", created_at=now),
+        Beat(id="beat-langata-1", name="Community - Kibera Drive (Langata)", route_id="brn-route-9",
+             from_stage_id="stage-community", to_stage_id="stage-kibera-drive", zone_id="zone-langata", created_at=now),
+        Beat(id="beat-outer-1", name="Kawangware - Ngong Rd (Outer Ring)", route_id="brn-route-1",
+             from_stage_id="stage-kawangware", to_stage_id="stage-ngong-rd", zone_id="zone-outer-ring", created_at=now),
+    ]
+    for b in beats:
+        if b.id not in existing_beat_ids:
+            db.add(b)
+
+    await db.commit()
+
+
 async def seed_data(db: AsyncSession):
     await seed_brn_data(db)
+    await seed_zones_and_beats(db)
 
     # Check if data already exists
     sacco_check = await db.execute(select(Sacco))
@@ -167,17 +212,6 @@ async def seed_data(db: AsyncSession):
     for r in routes:
         db.add(r)
 
-    # Seed Enforcement Zones/Corridors (simple named-zone picker for now —
-    # a real interactive GIS map is a planned upgrade once a mapping
-    # provider is chosen)
-    zones = [
-        Zone(id="zone-cbd", name="CBD Corridor", description="Nairobi CBD and immediate approach roads"),
-        Zone(id="zone-thika-road", name="Thika Road Corridor", description="Thika Road from CBD to Kasarani/Roysambu"),
-        Zone(id="zone-langata", name="Langata Corridor", description="Langata Road and Rongai approach"),
-        Zone(id="zone-outer-ring", name="Outer Ring Corridor", description="Outer Ring Road / Kawangware / Waiyaki Way"),
-    ]
-    for z in zones:
-        db.add(z)
 
     # Seed Offence Catalog — fine amounts are fixed by county officials and
     # locked automatically when an Arresting Officer selects the offence;

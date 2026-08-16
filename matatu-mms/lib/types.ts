@@ -33,6 +33,22 @@ export interface Zone {
   description?: string;
 }
 
+export interface Beat {
+  id: string;
+  name: string;
+  routeId: string;
+  fromStageId: string;
+  toStageId: string;
+  zoneId?: string | null;
+  createdAt: string;
+  // Denormalized from the linked stages — null when a stage isn't geocoded
+  // yet, in which case the beat just isn't drawn as a line on the map.
+  fromLat?: number | null;
+  fromLng?: number | null;
+  toLat?: number | null;
+  toLng?: number | null;
+}
+
 export interface OffenceType {
   id: string;
   name: string;

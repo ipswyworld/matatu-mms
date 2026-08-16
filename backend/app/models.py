@@ -257,6 +257,31 @@ class VehiclePosition(Base):
     matatu = relationship("Matatu")
 
 
+class OfficerPosition(Base):
+    """GPS history for enforcement officers on patrol — durable counterpart
+    to the Redis-only "live position" key in app/routes/telemetry.py, same
+    pattern as VehiclePosition above. Deliberately opt-in per officer (the
+    "On Patrol" toggle in the frontend, not silent background tracking):
+    beats.py's own docstring already flagged that continuous officer
+    tracking is a real product/consent decision, not something to bolt on
+    quietly. No simulated-fallback position either — unlike the demo
+    vehicle GPS, a fake officer location would actively mislead a
+    commander about where someone actually is, so this table only ever
+    holds a real device fix.
+    """
+    __tablename__ = "officer_positions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    officer_id = Column(String, ForeignKey("users.id"), nullable=False)
+    lat = Column(Float, nullable=False)
+    lng = Column(Float, nullable=False)
+    speed = Column(Float, nullable=True)
+    heading = Column(Float, nullable=True)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
+
+    officer = relationship("User")
+
+
 class RouteDetour(Base):
     """A pre-approved alternate road segment for a known incident-prone
     stretch of one route (ARCHITECTURE_DECISIONS.md §29.4). Deliberately

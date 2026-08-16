@@ -444,6 +444,15 @@ class BeatResponse(BaseModelCamel):
     to_stage_id: str
     zone_id: Optional[str] = None
     created_at: datetime.datetime
+    # Denormalized from the linked Stage rows so the enforcement live map
+    # can draw a beat as a line without a second round-trip per beat. Null
+    # when a stage hasn't been geocoded yet (Stage.geocoded=False) — the
+    # same no-fabrication convention as everywhere else stage coordinates
+    # are surfaced; the frontend just skips drawing that beat's line.
+    from_lat: Optional[float] = None
+    from_lng: Optional[float] = None
+    to_lat: Optional[float] = None
+    to_lng: Optional[float] = None
 
 class BeatAssignmentCreate(BaseModelCamel):
     officer_id: str

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ShieldAlert, UserCog, Gavel, Ban, AlertTriangle } from "lucide-react";
+import { ShieldAlert, UserCog, Gavel, Ban, AlertTriangle, MapPin } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones } from "@/lib/data";
+import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones, getBeats } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import StatCard from "@/components/StatCard";
 import { MatatuStatusPill, FineStatusPill } from "@/components/StatusPill";
@@ -12,14 +12,18 @@ import PageBanner from "@/components/PageBanner";
 import ExportCsvButton from "@/components/ExportCsvButton";
 import EnforcementTabs from "@/components/EnforcementTabs";
 import OfficerAssignmentRow from "@/components/OfficerAssignmentRow";
+import EnforcementMap from "@/components/EnforcementMap";
+import OnPatrolToggle from "@/components/OnPatrolToggle";
 
 export const metadata: Metadata = { title: "Enforcement Operations" };
+
+const ENFORCEMENT_FIELD_ROLES = ["ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"];
 
 export default async function EnforcementPage() {
   const session = readSession()!;
   const canManageAssignments = can(session.role, "manage_officer_assignments");
 
-  const [matatus, activities, fines, users, crimes, routes, reports, enforcementCases, officerAssignments, zones] = await Promise.all([
+  const [matatus, activities, fines, users, crimes, routes, reports, enforcementCases, officerAssignments, zones, beats] = await Promise.all([
     getMatatus(),
     getActivity(),
     getFines(),
@@ -30,6 +34,7 @@ export default async function EnforcementPage() {
     can(session.role, "view_enforcement_cases") ? getEnforcementCases() : Promise.resolve([]),
     canManageAssignments ? getOfficerAssignments() : Promise.resolve([]),
     canManageAssignments ? getZones() : Promise.resolve([]),
+    canManageAssignments ? getBeats() : Promise.resolve([]),
   ]);
 
   const commanders = officerAssignments.filter((o) => o.role === "ENFORCEMENT_COMMANDER");
@@ -101,6 +106,9 @@ export default async function EnforcementPage() {
       <EnforcementTabs
         operationsContent={
           <>
+      {ENFORCEMENT_FIELD_ROLES.includes(session.role) && (
+        <OnPatrolToggle officerId={session.userId} token={session.token || ""} />
+      )}
       {can(session.role, "view_enforcement_cases") && (
         <div className="rounded-2xl bg-county-green-deep text-white p-5 flex flex-wrap items-center justify-between gap-4 shadow-elevated">
           <div>
@@ -311,6 +319,14 @@ export default async function EnforcementPage() {
         commandContent={
           canManageAssignments ? (
             <div className="space-y-6">
+              <div className="space-y-2">
+                <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+                  <MapPin size={15} strokeWidth={2} className="text-county-ink/50" />
+                  Live Map — Officers, Vehicles & Beats
+                </h3>
+                <EnforcementMap beats={beats} zones={zones} token={session.token || ""} />
+              </div>
+
               <div className="card p-5 space-y-3">
                 <h3 className="font-bold text-sm text-county-black">Commander Titles</h3>
                 <p className="text-xs text-black/50">Top enforcement leadership — Commander of Public Transport Compliance, Traffic, Parking, etc.</p>

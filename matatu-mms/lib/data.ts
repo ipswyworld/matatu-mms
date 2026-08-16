@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -165,6 +165,24 @@ export interface LiveVehicleTelemetry {
 
 export async function getFleetTelemetry(): Promise<LiveVehicleTelemetry[]> {
   return apiFetch<LiveVehicleTelemetry[]>("/api/telemetry/matatus");
+}
+
+export interface LiveOfficerTelemetry {
+  officer_id: string;
+  officer_name: string;
+  role: string;
+  lat: number;
+  lng: number;
+  bearing?: number;
+  speed?: number;
+}
+
+export async function getOfficerTelemetry(): Promise<LiveOfficerTelemetry[]> {
+  return apiFetch<LiveOfficerTelemetry[]>("/api/telemetry/officers");
+}
+
+export async function getBeats(): Promise<Beat[]> {
+  return apiFetch<Beat[]>("/api/beats");
 }
 
 export async function getZones(): Promise<Zone[]> {

@@ -11,11 +11,13 @@ from sqlalchemy.future import select
 from app.auth import get_current_user
 from app.config import ALGORITHM, SECRET_KEY
 from app.database import get_db, AsyncSessionLocal
-from app.models import Matatu, User, VehiclePosition
+from app.models import Matatu, User, VehiclePosition, OfficerPosition
 from app.realtime import ChannelBroadcaster, get_redis, publish
 
 logger = logging.getLogger("app.routes.telemetry")
 router = APIRouter(prefix="/api/telemetry", tags=["Live Telemetry & GPS Tracking"])
+
+ENFORCEMENT_ROLES = ("ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER")
 
 # A vehicle is only considered "live" while its crew's GPS websocket is
 # actively streaming. Position state now lives in Redis (key TTL = staleness
@@ -26,7 +28,15 @@ STALE_AFTER_SECONDS = 30
 TELEMETRY_CHANNEL = "telemetry:broadcast"
 TELEMETRY_KEY_PREFIX = "telemetry:vehicle:"
 
+# Same pattern, separate channel/prefix — an officer's live position (§22.4)
+# is opt-in per officer (the "On Patrol" toggle in the frontend) and never
+# simulated: if the device GPS fix isn't available, nothing is broadcast,
+# rather than showing a commander a fake location.
+OFFICER_TELEMETRY_CHANNEL = "officer_telemetry:broadcast"
+OFFICER_TELEMETRY_KEY_PREFIX = "telemetry:officer:"
+
 broadcaster = ChannelBroadcaster(pattern=TELEMETRY_CHANNEL)
+officer_broadcaster = ChannelBroadcaster(pattern=OFFICER_TELEMETRY_CHANNEL)
 
 
 async def live_vehicles() -> List[Dict[str, Any]]:
@@ -83,10 +93,59 @@ async def _persist_position(matatu_id: str, data: Dict[str, Any]) -> None:
         logger.exception(f"Failed to persist GPS position for matatu {matatu_id}")
 
 
+async def live_officers() -> List[Dict[str, Any]]:
+    """Officers with a non-expired Redis key — same TTL-does-the-bookkeeping pattern as live_vehicles()."""
+    r = await get_redis()
+    officers: List[Dict[str, Any]] = []
+    async for key in r.scan_iter(match=f"{OFFICER_TELEMETRY_KEY_PREFIX}*"):
+        raw = await r.get(key)
+        if raw:
+            try:
+                officers.append(json.loads(raw))
+            except ValueError:
+                continue
+    return officers
+
+
+async def update_officer(data: Dict[str, Any]) -> None:
+    officer_id = data["officer_id"]
+    r = await get_redis()
+    await r.set(f"{OFFICER_TELEMETRY_KEY_PREFIX}{officer_id}", json.dumps(data, default=str), ex=STALE_AFTER_SECONDS)
+    await publish(OFFICER_TELEMETRY_CHANNEL, {"type": "OFFICER_POSITION_UPDATE", "officer": data})
+    await _persist_officer_position(officer_id, data)
+
+
+async def _persist_officer_position(officer_id: str, data: Dict[str, Any]) -> None:
+    """Durable GPS history for an officer, mirroring _persist_position above.
+    Best-effort: a write failure here must never break the live map."""
+    lat, lng = data.get("lat"), data.get("lng")
+    if lat is None or lng is None:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(OfficerPosition(
+                officer_id=officer_id,
+                lat=float(lat),
+                lng=float(lng),
+                speed=data.get("speed"),
+                heading=data.get("bearing"),
+                recorded_at=datetime.datetime.now(datetime.timezone.utc),
+            ))
+            await db.commit()
+    except Exception:
+        logger.exception(f"Failed to persist GPS position for officer {officer_id}")
+
+
 @router.get("/matatus")
 async def get_active_telemetry(current_user: User = Depends(get_current_user)):
     """REST fallback endpoint returning live GPS locations of currently-broadcasting Matatus."""
     return await live_vehicles()
+
+
+@router.get("/officers")
+async def get_active_officer_telemetry(current_user: User = Depends(get_current_user)):
+    """REST fallback endpoint returning live GPS locations of currently-patrolling officers."""
+    return await live_officers()
 
 
 @router.websocket("/ws/passengers")
@@ -106,6 +165,48 @@ async def passenger_telemetry_ws(websocket: WebSocket):
         pass
     finally:
         broadcaster.unregister("*", websocket)
+
+
+@router.websocket("/ws/staff")
+async def staff_telemetry_ws(websocket: WebSocket, token: str = "", db: AsyncSession = Depends(get_db)):
+    """
+    WebSocket endpoint for the staff enforcement live map — vehicle AND
+    officer position updates over one connection. Gated to authenticated
+    staff (i.e. not PASSENGER/CREW/SACCO_OPERATOR): officer location is
+    more sensitive than a bus's, so this isn't left open the way the
+    passenger vehicle-only feed is.
+    """
+    try:
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("userId") or payload.get("sub")
+    except Exception:
+        user_id = None
+
+    user = None
+    if user_id:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalars().first()
+
+    if not user or user.role in ("PASSENGER", "CREW", "SACCO_OPERATOR"):
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept()
+    broadcaster.register("*", websocket)
+    officer_broadcaster.register("*", websocket)
+    await websocket.send_text(json.dumps({
+        "type": "INIT_TELEMETRY",
+        "vehicles": await live_vehicles(),
+        "officers": await live_officers(),
+    }))
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        broadcaster.unregister("*", websocket)
+        officer_broadcaster.unregister("*", websocket)
 
 
 @router.websocket("/ws/crew/{matatu_id}")
@@ -153,3 +254,47 @@ async def crew_telemetry_ws(websocket: WebSocket, matatu_id: str, token: str = "
             await update_vehicle(data)
     except WebSocketDisconnect:
         logger.info(f"Crew WebSocket disconnected for Matatu ID {matatu_id}")
+
+
+@router.websocket("/ws/officer/{officer_id}")
+async def officer_telemetry_ws(websocket: WebSocket, officer_id: str, token: str = "", db: AsyncSession = Depends(get_db)):
+    """
+    WebSocket endpoint for an enforcement officer's own device streaming
+    live GPS while "On Patrol" is toggled on in the frontend.
+
+    Authenticated and self-only: an officer may stream their own position
+    (or ADMIN, for testing/support), never someone else's — otherwise any
+    authenticated user could impersonate any officer's location on the
+    command map.
+    """
+    try:
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("userId") or payload.get("sub")
+    except Exception:
+        user_id = None
+
+    user = None
+    if user_id:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalars().first()
+
+    if not user or user.role not in (*ENFORCEMENT_ROLES, "ADMIN"):
+        await websocket.close(code=4401)
+        return
+    if user.role != "ADMIN" and user.id != officer_id:
+        logger.warning(f"User {user.id} attempted to stream telemetry for officer {officer_id}.")
+        await websocket.close(code=4403)
+        return
+
+    await websocket.accept()
+    logger.info(f"Officer WebSocket streaming connected for officer {officer_id}")
+    try:
+        while True:
+            data_raw = await websocket.receive_text()
+            data = json.loads(data_raw)
+            data["officer_id"] = officer_id
+            data["officer_name"] = user.name
+            data["role"] = user.role
+            await update_officer(data)
+    except WebSocketDisconnect:
+        logger.info(f"Officer WebSocket disconnected for officer {officer_id}")

@@ -21,12 +21,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // findings); img-src/connect-src stay at `https:` broadly for the map
 // tile/Sentry domains. Tightening those two to an exact allowlist is real
 // follow-up work once verified live.
+// Next dev mode's webpack runtime wraps every module in eval() for fast
+// HMR rebuilds (the `devtool: 'eval-source-map'` default) — without
+// 'unsafe-eval' in script-src, the browser silently blocks that eval and
+// the entire client bundle fails to execute (React never hydrates: HTML
+// renders fine, but every onClick/useEffect is dead). Production builds
+// don't eval like this, so this only needs relaxing for `next dev`.
+const SCRIPT_SRC = process.env.NODE_ENV === "production" ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+
 const SECURITY_HEADERS = [
   {
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      SCRIPT_SRC,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",

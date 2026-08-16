@@ -8,13 +8,13 @@ officer-to-beat record from §22.3, additive alongside the existing sticky
 endpoints), not a replacement — nothing currently reading that field
 breaks.
 
-Live officer position tracking (§22.4) is explicitly out of scope here:
-officers have no NTSA-IRMS-style fallback (unlike buses), so continuous
-tracking depends entirely on the officer's phone staying foregrounded —
-a real product decision (native-app phase vs. a foreground-only "on
-patrol" screen) rather than something to build silently into an API
-response. What's built here — the assignment/coverage half — is real and
-usable without that decision being made.
+Live officer position tracking (§22.4) is now built too, in
+app/routes/telemetry.py (OfficerPosition, /ws/officer/{officer_id},
+/ws/staff) — an opt-in "On Patrol" toggle in the frontend, not silent
+background tracking, addressing the earlier concern about depending on
+the officer's phone staying foregrounded. BeatResponse below is
+denormalized with from/to stage coordinates so the enforcement live map
+can draw each beat as a line without a second round-trip per beat.
 """
 import datetime
 import secrets
@@ -37,13 +37,31 @@ router = APIRouter(prefix="/api/beats", tags=["Enforcement Beats"])
 ENFORCEMENT_ROLES = ("ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER", "ENFORCEMENT")
 
 
+def _beat_to_response(beat: Beat) -> BeatResponse:
+    return BeatResponse(
+        id=beat.id,
+        name=beat.name,
+        route_id=beat.route_id,
+        from_stage_id=beat.from_stage_id,
+        to_stage_id=beat.to_stage_id,
+        zone_id=beat.zone_id,
+        created_at=beat.created_at,
+        from_lat=beat.from_stage.lat if beat.from_stage else None,
+        from_lng=beat.from_stage.lng if beat.from_stage else None,
+        to_lat=beat.to_stage.lat if beat.to_stage else None,
+        to_lng=beat.to_stage.lng if beat.to_stage else None,
+    )
+
+
 @router.get("", response_model=List[BeatResponse])
 async def list_beats(
     current_user: User = Depends(requires_permission("view_routes")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Beat).order_by(Beat.name))
-    return result.scalars().all()
+    result = await db.execute(
+        select(Beat).options(selectinload(Beat.from_stage), selectinload(Beat.to_stage)).order_by(Beat.name)
+    )
+    return [_beat_to_response(b) for b in result.scalars().all()]
 
 
 @router.post("", response_model=BeatResponse, status_code=status.HTTP_201_CREATED)
@@ -75,8 +93,8 @@ async def create_beat(
         new_values={"name": beat.name, "routeId": beat.route_id},
     )
     await db.commit()
-    await db.refresh(beat)
-    return beat
+    await db.refresh(beat, attribute_names=["from_stage", "to_stage"])
+    return _beat_to_response(beat)
 
 
 def _assignment_to_response(a: BeatAssignment) -> BeatAssignmentResponse:
