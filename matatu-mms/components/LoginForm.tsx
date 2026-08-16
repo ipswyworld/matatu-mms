@@ -1,6 +1,7 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import { LogIn, Loader2 } from "lucide-react";
 import { loginAction } from "@/lib/actions";
 import { useLanguage } from "@/components/LanguageProvider";
 
@@ -8,7 +9,8 @@ function SubmitButton() {
   const { pending } = useFormStatus();
   const { t } = useLanguage();
   return (
-    <button type="submit" className="btn-primary w-full !py-3 text-base" disabled={pending}>
+    <button type="submit" className="btn-primary w-full !py-3 text-base flex items-center justify-center gap-2" disabled={pending}>
+      {pending ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} strokeWidth={2} />}
       {pending ? t("login.signingIn") : t("login.signIn")}
     </button>
   );

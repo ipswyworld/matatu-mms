@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
+import { Plus, X } from "lucide-react";
 import { addRouteAction } from "@/lib/actions";
 
 function SubmitButton() {
@@ -19,8 +20,9 @@ export default function AddRouteModal() {
 
   return (
     <>
-      <button onClick={() => setIsOpen(true)} className="rounded-lg px-3.5 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors">
-        + Add Route Corridor
+      <button onClick={() => setIsOpen(true)} className="rounded-lg px-3.5 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors flex items-center gap-1.5">
+        <Plus size={14} strokeWidth={2.5} />
+        Add Route Corridor
       </button>
 
       {isOpen && (
@@ -28,7 +30,7 @@ export default function AddRouteModal() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-extrabold text-base text-county-black">Add Route Corridor</h3>
-              <button onClick={() => setIsOpen(false)} className="text-black/40 hover:text-black font-bold text-lg">✕</button>
+              <button onClick={() => setIsOpen(false)} aria-label="Close" className="text-black/40 hover:text-black"><X size={18} strokeWidth={2} /></button>
             </div>
 
             {state?.error && (

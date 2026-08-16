@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -49,13 +50,15 @@ export default async function DashboardPage() {
             delta={{ label: "Submitted applications", tone: awaitingYou.length > 0 ? "attention" : "positive" }}
             accent="yellow"
             href="/saccos/verify"
+            icon={Clock}
           />
-          <KpiCard label="Approved by you" value={approvedByYou.length.toString()} delta={{ label: "All time", tone: "positive" }} accent="green" />
-          <KpiCard label="Rejected by you" value={rejectedByYou.length.toString()} delta={{ label: "All time", tone: "negative" }} accent="red" />
+          <KpiCard label="Approved by you" value={approvedByYou.length.toString()} delta={{ label: "All time", tone: "positive" }} accent="green" icon={CheckCircle2} />
+          <KpiCard label="Rejected by you" value={rejectedByYou.length.toString()} delta={{ label: "All time", tone: "negative" }} accent="red" icon={XCircle} />
           <KpiCard
             label="Not yet submitted"
             value={notYetSubmitted.length.toString()}
             delta={{ label: "Still filling onboarding wizard", tone: "positive" }}
+            icon={FileClock}
           />
         </div>
 
@@ -141,6 +144,7 @@ export default async function DashboardPage() {
           value={matatus.length.toString()}
           delta={{ label: `${activeCount} in service`, tone: "positive" }}
           href="/matatus"
+          icon={Bus}
         />
         <KpiCard
           label="Fleet compliance"
@@ -151,6 +155,7 @@ export default async function DashboardPage() {
           }}
           accent="green"
           href="/matatus"
+          icon={ShieldCheck}
         />
         <KpiCard
           label="Outstanding fines"
@@ -158,6 +163,7 @@ export default async function DashboardPage() {
           delta={{ label: `${pendingFines.length} pending citations`, tone: "negative" }}
           accent="red"
           href="/revenue"
+          icon={Banknote}
         />
         {!isSacco && (
           <KpiCard
@@ -169,6 +175,7 @@ export default async function DashboardPage() {
             }}
             accent="yellow"
             href="/saccos/verify"
+            icon={BadgeCheck}
           />
         )}
         {isSacco && (
@@ -178,6 +185,7 @@ export default async function DashboardPage() {
             delta={{ label: `${pendingReports.length} pending review`, tone: "attention" }}
             accent="yellow"
             href="/passengers"
+            icon={MessageSquareWarning}
           />
         )}
       </div>

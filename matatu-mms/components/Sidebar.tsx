@@ -4,11 +4,52 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import {
+  LayoutDashboard,
+  BadgeCheck,
+  Bus,
+  ShieldAlert,
+  MessageSquare,
+  Wallet,
+  Route as RouteIcon,
+  Users,
+  Settings,
+  Ticket,
+  UserCog,
+  Building2,
+  ClipboardList,
+  FileWarning,
+  FolderOpen,
+  LogOut,
+  type LucideIcon,
+} from "lucide-react";
 import { Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { useLanguage } from "./LanguageProvider";
 import { logoutAction } from "@/lib/actions";
 import TalkToUsPanel from "./TalkToUsPanel";
+
+// One icon per destination, keyed by href — a handful of hrefs (e.g.
+// /matatus, /enforcement) are shared across several roles' nav lists with
+// different labels, so keying by href instead of by label keeps the
+// mapping a single source of truth instead of repeating per role.
+const NAV_ICONS: Record<string, LucideIcon> = {
+  "/passenger-portal": Ticket,
+  "/crew-portal": UserCog,
+  "/sacco-portal": Building2,
+  "/matatus": Bus,
+  "/revenue": Wallet,
+  "/enforcement": ShieldAlert,
+  "/activity": ClipboardList,
+  "/enforcement/scene": FileWarning,
+  "/enforcement/cases": FolderOpen,
+  "/dashboard": LayoutDashboard,
+  "/saccos/verify": BadgeCheck,
+  "/passengers": MessageSquare,
+  "/routes": RouteIcon,
+  "/users": Users,
+  "/system": Settings,
+};
 
 const SIDEBAR_COLLAPSED_KEY = "nccg_sidebar_collapsed";
 
@@ -172,13 +213,14 @@ export default function Sidebar({
       <nav className="flex-1 p-3 space-y-1 relative z-10 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = active === item.href || (item.href === "/revenue" && active === "/fines");
+          const Icon = NAV_ICONS[item.href];
           return (
             <Link
               key={item.href}
               href={item.href}
               title={effectiveCollapsed ? item.label : undefined}
               className={`group flex items-center rounded-lg text-sm font-semibold transition-all duration-150 relative ${
-                effectiveCollapsed ? "justify-center px-0 py-2.5" : "px-3.5 py-2.5"
+                effectiveCollapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-3.5 py-2.5"
               } ${
                 isActive
                   ? "bg-county-cream text-county-green-deep shadow-sm"
@@ -187,11 +229,14 @@ export default function Sidebar({
             >
               {isActive && !effectiveCollapsed && <span className="absolute -left-3 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-county-yellow" />}
               {effectiveCollapsed ? (
-                <span className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-extrabold ${isActive ? "bg-county-green-deep/10" : "bg-white/10"}`}>
-                  {item.label.trim().charAt(0).toUpperCase()}
+                <span className={`h-8 w-8 rounded-lg flex items-center justify-center ${isActive ? "bg-county-green-deep/10" : "bg-white/10"}`}>
+                  {Icon ? <Icon size={16} strokeWidth={2} /> : item.label.trim().charAt(0).toUpperCase()}
                 </span>
               ) : (
-                <span className={isActive ? "font-extrabold" : ""}>{item.label}</span>
+                <>
+                  {Icon && <Icon size={17} strokeWidth={2} className="shrink-0" />}
+                  <span className={isActive ? "font-extrabold" : ""}>{item.label}</span>
+                </>
               )}
             </Link>
           );
@@ -216,17 +261,12 @@ export default function Sidebar({
           <button
             type="submit"
             title={effectiveCollapsed ? t("nav.signOut") : undefined}
-            className={`w-full rounded-lg border border-county-red/40 bg-county-red/90 hover:bg-county-red text-white font-bold transition-colors shadow-sm ${
-              effectiveCollapsed ? "flex items-center justify-center py-2.5" : "px-3.5 py-2 text-xs"
+            className={`w-full rounded-lg border border-county-red/40 bg-county-red/90 hover:bg-county-red text-white font-bold transition-colors shadow-sm flex items-center justify-center ${
+              effectiveCollapsed ? "py-2.5" : "gap-2 px-3.5 py-2 text-xs"
             }`}
           >
-            {effectiveCollapsed ? (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M6 2H3.5A1.5 1.5 0 002 3.5v9A1.5 1.5 0 003.5 14H6M10.5 11l3-3-3-3M13 8H5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              t("nav.signOut")
-            )}
+            <LogOut size={effectiveCollapsed ? 16 : 14} strokeWidth={2} />
+            {!effectiveCollapsed && t("nav.signOut")}
           </button>
         </form>
       </div>
