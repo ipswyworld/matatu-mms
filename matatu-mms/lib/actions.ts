@@ -61,7 +61,27 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
     });
 
     if (!res.ok) {
-      return { error: "Invalid email or password." };
+      // A non-2xx response was previously always shown as "Invalid email
+      // or password" regardless of cause — including a 502/503 while the
+      // backend is cold-starting (Render's free tier spins services down
+      // after inactivity) or a 429 from the login rate limiter, both of
+      // which are not the user's fault and look nothing like a wrong
+      // password. Distinguish by status so the message actually matches
+      // what happened.
+      if (res.status === 401) {
+        return { error: "Invalid email or password." };
+      }
+      if (res.status === 429) {
+        return { error: "Too many sign-in attempts. Please wait a minute and try again." };
+      }
+      if (res.status >= 500 || res.status === 502 || res.status === 503) {
+        return { error: "The system is starting up — this can take up to a minute on first use. Please try again shortly." };
+      }
+      let detail: string | undefined;
+      try {
+        detail = (await res.json()).detail;
+      } catch {}
+      return { error: detail || `Sign-in failed (${res.status}). Please try again.` };
     }
 
     const data = await res.json();
@@ -92,7 +112,12 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
     }
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
-    return { error: err.message || "Failed to reach authentication server." };
+    // fetch() itself throwing (as opposed to resolving with a non-2xx
+    // response) means the request never completed — a real network/
+    // connectivity failure, or the backend timing out entirely during a
+    // cold start. Same honesty principle as above: don't call this a
+    // wrong password.
+    return { error: "Could not reach the authentication server. Please check your connection and try again." };
   }
 }
 

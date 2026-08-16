@@ -37,9 +37,6 @@ export default function PublicPortalPage() {
         <Link href="/operator-onboarding" className="block text-xs font-extrabold text-county-blue hover:underline">
           {t("portal.onboardingLink")}
         </Link>
-        <Link href="/login" className="block text-xs font-extrabold text-county-ink/50 hover:underline mt-3">
-          {t("portal.staffLink")}
-        </Link>
       </div>
 
       <DemoAccountsList accounts={PUBLIC_DEMO_ACCOUNTS} />

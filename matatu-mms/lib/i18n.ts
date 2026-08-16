@@ -49,7 +49,6 @@ const dictionary = {
   "portal.useCredentials": { en: "Sign in to book, manage your fleet, or check your account.", sw: "Ingia ili kuhifadhi, kusimamia magari yako, au kuangalia akaunti yako." },
   "portal.registerLink": { en: "New here? Register as a Commuter →", sw: "Mgeni hapa? Jisajili kama Abiria →" },
   "portal.onboardingLink": { en: "Operator? Start Onboarding & Verification →", sw: "Mwendeshaji? Anza Usajili na Uthibitisho →" },
-  "portal.staffLink": { en: "County staff? Sign in to the internal portal →", sw: "Wafanyakazi wa kaunti? Ingia kwenye ukurasa wa ndani →" },
 
   // Staff sign-in ("/login") — admin, enforcement, director/chief officer, viewer
   "staff.heading": { en: "One console for licensing, enforcement, and revenue.", sw: "Dashibodi moja kwa usajili, utekelezaji wa sheria, na mapato." },
