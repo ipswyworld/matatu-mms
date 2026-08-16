@@ -148,7 +148,7 @@ async def onboard_operator(
         id=user_id,
         name=payload.name,
         email=payload.email,
-        password=get_password_hash(payload.password),
+        password=await get_password_hash(payload.password),
         role="SACCO_OPERATOR",
         sacco_id=sacco_id,
         terms_accepted=True,

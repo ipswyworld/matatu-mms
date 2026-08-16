@@ -26,7 +26,7 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalars().first()
     
-    if not user or not verify_password(credentials.password, user.password):
+    if not user or not await verify_password(credentials.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -113,7 +113,7 @@ async def register(request: Request, credentials: UserCreate, response: Response
     import uuid
     new_id = f"u-{uuid.uuid4().hex[:8]}"
 
-    hashed_pwd = get_password_hash(credentials.password)
+    hashed_pwd = await get_password_hash(credentials.password)
 
     user = User(
         id=new_id,
@@ -216,7 +216,7 @@ async def reset_password(request: Request, payload: ResetPasswordRequest, db: As
         await db.commit()
         raise HTTPException(status_code=400, detail="This reset link has expired. Please request a new one.")
 
-    user.password = get_password_hash(payload.new_password)
+    user.password = await get_password_hash(payload.new_password)
     user.reset_token = None
     user.reset_token_expires_at = None
     await db.commit()

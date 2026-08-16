@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from typing import Optional
 from fastapi import Depends, HTTPException, status, Request
@@ -14,7 +15,7 @@ import bcrypt
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def _verify_password_sync(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
@@ -22,9 +23,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         # plaintext comparison (that was the old, insecure behavior).
         return False
 
-def get_password_hash(password: str) -> str:
+def _hash_password_sync(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+# bcrypt is deliberately slow (that's what makes it resistant to offline
+# cracking) — checkpw/hashpw take ~100ms-1s+ of pure CPU time. Called
+# directly from an `async def` route (as this used to be), that blocks the
+# *entire* single-threaded event loop for the whole hash duration: every
+# other in-flight request on this process — other users' API calls, GPS
+# WebSocket fan-out, even /healthz — stalls until it's done. offloading to
+# a worker thread via asyncio.to_thread keeps the event loop free to keep
+# serving everyone else while the hash runs.
+async def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return await asyncio.to_thread(_verify_password_sync, plain_password, hashed_password)
+
+async def get_password_hash(password: str) -> str:
+    return await asyncio.to_thread(_hash_password_sync, password)
 
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None) -> str:
     to_encode = data.copy()

@@ -77,7 +77,7 @@ async def issue_crew_credentials(
         id=user_id,
         name=payload.name.strip(),
         email=payload.email,
-        password=get_password_hash(generated_password),
+        password=await get_password_hash(generated_password),
         role="CREW",
         sacco_id=matatu.sacco_id,
     )

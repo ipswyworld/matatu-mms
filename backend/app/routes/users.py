@@ -64,7 +64,7 @@ async def create_user(
         id=user_id,
         name=payload.name.strip(),
         email=payload.email.lower().strip(),
-        password=get_password_hash(payload.password),
+        password=await get_password_hash(payload.password),
         role=payload.role.upper().strip(),
         sacco_id=payload.sacco_id if payload.role == "SACCO_OPERATOR" else None
     )
@@ -139,7 +139,7 @@ async def update_user(
     if payload.new_password:
         if len(payload.new_password) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-        user.password = get_password_hash(payload.new_password)
+        user.password = await get_password_hash(payload.new_password)
         user.reset_token = None
         user.reset_token_expires_at = None
         new_values["passwordReset"] = True

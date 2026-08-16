@@ -33,15 +33,21 @@ def _slug(name: str) -> str:
 
 async def seed_brn_data(db: AsyncSession):
     """Loads the digitized BRN routes/stages from app/brn_data.py. Runs
-    independently of seed_data()'s "already seeded" guard and of its own
-    accord is idempotent (checked via the stages table), so it's safe to
-    call on every startup and to extend brn_data.py incrementally without
-    needing a fresh database each time."""
-    existing = await db.execute(select(Stage))
-    if existing.scalars().first():
-        return  # Already seeded
+    independently of seed_data()'s "already seeded" guard, and is itself
+    idempotent per-route (checked via each route's brn_serial, not an
+    all-or-nothing "any stage exists" guard) — so it's safe to call on
+    every startup, and extending BRN_ROUTES with more serials picks up
+    automatically on the next boot against an already-seeded database,
+    without a separate migration or backfill script."""
+    existing_serials = set(
+        (await db.execute(select(Route.brn_serial).where(Route.brn_serial.isnot(None)))).scalars().all()
+    )
+    new_routes = [r for r in BRN_ROUTES if r["brn_serial"] not in existing_serials]
+    if not new_routes:
+        return  # Nothing new to seed
 
-    stage_ids: dict[str, str] = {}
+    existing_stage_ids = set((await db.execute(select(Stage.id))).scalars().all())
+    stage_ids: dict[str, str] = {sid: sid for sid in existing_stage_ids}
 
     def get_or_create_stage(name: str) -> str:
         stage_id = _slug(name)
@@ -61,12 +67,10 @@ async def seed_brn_data(db: AsyncSession):
         stage_ids[stage_id] = stage_id
         return stage_id
 
-    route_ids: dict[str, str] = {}
-    for r in BRN_ROUTES:
-        route_id = f"brn-route-{r['brn_serial']}"
-        route_ids[r["brn_serial"]] = route_id
+    route_ids: dict[str, str] = {r["brn_serial"]: f"brn-route-{r['brn_serial']}" for r in BRN_ROUTES}
+    for r in new_routes:
         db.add(Route(
-            id=route_id,
+            id=route_ids[r["brn_serial"]],
             code=f"BRN-{r['brn_serial']}",
             name=f"{r['start']} - {r['end']}",
             description=f"BRN {r['brn_serial']}: {r['start']} to {r['end']}",
@@ -78,14 +82,14 @@ async def seed_brn_data(db: AsyncSession):
         ))
 
     # Second pass: link lettered variants (e.g. "2A") to their base route
-    # ("2"), now that every route_id exists.
-    for r in BRN_ROUTES:
+    # ("2"), now that every route_id — old and newly added — exists.
+    for r in new_routes:
         base_serial = re.match(r"^(\d+)", r["brn_serial"]).group(1)
         if base_serial != r["brn_serial"] and base_serial in route_ids:
             route = await db.get(Route, route_ids[r["brn_serial"]])
             route.base_route_id = route_ids[base_serial]
 
-    for r in BRN_ROUTES:
+    for r in new_routes:
         route_id = route_ids[r["brn_serial"]]
         for direction, stage_names in (("OUTBOUND", r["outbound"]), ("RETURN", r["return"])):
             for sequence, name in enumerate(stage_names, start=1):
@@ -197,28 +201,28 @@ async def seed_data(db: AsyncSession):
             id="u-superadmin",
             name="Wanjiru Kamau",
             email="superadmin@nairobi.go.ke",
-            password=get_password_hash("superadmin123"),
+            password=await get_password_hash("superadmin123"),
             role="SUPERADMIN"
         ),
         User(
             id="u-admin",
             name="Grace Wambui",
             email="admin@nairobi.go.ke",
-            password=get_password_hash("admin123"),
+            password=await get_password_hash("admin123"),
             role="ADMIN"
         ),
         User(
             id="u-enforce",
             name="Peter Otieno",
             email="enforcement@nairobi.go.ke",
-            password=get_password_hash("enforce123"),
+            password=await get_password_hash("enforce123"),
             role="ENFORCEMENT"
         ),
         User(
             id="u-sacco",
             name="Daniel Kiptoo",
             email="operator@umoinner.co.ke",
-            password=get_password_hash("sacco123"),
+            password=await get_password_hash("sacco123"),
             role="SACCO_OPERATOR",
             sacco_id="sacco-1"
         ),
@@ -226,21 +230,21 @@ async def seed_data(db: AsyncSession):
             id="u-viewer",
             name="Hon. Alice Njeri",
             email="viewer@nairobi.go.ke",
-            password=get_password_hash("viewer123"),
+            password=await get_password_hash("viewer123"),
             role="VIEWER"
         ),
         User(
             id="u-passenger",
             name="John Kamau",
             email="commuter@nairobi.go.ke",
-            password=get_password_hash("pass123"),
+            password=await get_password_hash("pass123"),
             role="PASSENGER"
         ),
         User(
             id="u-crew",
             name="James Omwamba",
             email="crew@umoinner.co.ke",
-            password=get_password_hash("crew123"),
+            password=await get_password_hash("crew123"),
             role="CREW",
             sacco_id="sacco-1"
         ),
@@ -248,21 +252,21 @@ async def seed_data(db: AsyncSession):
             id="u-director-mobility",
             name="Eng. Samuel Mwaura",
             email="director.mobility@nairobi.go.ke",
-            password=get_password_hash("director123"),
+            password=await get_password_hash("director123"),
             role="DIRECTOR_MOBILITY"
         ),
         User(
             id="u-chief-officer",
             name="Ms. Josephine Wanjala",
             email="chiefofficer@nairobi.go.ke",
-            password=get_password_hash("chief123"),
+            password=await get_password_hash("chief123"),
             role="CHIEF_OFFICER"
         ),
         User(
             id="u-sacco4",
             name="Michael Kamande",
             email="operator@kilimanidirect.co.ke",
-            password=get_password_hash("sacco123"),
+            password=await get_password_hash("sacco123"),
             role="SACCO_OPERATOR",
             sacco_id="sacco-4"
         ),
@@ -270,7 +274,7 @@ async def seed_data(db: AsyncSession):
             id="u-commander",
             name="Cdr. Francis Mutua",
             email="commander@nairobi.go.ke",
-            password=get_password_hash("commander123"),
+            password=await get_password_hash("commander123"),
             role="ENFORCEMENT_COMMANDER",
             commander_title="Commander of Public Transport Compliance",
         ),
@@ -278,7 +282,7 @@ async def seed_data(db: AsyncSession):
             id="u-arresting",
             name="Officer Brian Kiprop",
             email="arresting.officer@nairobi.go.ke",
-            password=get_password_hash("arrest123"),
+            password=await get_password_hash("arrest123"),
             role="ARRESTING_OFFICER",
             enforcement_duty="ARRESTING",
             assigned_zone_id="zone-cbd",
@@ -287,7 +291,7 @@ async def seed_data(db: AsyncSession):
             id="u-releasing",
             name="Officer Nancy Chebet",
             email="releasing.officer@nairobi.go.ke",
-            password=get_password_hash("release123"),
+            password=await get_password_hash("release123"),
             role="RELEASING_OFFICER",
             enforcement_duty="RELEASING",
         ),
