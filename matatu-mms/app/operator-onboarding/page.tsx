@@ -3,6 +3,7 @@
 import { useFormState } from "react-dom";
 import { useState } from "react";
 import Link from "next/link";
+import { Building2, ArrowRight } from "lucide-react";
 import { operatorOnboardingRegisterAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import MatatuGlyph from "@/components/MatatuGlyph";
@@ -176,16 +177,18 @@ export default function OperatorOnboardingPage() {
             <button
               type="submit"
               disabled={!canSubmit}
-              className="w-full py-2.5 rounded-lg font-extrabold text-sm text-white shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-county-green hover:bg-county-green/90"
+              className="w-full py-2.5 rounded-lg font-extrabold text-sm text-white shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-county-green hover:bg-county-green/90 flex items-center justify-center gap-2"
             >
+              <Building2 size={16} strokeWidth={2} />
               Sign & Submit Onboarding Application
             </button>
           </form>
 
           <div className="text-center text-xs text-white/50 pt-2 border-t border-white/10">
             Already onboarded?{" "}
-            <Link href="/login" className="font-bold text-county-yellow hover:underline">
-              Sign in to Operator Portal →
+            <Link href="/login" className="font-bold text-county-yellow hover:underline inline-flex items-center gap-1">
+              Sign in to Operator Portal
+              <ArrowRight size={11} strokeWidth={2.5} />
             </Link>
           </div>
         </div>

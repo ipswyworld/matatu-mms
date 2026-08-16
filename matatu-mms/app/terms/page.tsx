@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ScrollText } from "lucide-react";
 import PublicLegalLayout from "@/components/PublicLegalLayout";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ function Section({ n, title, children }: { n: string; title: string; children: R
 export default function TermsPage() {
   return (
     <PublicLegalLayout
+      icon={ScrollText}
       eyebrow="Legal"
       title="Terms & Conditions"
       subtitle="Governing use of the Nairobi City County Matatu Management System, with dedicated obligations for Crew (drivers and conductors). Last updated: 2026."

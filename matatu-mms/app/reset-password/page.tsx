@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { resetPasswordAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import PublicFooter from "@/components/PublicFooter";
@@ -11,7 +12,8 @@ import PublicFooter from "@/components/PublicFooter";
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn-primary w-full !py-3 text-base" disabled={pending}>
+    <button type="submit" className="btn-primary w-full !py-3 text-base flex items-center justify-center gap-2" disabled={pending}>
+      {pending ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={16} strokeWidth={2} />}
       {pending ? "Updating..." : "Set new password"}
     </button>
   );
@@ -53,8 +55,9 @@ function ResetPasswordForm() {
       )}
 
       <div className="text-center pt-2 border-t border-black/5">
-        <Link href="/login" className="text-xs font-extrabold text-county-green hover:underline">
-          ← Back to Sign in
+        <Link href="/login" className="text-xs font-extrabold text-county-green hover:underline inline-flex items-center gap-1">
+          <ArrowLeft size={12} strokeWidth={2.5} />
+          Back to Sign in
         </Link>
       </div>
     </div>

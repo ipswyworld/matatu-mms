@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Mail } from "lucide-react";
 import PublicLegalLayout from "@/components/PublicLegalLayout";
 
 export const metadata: Metadata = {
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
 export default function ContactPage() {
   return (
     <PublicLegalLayout
+      icon={Mail}
       eyebrow="Nairobi City County · Get in touch"
       title="Contact Us"
       subtitle="Questions about a booking, a fine, an operator application, or the system itself — reach the right desk below."

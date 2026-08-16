@@ -2,6 +2,7 @@
 
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
+import { ArrowLeft, Send, Loader2 } from "lucide-react";
 import { forgotPasswordAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import PublicFooter from "@/components/PublicFooter";
@@ -9,7 +10,8 @@ import PublicFooter from "@/components/PublicFooter";
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn-primary w-full !py-3 text-base" disabled={pending}>
+    <button type="submit" className="btn-primary w-full !py-3 text-base flex items-center justify-center gap-2" disabled={pending}>
+      {pending ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} strokeWidth={2} />}
       {pending ? "Sending..." : "Send reset link"}
     </button>
   );
@@ -51,8 +53,9 @@ export default function ForgotPasswordPage() {
             )}
 
             <div className="text-center pt-2 border-t border-black/5">
-              <Link href="/login" className="text-xs font-extrabold text-county-green hover:underline">
-                ← Back to Sign in
+              <Link href="/login" className="text-xs font-extrabold text-county-green hover:underline inline-flex items-center gap-1">
+                <ArrowLeft size={12} strokeWidth={2.5} />
+                Back to Sign in
               </Link>
             </div>
           </div>

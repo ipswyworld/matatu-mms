@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { HelpCircle } from "lucide-react";
 import PublicLegalLayout from "@/components/PublicLegalLayout";
 
 export const metadata: Metadata = {
@@ -116,6 +117,7 @@ export default function FaqPage() {
 
   return (
     <PublicLegalLayout
+      icon={HelpCircle}
       eyebrow="Help Centre"
       title="Frequently Asked Questions"
       subtitle="Answers for Drivers & Conductors, and for Commuters using the Nairobi Matatu Management System."

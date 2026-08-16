@@ -3,6 +3,7 @@
 import { useFormState } from "react-dom";
 import { useState } from "react";
 import Link from "next/link";
+import { UserPlus, ArrowRight } from "lucide-react";
 import { registerAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import MatatuGlyph from "@/components/MatatuGlyph";
@@ -138,8 +139,9 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={!canSubmit}
-              className="w-full py-2.5 rounded-lg font-extrabold text-sm text-white shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-county-green hover:bg-county-green/90"
+              className="w-full py-2.5 rounded-lg font-extrabold text-sm text-white shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-county-green hover:bg-county-green/90 flex items-center justify-center gap-2"
             >
+              <UserPlus size={16} strokeWidth={2} />
               Sign & Register — Access Passenger Portal
             </button>
           </form>
@@ -147,8 +149,9 @@ export default function RegisterPage() {
           <div className="text-center text-xs text-white/50 pt-2 border-t border-white/10 space-y-1.5">
             <p>
               Already have an account?{" "}
-              <Link href="/login" className="font-bold text-county-yellow hover:underline">
-                Sign in to Portal →
+              <Link href="/login" className="font-bold text-county-yellow hover:underline inline-flex items-center gap-1">
+                Sign in to Portal
+                <ArrowRight size={11} strokeWidth={2.5} />
               </Link>
             </p>
             <p>

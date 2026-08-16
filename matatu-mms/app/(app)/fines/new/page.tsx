@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ArrowLeft, Receipt, Loader2 } from "lucide-react";
 import { issueFineAction } from "@/lib/actions";
 
 const MATATUS = [
@@ -27,7 +28,8 @@ const COMMON_REASONS = [
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn-primary" disabled={pending}>
+    <button type="submit" className="btn-primary flex items-center justify-center gap-2" disabled={pending}>
+      {pending ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} strokeWidth={2} />}
       {pending ? "Issuing..." : "Issue fine"}
     </button>
   );
@@ -48,9 +50,15 @@ function NewFineForm() {
 
   return (
     <div className="max-w-lg">
-      <Link href="/fines" className="text-xs font-semibold text-county-green hover:underline">← Back to fines</Link>
+      <Link href="/fines" className="text-xs font-semibold text-county-green hover:underline inline-flex items-center gap-1">
+        <ArrowLeft size={13} strokeWidth={2.5} />
+        Back to fines
+      </Link>
       <div className="card p-6 mt-3">
-        <h2 className="font-bold mb-4">Issue a fine</h2>
+        <h2 className="font-bold mb-4 flex items-center gap-2">
+          <Receipt size={18} strokeWidth={2} className="text-county-green" />
+          Issue a fine
+        </h2>
         <form action={formAction} className="space-y-4">
           <div>
             <label className="label" htmlFor="matatuId">Vehicle</label>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft, Bus, ClipboardList, Receipt, Plus } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getActivityForMatatu, getFinesForMatatu, getMatatuById, getRoutes, getSaccos, getUsers } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -40,11 +41,19 @@ export default async function MatatuDetailPage({ params }: { params: { id: strin
 
   return (
     <div className="space-y-6">
-      <Link href="/matatus" className="text-xs font-semibold text-county-green hover:underline">← Back to registry</Link>
+      <Link href="/matatus" className="text-xs font-semibold text-county-green hover:underline inline-flex items-center gap-1">
+        <ArrowLeft size={13} strokeWidth={2.5} />
+        Back to registry
+      </Link>
 
       <div className="card p-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold">{matatu.regNumber}</h2>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <span className="h-9 w-9 rounded-lg bg-county-green/10 text-county-green flex items-center justify-center shrink-0">
+              <Bus size={18} strokeWidth={2} />
+            </span>
+            {matatu.regNumber}
+          </h2>
           <p className="text-sm text-black/50 mt-1">
             {saccoMap.get(matatu.saccoId)} · {routeMap.get(matatu.routeId)} · {matatu.capacity} seats
           </p>
@@ -71,10 +80,14 @@ export default async function MatatuDetailPage({ params }: { params: { id: strin
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="card p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-sm">Activity history</h3>
+            <h3 className="font-bold text-sm flex items-center gap-1.5">
+              <ClipboardList size={15} strokeWidth={2} className="text-county-ink/50" />
+              Activity history
+            </h3>
             {can(session.role, "log_activity") && (
-              <Link href={`/activity/new?matatuId=${matatu.id}`} className="text-xs font-semibold text-county-green hover:underline">
-                + Log activity
+              <Link href={`/activity/new?matatuId=${matatu.id}`} className="text-xs font-semibold text-county-green hover:underline inline-flex items-center gap-1">
+                <Plus size={12} strokeWidth={2.5} />
+                Log activity
               </Link>
             )}
           </div>
@@ -95,10 +108,14 @@ export default async function MatatuDetailPage({ params }: { params: { id: strin
 
         <div className="card p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-sm">Fines</h3>
+            <h3 className="font-bold text-sm flex items-center gap-1.5">
+              <Receipt size={15} strokeWidth={2} className="text-county-ink/50" />
+              Fines
+            </h3>
             {can(session.role, "issue_fine") && (
-              <Link href={`/fines/new?matatuId=${matatu.id}`} className="text-xs font-semibold text-county-green hover:underline">
-                + Issue fine
+              <Link href={`/fines/new?matatuId=${matatu.id}`} className="text-xs font-semibold text-county-green hover:underline inline-flex items-center gap-1">
+                <Plus size={12} strokeWidth={2.5} />
+                Issue fine
               </Link>
             )}
           </div>

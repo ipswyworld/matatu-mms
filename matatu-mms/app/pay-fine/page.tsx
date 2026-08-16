@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { Search, CreditCard, ArrowRight } from "lucide-react";
 import { publicLookupCaseAction, publicPayCaseAction } from "@/lib/actions";
 import NairobiCrest from "@/components/NairobiCrest";
 import NairobiPayBadge from "@/components/NairobiPayBadge";
@@ -65,7 +66,8 @@ export default function PayFinePage() {
               placeholder="MMS-XXXXXXXXXXX"
               className="flex-1 bg-black/40 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white placeholder-white/30 font-mono focus:outline-none focus:border-county-green"
             />
-            <button onClick={handleLookup} disabled={isPending} className="btn-primary !px-4 text-xs font-bold shrink-0">
+            <button onClick={handleLookup} disabled={isPending} className="btn-primary !px-4 text-xs font-bold shrink-0 flex items-center gap-1.5">
+              <Search size={13} strokeWidth={2} />
               {isPending ? "..." : "Look Up"}
             </button>
           </div>
@@ -81,7 +83,8 @@ export default function PayFinePage() {
 
               {caseData.status === "ARRESTED" && (
                 <>
-                  <button onClick={handlePay} disabled={isPending} className="btn-primary w-full font-bold">
+                  <button onClick={handlePay} disabled={isPending} className="btn-primary w-full font-bold flex items-center justify-center gap-2">
+                    <CreditCard size={15} strokeWidth={2} />
                     {isPending ? "Processing..." : `Pay KES ${caseData.fineAmountKes?.toLocaleString()} via NairobiPay`}
                   </button>
                   <div className="flex justify-end"><NairobiPayBadge /></div>
@@ -115,8 +118,9 @@ export default function PayFinePage() {
           )}
 
           <div className="text-center text-xs text-white/50 pt-2 border-t border-white/10">
-            <Link href="/login" className="font-bold text-county-yellow hover:underline">
-              County staff sign in →
+            <Link href="/login" className="font-bold text-county-yellow hover:underline inline-flex items-center gap-1">
+              County staff sign in
+              <ArrowRight size={11} strokeWidth={2.5} />
             </Link>
           </div>
         </div>

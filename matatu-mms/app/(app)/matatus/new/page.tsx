@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeft, Bus } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getSaccos, getRoutes } from "@/lib/data";
 import NewMatatuForm from "./NewMatatuForm";
@@ -14,9 +15,15 @@ export default async function NewMatatuPage() {
 
   return (
     <div className="max-w-lg">
-      <Link href="/matatus" className="text-xs font-semibold text-county-green hover:underline">← Back to registry</Link>
+      <Link href="/matatus" className="text-xs font-semibold text-county-green hover:underline inline-flex items-center gap-1">
+        <ArrowLeft size={13} strokeWidth={2.5} />
+        Back to registry
+      </Link>
       <div className="card p-6 mt-3">
-        <h2 className="font-bold mb-4">Register a vehicle</h2>
+        <h2 className="font-bold mb-4 flex items-center gap-2">
+          <Bus size={18} strokeWidth={2} className="text-county-green" />
+          Register a vehicle
+        </h2>
         <NewMatatuForm
           viewerRole={session.role}
           viewerSaccoId={session.saccoId}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { UserCog, Armchair, UserX, UserCheck, Coins, TicketCheck, ShieldAlert, MessageSquare, CheckCircle2, Send } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import LiveIndicator from "@/components/LiveIndicator";
 import EmptyState from "@/components/EmptyState";
@@ -257,6 +258,7 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={UserCog}
         eyebrow="Nairobi City County · Crew Dashboard"
         title="Driver & Conductor Live Dashboard"
         subtitle="Manage seat occupancy, stream live GPS to the passenger app, validate tickets, and report incidents."
@@ -294,15 +296,18 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Vehicle Seats" value={selectedMatatu.capacity} hint="Licensed seating capacity" />
-        <StatCard label="Full / Occupied Seats" value={fullSeatsCount} accent="red" hint="Confirmed passengers on board" />
-        <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" />
-        <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" />
+        <StatCard label="Total Vehicle Seats" value={selectedMatatu.capacity} hint="Licensed seating capacity" icon={Armchair} />
+        <StatCard label="Full / Occupied Seats" value={fullSeatsCount} accent="red" hint="Confirmed passengers on board" icon={UserX} />
+        <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" icon={UserCheck} />
+        <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" icon={Coins} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
           <div className="card p-5 space-y-4">
-            <h3 className="font-bold text-sm text-county-black">Commuter Ticket Validator</h3>
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <TicketCheck size={15} strokeWidth={2} className="text-county-ink/50" />
+              Commuter Ticket Validator
+            </h3>
             <form onSubmit={handleValidateTicket} className="flex gap-2">
               <input
                 type="text"
@@ -311,7 +316,10 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
                 placeholder="Enter Ticket ID (e.g. PASS-178481809975)"
                 className="input text-xs"
               />
-              <button type="submit" className="btn-primary shrink-0 !py-1.5 text-xs font-bold">Verify</button>
+              <button type="submit" className="btn-primary shrink-0 !py-1.5 text-xs font-bold flex items-center gap-1">
+                <TicketCheck size={13} strokeWidth={2} />
+                Verify
+              </button>
             </form>
 
             {ticketError && (
@@ -335,7 +343,8 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
                   <div>Fare Payable to Crew: <span className="font-bold text-county-green">KES {scannedTicket.fareKes}</span></div>
                 </div>
                 {scannedTicket.status === "CONFIRMED" && (
-                  <button onClick={handleMarkBoarded} className="btn-primary w-full !py-1.5 text-xs font-bold">
+                  <button onClick={handleMarkBoarded} className="btn-primary w-full !py-1.5 text-xs font-bold flex items-center justify-center gap-1.5">
+                    <CheckCircle2 size={14} strokeWidth={2} />
                     Mark as Boarded
                   </button>
                 )}
@@ -344,7 +353,10 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
           </div>
 
           <div className="card p-5 space-y-4">
-            <h3 className="font-bold text-sm text-county-black">Alert County Enforcement</h3>
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <ShieldAlert size={15} strokeWidth={2} className="text-county-ink/50" />
+              Alert County Enforcement
+            </h3>
             <p className="text-xs text-black/50">Direct dispatch line to County Traffic & Enforcement Officers.</p>
 
             {incidentSent ? (
@@ -374,7 +386,8 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
                   className="input text-xs"
                   required
                 />
-                <button type="submit" className="btn-danger w-full !py-2 text-xs font-bold">
+                <button type="submit" className="btn-danger w-full !py-2 text-xs font-bold flex items-center justify-center gap-1.5">
+                  <Send size={13} strokeWidth={2} />
                   Send Rapid Incident Alert
                 </button>
               </form>
@@ -392,7 +405,10 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
 
         <div className="card p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-county-black">Passenger Requests & Complaints</h3>
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <MessageSquare size={15} strokeWidth={2} className="text-county-ink/50" />
+              Passenger Requests & Complaints
+            </h3>
             <LiveIndicator label="Live" state="live" className="text-[10px]" />
           </div>
           <p className="text-xs text-black/50 -mt-2">Reports filed against {selectedMatatu.regNumber}, newest first.</p>
