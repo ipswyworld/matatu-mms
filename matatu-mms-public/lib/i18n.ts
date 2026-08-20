@@ -35,8 +35,6 @@ const dictionary = {
   "login.forgotPassword": { en: "Forgot password?", sw: "Umesahau nenosiri?" },
   "login.rememberMe": { en: "Keep me signed in for 30 days", sw: "Nibaki nimeingia kwa siku 30" },
   "login.demoAccounts": { en: "Demo accounts", sw: "Akaunti za mfano" },
-  "login.helpFaq": { en: "Help & FAQ", sw: "Msaada na Maswali" },
-  "login.termsConditions": { en: "Terms & Conditions", sw: "Sheria na Masharti" },
 
   // Public portal ("/") — passengers, crew (info only, no self-registration), sacco operators
   "portal.heading": { en: "One county, one live view of every matatu.", sw: "Kaunti moja, mwonekano mmoja wa moja kwa moja wa kila matatu." },

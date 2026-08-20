@@ -9,7 +9,6 @@ import LeaveCommentSection from "@/components/LeaveCommentSection";
 import LiveUpdatesModal from "@/components/LiveUpdatesModal";
 import PublicFooter from "@/components/PublicFooter";
 import LanguageToggle from "@/components/LanguageToggle";
-import { useLanguage } from "@/components/LanguageProvider";
 
 interface AuthPageShellProps {
   eyebrow: string;
@@ -24,8 +23,6 @@ interface AuthPageShellProps {
 // copy and the sign-in card's contents (passed as children) differ between
 // the two, per the public/staff front-door split.
 export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveComment, children }: AuthPageShellProps) {
-  const { t } = useLanguage();
-
   return (
     <div className="h-screen flex bg-county-cream overflow-hidden">
       {/* Left brand panel — deep green with hex lattice and real crest */}
@@ -101,7 +98,7 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
             centered-card slice, so the skyline reads all the way down to
             the footer links instead of stopping short in a small band. */}
         <AuthSkyline heightClassName="h-full" />
-        <div className="relative z-10 flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 md:p-8">
+        <div className="scrollbar-ghost relative z-10 flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 md:p-8">
           <div className="w-full max-w-md space-y-5 py-4 auth-card-enter">
             <div className="flex lg:hidden items-center gap-3">
               <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-md">
@@ -116,16 +113,12 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
             {children}
           </div>
         </div>
-        <PublicFooter
-          transparent
-          topSlot={
-            <div className="flex items-center justify-center gap-3 text-[11px] font-bold text-county-ink/70">
-              <a href="/faq" className="hover:text-county-green hover:underline">{t("login.helpFaq")}</a>
-              <span>·</span>
-              <a href="/terms" className="hover:text-county-green hover:underline">{t("login.termsConditions")}</a>
-            </div>
-          }
-        />
+        {/* No custom topSlot here — PublicFooter's own nav already covers
+            Help/Terms (its default LanguageToggle slot below), so a second
+            Help&FAQ/Terms row was pure duplication and, on mobile where the
+            left brand panel's toggle is hidden, silently removed the only
+            way to switch language on this page. */}
+        <PublicFooter transparent />
       </div>
     </div>
   );

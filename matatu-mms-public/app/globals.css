@@ -77,6 +77,29 @@ table td {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(13, 30, 20, 0.2);
 }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 30, 20, 0.1) transparent;
+}
+
+/* Near-invisible scrollbar for surfaces where scrolling is an edge case, not
+   a feature (the auth card, when Demo Accounts is expanded on a short
+   viewport) — a thumb should only read as present while actually in use. */
+.scrollbar-ghost {
+  scrollbar-width: none;
+}
+.scrollbar-ghost::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.scrollbar-ghost:hover,
+.scrollbar-ghost:focus-within {
+  scrollbar-width: thin;
+}
+.scrollbar-ghost:hover::-webkit-scrollbar,
+.scrollbar-ghost:focus-within::-webkit-scrollbar {
+  width: 5px;
+}
 
 /* Auth-card entrance: a single motivated transition (state transition -
    "you've arrived") on login/register/reset/etc. Off entirely for reduced
