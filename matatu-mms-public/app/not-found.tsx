@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import AuthSkyline from "@/components/AuthSkyline";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import PublicFooter from "@/components/PublicFooter";
 import { readSession } from "@/lib/session";
+import { homeForRole } from "@/lib/roles";
 
 export const metadata: Metadata = {
   title: "Page Not Found",
@@ -13,8 +15,9 @@ export default function NotFound() {
   const session = readSession();
 
   return (
-    <div className="min-h-screen flex flex-col bg-county-cream">
-      <div className="flex-1 flex items-center justify-center px-4">
+    <div className="relative min-h-screen flex flex-col bg-county-cream overflow-hidden">
+      <AuthSkyline heightClassName="h-[70vh]" />
+      <div className="relative z-10 flex-1 flex items-center justify-center px-4">
         <div className="max-w-md w-full text-center space-y-6">
           <div className="mx-auto h-24 w-24 rounded-2xl bg-county-green-deep flex items-center justify-center text-county-yellow shadow-elevated">
             <MatatuGlyph size={56} />
@@ -27,12 +30,12 @@ export default function NotFound() {
               have the right terminus for it. Let&apos;s get you back on route.
             </p>
           </div>
-          <Link href={session ? "/dashboard" : "/login"} className="btn-primary inline-flex !px-6">
-            {session ? "Return to Dashboard" : "Return to Sign In"}
+          <Link href={session ? homeForRole(session.role) : "/"} className="btn-primary inline-flex !px-6">
+            {session ? "Return to Portal" : "Return to Sign In"}
           </Link>
         </div>
       </div>
-      <PublicFooter />
+      <PublicFooter transparent />
     </div>
   );
 }

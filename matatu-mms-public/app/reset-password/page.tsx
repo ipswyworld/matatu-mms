@@ -3,10 +3,11 @@
 import { Suspense } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { resetPasswordAction } from "@/lib/actions";
-import NairobiCrest from "@/components/NairobiCrest";
+import AuthSkyline from "@/components/AuthSkyline";
 import PublicFooter from "@/components/PublicFooter";
 
 function SubmitButton() {
@@ -25,7 +26,7 @@ function ResetPasswordForm() {
   const [state, formAction] = useFormState(resetPasswordAction, undefined);
 
   return (
-    <div className="card p-6 space-y-4">
+    <div className="card p-6 space-y-4 auth-card-enter">
       {!token ? (
         <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold text-center">
           This reset link is missing its token. Request a new one from the sign-in page.
@@ -66,11 +67,12 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <main className="min-h-screen bg-county-cream flex flex-col">
-      <div className="flex-1 flex items-center justify-center p-6">
+    <main className="relative min-h-screen bg-county-cream flex flex-col overflow-hidden">
+      <AuthSkyline heightClassName="h-[70vh]" />
+      <div className="relative z-10 flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-6">
           <div className="text-center space-y-2">
-            <NairobiCrest size={48} className="mx-auto drop-shadow" />
+            <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={48} height={48} className="mx-auto object-contain drop-shadow" priority />
             <h1 className="text-2xl font-black tracking-tight text-county-ink">Set a new password</h1>
           </div>
 
@@ -79,7 +81,7 @@ export default function ResetPasswordPage() {
           </Suspense>
         </div>
       </div>
-      <PublicFooter />
+      <PublicFooter transparent />
     </main>
   );
 }

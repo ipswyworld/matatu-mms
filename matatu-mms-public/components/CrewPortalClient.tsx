@@ -1,22 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { UserCog, Armchair, UserX, UserCheck, Coins, TicketCheck, ShieldAlert, MessageSquare, CheckCircle2, Send } from "lucide-react";
+import { UserCog, Armchair, UserX, UserCheck, Coins, TicketCheck, ShieldAlert, MessageSquare, CheckCircle2, Send, Navigation, Flag, Bus } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import LiveIndicator from "@/components/LiveIndicator";
 import EmptyState from "@/components/EmptyState";
 import PageBanner from "@/components/PageBanner";
 import GisMap from "@/components/GisMap";
 import {
+  activateTripAction,
+  completeTripAction,
+  departTripAction,
+  getActiveTripAction,
   getBookingByIdAction,
   getBookingsForMatatuAction,
   getCrewReportsAction,
+  getQueueStatusAction,
+  getRouteStagesAction,
   logCrewIncidentAction,
   updateBookingStatusAction,
 } from "@/lib/actions";
-import { Booking, Matatu, PassengerReport, Route, Seat } from "@/lib/types";
+import { Booking, Matatu, PassengerReport, QueueStatus, Route, RouteStagePoint, Seat, Trip } from "@/lib/types";
 
 const REPORTS_POLL_MS = 20000;
+const QUEUE_POLL_MS = 8000;
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
 
@@ -44,6 +51,14 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   const [incidentReport, setIncidentReport] = useState("");
   const [incidentSent, setIncidentSent] = useState(false);
   const [incidentError, setIncidentError] = useState<string | null>(null);
+
+  const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
+  const [routeStages, setRouteStages] = useState<RouteStagePoint[]>([]);
+  const [originStageId, setOriginStageId] = useState("");
+  const [destinationStageId, setDestinationStageId] = useState("");
+  const [tripError, setTripError] = useState<string | null>(null);
+  const [isTripPending, startTripTransition] = useTransition();
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
 
@@ -76,6 +91,94 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       clearInterval(interval);
     };
   }, [selectedMatatu]);
+
+  // Trip: load the vehicle's own stage list + whatever trip is already
+  // active whenever the crew switches vehicles.
+  useEffect(() => {
+    if (!selectedMatatu) return;
+    let cancelled = false;
+    setTripError(null);
+    setOriginStageId("");
+    setDestinationStageId("");
+    Promise.all([
+      getRouteStagesAction(selectedMatatu.routeId),
+      getActiveTripAction(selectedMatatu.id),
+    ]).then(([stages, trip]) => {
+      if (cancelled) return;
+      setRouteStages(stages);
+      setActiveTrip(trip);
+      setQueueStatus(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMatatu]);
+
+  // Queue position only matters once a trip exists — polled so "n vehicles
+  // ahead of you" stays live without the crew refreshing the page.
+  useEffect(() => {
+    if (!selectedMatatu || !activeTrip) return;
+    let cancelled = false;
+    const poll = () => {
+      getQueueStatusAction(selectedMatatu.id).then((status) => {
+        if (!cancelled) setQueueStatus(status);
+      });
+    };
+    poll();
+    const interval = setInterval(poll, QUEUE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selectedMatatu, activeTrip]);
+
+  const handleActivateTrip = () => {
+    if (!selectedMatatu || !originStageId || !destinationStageId) return;
+    if (originStageId === destinationStageId) {
+      setTripError("Pick two different stages.");
+      return;
+    }
+    setTripError(null);
+    startTripTransition(async () => {
+      const result = await activateTripAction({
+        matatuId: selectedMatatu.id,
+        originStageId,
+        destinationStageId,
+      });
+      if (result.error) {
+        setTripError(result.error);
+        return;
+      }
+      setActiveTrip(result.trip || null);
+    });
+  };
+
+  const handleDepartTrip = () => {
+    if (!activeTrip) return;
+    setTripError(null);
+    startTripTransition(async () => {
+      const result = await departTripAction(activeTrip.id);
+      if (result.error) {
+        setTripError(result.error);
+        return;
+      }
+      setActiveTrip(result.trip || null);
+    });
+  };
+
+  const handleCompleteTrip = () => {
+    if (!activeTrip) return;
+    setTripError(null);
+    startTripTransition(async () => {
+      const result = await completeTripAction(activeTrip.id);
+      if (result.error) {
+        setTripError(result.error);
+        return;
+      }
+      setActiveTrip(null);
+      setQueueStatus(null);
+    });
+  };
 
   const takenSeatMap = useMemo(() => {
     const map = new Map<number, Booking>();
@@ -300,6 +403,98 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
         <StatCard label="Full / Occupied Seats" value={fullSeatsCount} accent="red" hint="Confirmed passengers on board" icon={UserX} />
         <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" icon={UserCheck} />
         <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" icon={Coins} />
+      </div>
+
+      <div className="card p-5 space-y-4">
+        <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+          <Navigation size={15} strokeWidth={2} className="text-county-ink/50" />
+          Trip
+        </h3>
+
+        {tripError && (
+          <div className="bg-county-red/10 text-county-red border border-county-red/30 rounded-lg p-2.5 text-xs font-semibold">
+            {tripError}
+          </div>
+        )}
+
+        {!activeTrip ? (
+          <div className="space-y-3">
+            <p className="text-xs text-black/50">
+              Tell the system where you're headed. This keeps you off routes going the wrong way, and puts you in the pickup queue.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-bold text-black/50 block mb-1">Starting from</label>
+                <select value={originStageId} onChange={(e) => setOriginStageId(e.target.value)} className="input text-xs w-full">
+                  <option value="">Select a stage…</option>
+                  {routeStages.map((s) => (
+                    <option key={s.stageId} value={s.stageId}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-black/50 block mb-1">Heading to</label>
+                <select value={destinationStageId} onChange={(e) => setDestinationStageId(e.target.value)} className="input text-xs w-full">
+                  <option value="">Select a stage…</option>
+                  {routeStages.map((s) => (
+                    <option key={s.stageId} value={s.stageId}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={handleActivateTrip}
+              disabled={isTripPending || !originStageId || !destinationStageId}
+              className="btn-primary w-full !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Bus size={14} strokeWidth={2} />
+              {isTripPending ? "Starting…" : "Start Trip"}
+            </button>
+          </div>
+        ) : activeTrip.status === "QUEUED" ? (
+          <div className="space-y-3">
+            <div className="bg-county-yellow/10 border border-county-yellow/30 rounded-xl p-4 text-center space-y-1">
+              <p className="text-[11px] font-bold text-black/50 uppercase tracking-wide">Waiting at {activeTrip.originStageName}</p>
+              <p className="text-3xl font-black text-county-black">
+                {queueStatus?.vehiclesAhead ?? "…"}
+              </p>
+              <p className="text-xs font-semibold text-black/60">
+                vehicle{queueStatus?.vehiclesAhead === 1 ? "" : "s"} ahead of you that {queueStatus?.vehiclesAhead === 1 ? "hasn't" : "haven't"} picked yet
+              </p>
+              {queueStatus && (
+                <p className="text-[11px] text-black/40">
+                  {queueStatus.activeOnRoute} vehicle{queueStatus.activeOnRoute === 1 ? "" : "s"} already moving on this route right now
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-black/50 text-center">Heading to {activeTrip.destinationStageName}</p>
+            <button
+              onClick={handleDepartTrip}
+              disabled={isTripPending}
+              className="btn-primary w-full !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Bus size={14} strokeWidth={2} />
+              {isTripPending ? "…" : "I'm Full — Depart"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-county-green/10 border border-county-green/30 rounded-xl p-4 text-center space-y-1">
+              <LiveIndicator label="On the road" state="live" className="mx-auto" />
+              <p className="text-sm font-bold text-county-black">
+                {activeTrip.originStageName} → {activeTrip.destinationStageName}
+              </p>
+            </div>
+            <button
+              onClick={handleCompleteTrip}
+              disabled={isTripPending}
+              className="btn-primary w-full !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Flag size={14} strokeWidth={2} />
+              {isTripPending ? "…" : "Arrived — End Trip"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">

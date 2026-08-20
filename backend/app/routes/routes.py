@@ -5,8 +5,8 @@ from sqlalchemy.future import select
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import Route, Matatu, User
-from app.schemas import RouteResponse, RouteCreate
+from app.models import Route, Matatu, RouteStage, Stage, User
+from app.schemas import RouteResponse, RouteCreate, RouteStageResponse
 from app.auth import get_current_user, requires_permission
 from app.audit import stage_audit_log
 
@@ -33,6 +33,42 @@ async def get_routes(
         response.append(resp)
         
     return response
+
+@router.get("/{route_id}/stages", response_model=List[RouteStageResponse])
+async def get_route_stages(
+    route_id: str,
+    direction: str = "OUTBOUND",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ordered stage list for one route+direction — the real data behind an
+    "Activate Trip" origin/destination picker (crew can only pick stages
+    that actually exist on their assigned route, not free text)."""
+    result = await db.execute(
+        select(RouteStage, Stage)
+        .join(Stage, RouteStage.stage_id == Stage.id)
+        .where(RouteStage.route_id == route_id, RouteStage.direction == direction)
+        .order_by(RouteStage.sequence)
+    )
+    rows = result.all()
+    if rows:
+        return [
+            RouteStageResponse(stage_id=stage.id, name=stage.name, sequence=route_stage.sequence)
+            for route_stage, stage in rows
+        ]
+
+    # Fallback: many vehicles are still assigned to the pre-BRN legacy
+    # routes (route-1..4), which have no RouteStage rows of their own —
+    # only the digitized brn-route-* routes do. Rather than leaving the
+    # picker empty for those vehicles, fall back to every known stage
+    # alphabetically so Activate Trip still works; once a route's real
+    # stage sequence is digitized this returns that instead.
+    fallback_result = await db.execute(select(Stage).order_by(Stage.name))
+    return [
+        RouteStageResponse(stage_id=stage.id, name=stage.name, sequence=idx)
+        for idx, stage in enumerate(fallback_result.scalars().all())
+    ]
+
 
 @router.post("", response_model=RouteResponse, status_code=status.HTTP_201_CREATED)
 async def create_route(

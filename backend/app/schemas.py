@@ -134,17 +134,36 @@ class UserBase(BaseModelCamel):
     _normalize_email = _normalized_email_validator()
 
 class UserCreate(UserBase):
+    # Overrides UserBase.email (required) — passenger self-registration can
+    # go phone-first and skip email; register() synthesizes a placeholder
+    # so the DB's NOT NULL/unique constraint (shared with every other user
+    # type) never sees the gap. Admin-provisioned staff accounts still send
+    # a real email as before; this override only widens what's *accepted*.
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
     password: str
     # Only required on self-registration (/api/auth/register), not when an
     # Admin provisions an account directly — see that endpoint's validation.
     terms_accepted: Optional[bool] = False
     terms_signature: Optional[str] = None
+    # Minor/student self-registration only — register() validates these are
+    # all present when is_minor is true and ignores them otherwise.
+    is_minor: Optional[bool] = False
+    guardian_name: Optional[str] = None
+    guardian_phone: Optional[str] = None
+    guardian_relationship: Optional[str] = None
+    guardian_id_number: Optional[str] = None
 
 class UserResponse(UserBase):
     id: str
+    phone: Optional[str] = None
     terms_accepted: Optional[bool] = False
     terms_accepted_at: Optional[datetime.datetime] = None
+    is_minor: Optional[bool] = False
+    guardian_approved: Optional[bool] = False
     terms_signature: Optional[str] = None
+    is_active: Optional[bool] = True
+    favorite_sacco_id: Optional[str] = None
 
 class UserUpdate(BaseModelCamel):
     name: Optional[str] = None
@@ -152,12 +171,15 @@ class UserUpdate(BaseModelCamel):
     role: Optional[str] = None
     sacco_id: Optional[str] = None
     new_password: Optional[str] = None
+    is_active: Optional[bool] = None
 
-    _normalize_email = _normalized_email_validator()
+class FavoriteSaccoRequest(BaseModelCamel):
+    sacco_id: Optional[str] = None  # null clears the favorite
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    remember_me: bool = False
 
     _normalize_email = _normalized_email_validator()
 
@@ -198,14 +220,37 @@ class CrewIssueResponse(BaseModelCamel):
     assignment: CrewAssignmentResponse
     generated_password: str
 
+class CrewAlertRequest(BaseModelCamel):
+    message: str
+    matatu_id: Optional[str] = None  # omit to alert every active crew member in the fleet
+
 class ForgotPasswordRequest(BaseModelCamel):
     email: EmailStr
 
     _normalize_email = _normalized_email_validator()
 
+class PhoneForgotPasswordRequest(BaseModelCamel):
+    phone: str
+
+class PhoneResetPasswordRequest(BaseModelCamel):
+    phone: str
+    otp: str
+    new_password: str
+
 class ResetPasswordRequest(BaseModelCamel):
     token: str
     new_password: str
+
+class GuardianApprovalInfo(BaseModelCamel):
+    """What the guardian sees on the approval page before confirming —
+    deliberately minimal (no password, no phone, no other account details)
+    since this link requires no login and could be opened by anyone who
+    has it."""
+    minor_name: str
+    guardian_name: str
+
+class GuardianApproveRequest(BaseModelCamel):
+    token: str
 
 class Token(BaseModelCamel):
     access_token: str
@@ -225,6 +270,39 @@ class RouteCreate(RouteBase):
 class RouteResponse(RouteBase):
     id: str
     vehicle_count: Optional[int] = 0
+
+class RouteStageResponse(BaseModelCamel):
+    stage_id: str
+    name: str
+    sequence: int
+
+# --- Trip Schemas ---
+class TripActivateRequest(BaseModelCamel):
+    matatu_id: str
+    origin_stage_id: str
+    destination_stage_id: str
+
+class TripResponse(BaseModelCamel):
+    id: str
+    matatu_id: str
+    reg_number: str
+    route_id: str
+    route_name: str
+    origin_stage_id: str
+    origin_stage_name: str
+    destination_stage_id: str
+    destination_stage_name: str
+    status: str
+    started_at: datetime.datetime
+    departed_at: Optional[datetime.datetime] = None
+    ended_at: Optional[datetime.datetime] = None
+
+class QueueStatusResponse(BaseModelCamel):
+    my_trip_id: Optional[str] = None
+    position: Optional[int] = None  # 1-indexed; vehicles ahead = position - 1
+    vehicles_ahead: Optional[int] = None
+    queued_at_stage: int  # total QUEUED vehicles at this stage+route (any Sacco)
+    active_on_route: int  # total IN_PROGRESS vehicles anywhere on this route (any Sacco)
 
 # --- Fare Stage Schemas ---
 class FareStageCreate(BaseModelCamel):

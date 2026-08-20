@@ -34,6 +34,7 @@ const dictionary = {
   "login.email": { en: "Email", sw: "Barua pepe" },
   "login.password": { en: "Password", sw: "Nenosiri" },
   "login.forgotPassword": { en: "Forgot password?", sw: "Umesahau nenosiri?" },
+  "login.rememberMe": { en: "Keep me signed in for 30 days", sw: "Nibaki nimeingia kwa siku 30" },
   "login.demoAccounts": { en: "Demo accounts", sw: "Akaunti za mfano" },
   "login.helpFaq": { en: "Help & FAQ", sw: "Msaada na Maswali" },
   "login.termsConditions": { en: "Terms & Conditions", sw: "Sheria na Masharti" },

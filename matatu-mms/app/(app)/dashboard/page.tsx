@@ -16,6 +16,7 @@ import BookingsPanel from "@/components/dashboard/BookingsPanel";
 import FleetLiveStatus from "@/components/dashboard/FleetLiveStatus";
 import DashboardLiveRefresh from "@/components/DashboardLiveRefresh";
 import FinesTrendChart from "@/components/dashboard/FinesTrendChart";
+import LiveConditions from "@/components/dashboard/LiveConditions";
 
 export default async function DashboardPage() {
   const session = readSession()!;
@@ -232,6 +233,10 @@ export default async function DashboardPage() {
           bookings={isSacco ? bookings.filter((b) => matatuIds.has(b.matatuId)) : bookings}
         />
       </div>
+
+      {/* Row 3b: crowdsourced conditions + official route alerts, the admin
+          counterpart to the public login page's Live Updates modal */}
+      <LiveConditions />
 
       {/* Row 4: corridor health, replacing the previous flat status list */}
       <CorridorHealth

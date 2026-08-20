@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import AuthSkyline from "./AuthSkyline";
 import PublicFooter from "./PublicFooter";
 
 export default function PublicLegalLayout({
@@ -18,8 +19,9 @@ export default function PublicLegalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-county-cream">
-      <header className="bg-county-green-deep text-white">
+    <div className="relative min-h-screen bg-county-cream overflow-hidden">
+      <AuthSkyline heightClassName="h-[70vh]" />
+      <header className="relative z-10 bg-county-green-deep text-white">
         <div className="h-1.5 flex">
           <div className="bg-county-green flex-1" />
           <div className="bg-county-yellow flex-1" />
@@ -52,9 +54,9 @@ export default function PublicLegalLayout({
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-5 py-10 md:py-14">{children}</main>
+      <main className="relative z-10 max-w-3xl mx-auto px-5 py-10 md:py-14">{children}</main>
 
-      <PublicFooter />
+      <PublicFooter transparent />
     </div>
   );
 }

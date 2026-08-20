@@ -5,8 +5,19 @@ import { Search, Shield } from "lucide-react";
 import { ROLE_LABELS, ADMIN_TIER_ROLES, can } from "@/lib/rbac";
 import { Role, Sacco, User } from "@/lib/types";
 import EditUserModal from "./EditUserModal";
+import DeactivateUserButton from "./DeactivateUserButton";
 
-export default function UsersTable({ users, saccos, viewerRole }: { users: User[]; saccos: Sacco[]; viewerRole: Role }) {
+export default function UsersTable({
+  users,
+  saccos,
+  viewerRole,
+  viewerUserId,
+}: {
+  users: User[];
+  saccos: Sacco[];
+  viewerRole: Role;
+  viewerUserId: string;
+}) {
   const canManageAdmins = can(viewerRole, "manage_admins");
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
@@ -71,7 +82,12 @@ export default function UsersTable({ users, saccos, viewerRole }: { users: User[
                   {ADMIN_TIER_ROLES.includes(u.role) && !canManageAdmins ? (
                     <span className="text-[11px] text-black/30 italic">Super Admin only</span>
                   ) : (
-                    <EditUserModal user={u} saccos={saccos} viewerRole={viewerRole} />
+                    <div className="flex items-center gap-3">
+                      <EditUserModal user={u} saccos={saccos} viewerRole={viewerRole} />
+                      {u.id !== viewerUserId && (
+                        <DeactivateUserButton userId={u.id} isActive={u.isActive !== false} />
+                      )}
+                    </div>
                   )}
                 </td>
               </tr>

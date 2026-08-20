@@ -88,7 +88,7 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
           hatch, for edge cases like a short viewport with demo accounts open. */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 md:p-8">
-          <div className="w-full max-w-md space-y-5 py-4">
+          <div className="w-full max-w-md space-y-5 py-4 auth-card-enter">
             <div className="flex lg:hidden items-center gap-3">
               <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-md">
                 <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={44} height={44} className="object-contain" />

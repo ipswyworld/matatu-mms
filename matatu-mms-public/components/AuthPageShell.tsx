@@ -1,8 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { ReactNode } from "react";
+import { Receipt, ArrowRight } from "lucide-react";
+import AuthSkyline from "@/components/AuthSkyline";
 import LeaveCommentSection from "@/components/LeaveCommentSection";
+import LiveUpdatesModal from "@/components/LiveUpdatesModal";
 import PublicFooter from "@/components/PublicFooter";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -69,16 +73,22 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
             <LanguageToggle dark />
           </div>
           {showLeaveComment && (
-            <div className="mt-4">
+            <div className="mt-4 space-y-3">
+              <LiveUpdatesModal />
               <LeaveCommentSection />
             </div>
           )}
         </div>
 
         <div className="relative">
-          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
-            County of Nairobi · Kenya
-          </div>
+          <Link
+            href="/pay-fine"
+            className="flex items-center gap-2.5 rounded-lg border border-white/15 bg-white/5 px-3.5 py-2.5 text-xs font-bold text-white/85 transition-colors hover:bg-white/10 hover:text-white w-fit"
+          >
+            <Receipt size={15} strokeWidth={2} className="text-county-yellow shrink-0" />
+            Been issued a fine? Pay it here
+            <ArrowRight size={13} strokeWidth={2.5} />
+          </Link>
         </div>
       </div>
 
@@ -86,9 +96,13 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
           not spanning the full page width under the green brand panel too. The
           page itself never scrolls; this inner area is the only scroll escape
           hatch, for edge cases like a short viewport with demo accounts open. */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 md:p-8">
-          <div className="w-full max-w-md space-y-5 py-4">
+      <div className="relative flex-1 flex flex-col min-h-0">
+        {/* Spans the whole column (scroll area + footer), not just the
+            centered-card slice, so the skyline reads all the way down to
+            the footer links instead of stopping short in a small band. */}
+        <AuthSkyline heightClassName="h-full" />
+        <div className="relative z-10 flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-6 md:p-8">
+          <div className="w-full max-w-md space-y-5 py-4 auth-card-enter">
             <div className="flex lg:hidden items-center gap-3">
               <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow-md">
                 <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={44} height={44} className="object-contain" />
@@ -103,6 +117,7 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
           </div>
         </div>
         <PublicFooter
+          transparent
           topSlot={
             <div className="flex items-center justify-center gap-3 text-[11px] font-bold text-county-ink/70">
               <a href="/faq" className="hover:text-county-green hover:underline">{t("login.helpFaq")}</a>

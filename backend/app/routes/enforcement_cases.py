@@ -26,6 +26,8 @@ from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.routes.notifications import notify_user
+from app.sms import send_sms
+from app.config import PUBLIC_FRONTEND_URL
 
 router = APIRouter(prefix="/api/enforcement", tags=["Enforcement Cases"])
 
@@ -143,12 +145,61 @@ async def get_cases(
     # commanders and admin see the full queue (they need visibility across officers).
     if current_user.role == "ARRESTING_OFFICER":
         query = query.where(EnforcementCase.arresting_officer_id == current_user.id)
+    elif current_user.role == "SACCO_OPERATOR":
+        # Scoped to their own fleet only — a case's reg_number isn't a
+        # direct FK (it's a plain string, matching Matatu.reg_number), so
+        # this is a subquery against the operator's own vehicles rather
+        # than a join.
+        fleet_result = await db.execute(select(Matatu.reg_number).where(Matatu.sacco_id == current_user.sacco_id))
+        fleet_reg_numbers = fleet_result.scalars().all()
+        query = query.where(EnforcementCase.reg_number.in_(fleet_reg_numbers))
 
     result = await db.execute(query)
     cases = result.scalars().all()
     for c in cases:
         await _to_case_response(db, c)
     return cases
+
+
+@router.get("/cases/public/lookup-by-phone", response_model=PublicCaseResponse)
+async def public_lookup_case_by_phone(phone: str, db: AsyncSession = Depends(get_db)):
+    """
+    Registered before the /{case_reference} route below — FastAPI matches
+    path routes in registration order, and without this ordering
+    "lookup-by-phone" would itself be swallowed as a literal case_reference
+    value by that route instead of reaching this one.
+
+    Finds the vehicle(s) where this phone is on file as driver or
+    conductor (Matatu.driver_phone / conductor_phone — the same free-text
+    fields already shown on the vehicle record, not a new source of
+    truth), then returns that vehicle's single most recent case. A driver
+    who only remembers their own phone number, not a case reference they
+    were handed on paper, can still look themselves up.
+    """
+    normalized = phone.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Enter a phone number.")
+
+    matatu_result = await db.execute(
+        select(Matatu.reg_number).where(
+            (Matatu.driver_phone == normalized) | (Matatu.conductor_phone == normalized)
+        )
+    )
+    reg_numbers = matatu_result.scalars().all()
+    if not reg_numbers:
+        raise HTTPException(status_code=404, detail="No cases found for that phone number.")
+
+    result = await db.execute(
+        _case_query()
+        .where(EnforcementCase.reg_number.in_(reg_numbers))
+        .order_by(EnforcementCase.created_at.desc())
+        .limit(1)
+    )
+    case = result.scalars().first()
+    if not case:
+        raise HTTPException(status_code=404, detail="No cases found for that phone number.")
+    await _to_case_response(db, case)
+    return case
 
 
 @router.get("/cases/public/{case_reference}", response_model=PublicCaseResponse)
@@ -273,15 +324,58 @@ async def create_case(
         new_values={"caseReference": case_reference, "regNumber": reg_clean, "offence": offence.name, "fineAmountKes": offence.default_fine_kes, "actionTaken": action_taken},
     )
 
+    # Fetched unconditionally (not just for impound actions) — the driver/
+    # conductor SMS and Sacco-operator notification below need it
+    # regardless of action_taken; a Toll still cites a real driver.
+    matatu_result = await db.execute(select(Matatu).where(Matatu.reg_number == reg_clean))
+    matatu = matatu_result.scalars().first()
+
     # A Toll leaves the vehicle free to continue operating — only an actual
     # impound (with or without a self-drive release) takes it off the road.
-    if action_taken in ("IMPOUND", "SELF_DRIVE_IMPOUND"):
-        matatu_result = await db.execute(select(Matatu).where(Matatu.reg_number == reg_clean))
-        matatu = matatu_result.scalars().first()
-        if matatu and matatu.status == "ACTIVE":
-            matatu.status = "FLAGGED"
+    if action_taken in ("IMPOUND", "SELF_DRIVE_IMPOUND") and matatu and matatu.status == "ACTIVE":
+        matatu.status = "FLAGGED"
 
     await db.commit()
+
+    pay_link = f"{PUBLIC_FRONTEND_URL}/pay-fine?ref={case_reference}"
+    sms_message = (
+        f"Nairobi County: your vehicle {reg_clean} was cited for {offence.name} "
+        f"(case {case_reference}, fine KES {offence.default_fine_kes:,.0f}). "
+        f"Pay or check status: {pay_link}"
+    )
+    # Driver and conductor are both plain free-text fields on Matatu, not
+    # guaranteed distinct people — send once per unique number so a vehicle
+    # with the same phone in both fields doesn't get texted twice.
+    #
+    # Deliberately done here, before the _case_query()/_to_case_response()
+    # re-fetch below — that helper mutates case.photo_paths from its raw
+    # JSON string into a Python list on the still-session-attached ORM
+    # object, which SQLite can't bind if anything triggers an autoflush
+    # afterward (the operator lookup below is exactly such a query). Doing
+    # the DB-touching notification work first, while the case object is
+    # still clean, sidesteps that rather than fighting autoflush ordering.
+    if matatu:
+        recipients = {p for p in (matatu.driver_phone, matatu.conductor_phone) if p}
+        for phone in recipients:
+            await send_sms(phone, sms_message)
+
+        # Best-effort in-app nudge to the Sacco's own operator(s) — same
+        # pattern as the "fine paid" notification to the arresting officer
+        # below in public_pay_case(). Not the only way an operator finds
+        # out: they also see this case in their own scoped case list
+        # (get_cases() above) next time they open the portal, so a missed
+        # toast isn't a missed notification, just a slower one.
+        if matatu.sacco_id:
+            operators_result = await db.execute(
+                select(User).where(User.role == "SACCO_OPERATOR", User.sacco_id == matatu.sacco_id)
+            )
+            for operator in operators_result.scalars().all():
+                await notify_user(
+                    operator.id,
+                    title="Vehicle cited",
+                    message=f"{reg_clean} was cited for {offence.name} (case {case_reference}, fine KES {offence.default_fine_kes:,.0f}).",
+                    level="warning",
+                )
 
     result = await db.execute(_case_query().where(EnforcementCase.id == case_id))
     case = result.scalars().first()

@@ -45,11 +45,9 @@ export default function PageBanner({ eyebrow, title, titleBadge, subtitle, actio
         <polygon points="55,0 100,0 100,45" fill="none" stroke="#F5C518" strokeWidth="1" opacity="0.4" />
       </svg>
 
-      {/* Solitary large hexagon holding the county crest, floated on the right */}
+      {/* County crest, floated on the right in its own circular chip */}
       <div className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 hidden md:flex h-32 w-32 items-center justify-center">
-        <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-county-yellow/30">
-          <path d="M50 2 L92 26 L92 74 L50 98 L8 74 L8 26 Z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
+        <div className="absolute inset-0 rounded-full ring-1 ring-county-yellow/30" />
         <div className="h-20 w-20 rounded-full bg-county-cream flex items-center justify-center overflow-hidden shadow-xl ring-2 ring-white/20">
           <img src="/nairobi-crest.jpg" alt="" className="h-full w-full object-contain" />
         </div>

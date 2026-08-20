@@ -65,6 +65,8 @@ from app.routes.analytics import router as analytics_router
 from app.routes.search import router as search_router
 from app.routes.demand import router as demand_router
 from app.routes.deviations import router as deviations_router
+from app.routes.public_updates import router as public_updates_router
+from app.routes.trips import router as trips_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -228,6 +230,8 @@ app.include_router(analytics_router)
 app.include_router(search_router)
 app.include_router(demand_router)
 app.include_router(deviations_router)
+app.include_router(public_updates_router)
+app.include_router(trips_router)
 
 # Serve uploaded verification/onboarding documents (dev-only local disk
 # storage — will move to object storage e.g. S3/GCS behind Postgres+Redis

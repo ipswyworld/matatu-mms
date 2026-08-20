@@ -33,6 +33,7 @@ const dictionary = {
   "login.email": { en: "Email", sw: "Barua pepe" },
   "login.password": { en: "Password", sw: "Nenosiri" },
   "login.forgotPassword": { en: "Forgot password?", sw: "Umesahau nenosiri?" },
+  "login.rememberMe": { en: "Keep me signed in for 30 days", sw: "Nibaki nimeingia kwa siku 30" },
   "login.demoAccounts": { en: "Demo accounts", sw: "Akaunti za mfano" },
   "login.helpFaq": { en: "Help & FAQ", sw: "Msaada na Maswali" },
   "login.termsConditions": { en: "Terms & Conditions", sw: "Sheria na Masharti" },
@@ -40,11 +41,13 @@ const dictionary = {
   // Public portal ("/") — passengers, crew (info only, no self-registration), sacco operators
   "portal.heading": { en: "One county, one live view of every matatu.", sw: "Kaunti moja, mwonekano mmoja wa moja kwa moja wa kila matatu." },
   "portal.subheading": {
-    en: "Book a seat, track your matatu live, check your fare, or register your Sacco for county verification. Smart and connected mobility for the whole county.",
-    sw: "Hifadhi kiti, fuatilia matatu yako moja kwa moja, angalia nauli yako, au sajili Sacco yako kwa uthibitisho wa kaunti. Usafiri wenye akili na uunganisho kwa kaunti nzima.",
+    en: "Book a seat, track your matatu live, or register your Sacco for county verification.",
+    sw: "Hifadhi kiti, fuatilia matatu yako moja kwa moja, au sajili Sacco yako kwa uthibitisho wa kaunti.",
   },
   "portal.useCredentials": { en: "Sign in to book, manage your fleet, or check your account.", sw: "Ingia ili kuhifadhi, kusimamia magari yako, au kuangalia akaunti yako." },
-  "portal.registerLink": { en: "New here? Register as a Commuter →", sw: "Mgeni hapa? Jisajili kama Abiria →" },
+  "portal.newHere": { en: "New here?", sw: "Mgeni hapa?" },
+  "portal.registerCitizenLink": { en: "Register as a Citizen", sw: "Jisajili kama Raia" },
+  "portal.registerStudentLink": { en: "Register as a Student / Minor", sw: "Jisajili kama Mwanafunzi / Mtoto" },
   "portal.onboardingLink": { en: "Operator? Start Onboarding & Verification →", sw: "Mwendeshaji? Anza Usajili na Uthibitisho →" },
 } as const;
 

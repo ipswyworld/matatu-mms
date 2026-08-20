@@ -29,6 +29,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // don't eval like this, so this only needs relaxing for `next dev`.
 const SCRIPT_SRC = process.env.NODE_ENV === "production" ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
+// The local dev backend serves plain http:// (127.0.0.1:8000, no TLS);
+// the deployed backend is always https. connect-src's `https:` catch-all
+// covers production fine, but silently blocks the CSP-plain-http case in
+// dev with no console error and no network request even attempted —
+// browsers just refuse to send it. `ws:`/`wss:` already had this same
+// dev/prod split baked in; `http:` needs it too for direct REST fetches
+// (e.g. the public Live Updates panel) to reach the local backend.
+const CONNECT_SRC = process.env.NODE_ENV === "production" ? "connect-src 'self' https: wss:" : "connect-src 'self' https: http: wss: ws:";
+
 const SECURITY_HEADERS = [
   {
     key: "Content-Security-Policy",
@@ -38,7 +47,7 @@ const SECURITY_HEADERS = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https: wss: ws:",
+      CONNECT_SRC,
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self'",

@@ -31,6 +31,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // this only needs relaxing for `next dev`, never for what actually ships.
 const SCRIPT_SRC = process.env.NODE_ENV === "production" ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
+// The backend runs on plain http://127.0.0.1:8000 in local dev (no TLS
+// cert for localhost) — without allowing plain http:/ws: here too, every
+// client-side fetch/WebSocket to it is silently blocked by CSP while the
+// server-rendered HTML looks fine (same gap already fixed in
+// matatu-mms-public/next.config.mjs; the deployed prod backend is always
+// https, so this only needs relaxing for `next dev`).
+const CONNECT_SRC = process.env.NODE_ENV === "production" ? "connect-src 'self' https: wss:" : "connect-src 'self' https: http: wss: ws:";
+
 const SECURITY_HEADERS = [
   {
     key: "Content-Security-Policy",
@@ -40,7 +48,7 @@ const SECURITY_HEADERS = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https: wss: ws:",
+      CONNECT_SRC,
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self'",

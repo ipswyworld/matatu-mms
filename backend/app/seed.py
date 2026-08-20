@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage, Beat
+from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage, Beat, RouteDetour
 from app.auth import get_password_hash
 from app.brn_data import STAGE_COORDS, ROUTES as BRN_ROUTES
 import datetime
@@ -148,9 +148,43 @@ async def seed_zones_and_beats(db: AsyncSession):
     await db.commit()
 
 
+async def seed_route_detour(db: AsyncSession):
+    """One demo RouteDetour so the public "Live Updates" feed
+    (/api/public/route-alerts) has something to show on first boot, using
+    the same real, already-geocoded GPO-ICEA CBD segment as beat-cbd-1
+    above rather than fabricating a new stage pair. Idempotent per-row,
+    same reasoning as seed_zones_and_beats."""
+    existing_ids = set((await db.execute(select(RouteDetour.id))).scalars().all())
+    if "detour-gpo-icea-demo" not in existing_ids:
+        db.add(RouteDetour(
+            id="detour-gpo-icea-demo",
+            route_id="brn-route-11",
+            from_stage_id="stage-gpo",
+            to_stage_id="stage-icea",
+            alternate_description="Roadworks near GPO — matatus diverting via Kenyatta Avenue until further notice.",
+            active=True,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+        ))
+        await db.commit()
+
+
+async def backfill_demo_passenger_phone(db: AsyncSession):
+    """Same idempotent-per-row pattern as seed_zones_and_beats above — the
+    demo passenger account was seeded before phone-based password reset
+    existed, so an already-seeded database needs this patched in on its
+    next boot rather than requiring a manual reseed."""
+    result = await db.execute(select(User).where(User.id == "u-passenger"))
+    user = result.scalars().first()
+    if user and not user.phone:
+        user.phone = "+254712345678"
+        await db.commit()
+
+
 async def seed_data(db: AsyncSession):
     await seed_brn_data(db)
     await seed_zones_and_beats(db)
+    await seed_route_detour(db)
+    await backfill_demo_passenger_phone(db)
 
     # Check if data already exists
     sacco_check = await db.execute(select(Sacco))
@@ -271,6 +305,7 @@ async def seed_data(db: AsyncSession):
             id="u-passenger",
             name="John Kamau",
             email="commuter@nairobi.go.ke",
+            phone="+254712345678",
             password=await get_password_hash("pass123"),
             role="PASSENGER"
         ),

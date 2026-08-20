@@ -15,6 +15,8 @@ import BulkImportVehiclesModal from "@/components/BulkImportVehiclesModal";
 import RemoveMatatuButton from "@/components/RemoveMatatuButton";
 import IssueCrewCredentialsModal from "@/components/IssueCrewCredentialsModal";
 import RevokeCrewAssignmentButton from "@/components/RevokeCrewAssignmentButton";
+import RemoveCrewMemberButton from "@/components/RemoveCrewMemberButton";
+import AlertCrewForm from "@/components/AlertCrewForm";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Operator Dashboard" };
@@ -224,6 +226,8 @@ export default async function SaccoPortalPage() {
         </div>
       </div>
 
+      <AlertCrewForm matatus={saccoMatatus} />
+
       {/* Crew Accounts — real login-linked driver/conductor accounts, distinct
           from the plain-text driver/conductor fields in the registry table
           above. Operator issues a login the moment they assign someone to a
@@ -260,7 +264,10 @@ export default async function SaccoPortalPage() {
                   <td className="p-2.5 font-bold font-mono">{c.matatuRegNumber}</td>
                   <td className="p-2.5 text-black/50 font-mono">{new Date(c.assignedAt).toLocaleDateString()}</td>
                   <td className="p-2.5">
-                    <RevokeCrewAssignmentButton assignmentId={c.id} />
+                    <div className="flex items-center gap-3">
+                      <RevokeCrewAssignmentButton assignmentId={c.id} />
+                      <RemoveCrewMemberButton userId={c.userId} />
+                    </div>
                   </td>
                 </tr>
               ))}

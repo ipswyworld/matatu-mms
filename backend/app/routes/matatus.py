@@ -50,6 +50,14 @@ async def create_matatu(
     current_user: User = Depends(requires_permission("add_matatu")),
     db: AsyncSession = Depends(get_db)
 ):
+    # add_matatu is only ever granted to SACCO_OPERATOR (app/rbac.py) — every
+    # caller here is onboarding into their own fleet, never another
+    # operator's. payload.sacco_id was previously trusted as-is, which let
+    # any operator onboard a vehicle under an arbitrary Sacco ID just by
+    # putting a different one in the request body; enforce it matches their
+    # own the same way every other write in this router does.
+    enforce_own_sacco(current_user, payload.sacco_id, "You can only onboard vehicles under your own Sacco.")
+
     # Verify Sacco exists
     sacco_result = await db.execute(select(Sacco).where(Sacco.id == payload.sacco_id))
     sacco = sacco_result.scalars().first()

@@ -11,6 +11,8 @@ from app.models import ActivityLog, Matatu, User
 from app.schemas import ActivityLogResponse, ActivityLogCreate
 from app.auth import get_current_user, requires_permission
 from app.abac import sacco_scope_query
+from app.events import dispatcher
+from app.routes.notifications import notify_user
 
 router = APIRouter(prefix="/api/activity", tags=["Activity Logs"])
 
@@ -62,4 +64,25 @@ async def create_activity(
     db.add(new_activity)
     await db.commit()
     await db.refresh(new_activity)
+
+    # Crew's "Send Rapid Incident Alert" (matatu-mms-public's crew portal)
+    # used to just write this row silently — nobody was ever told. Notify
+    # the vehicle's own Sacco operator(s) live (same notify_user pattern as
+    # enforcement_cases.py) and nudge any open admin/enforcement dashboard,
+    # so an incident a crew member reports is actually seen, not only
+    # discoverable by someone happening to open the Activity Log later.
+    if new_activity.type == "INCIDENT" and matatu.sacco_id:
+        operators_result = await db.execute(
+            select(User).where(User.role == "SACCO_OPERATOR", User.sacco_id == matatu.sacco_id)
+        )
+        for operator in operators_result.scalars().all():
+            await notify_user(
+                operator.id, title="Crew incident alert",
+                message=f"{matatu.reg_number} — {new_activity.location}: {new_activity.description}",
+                level="warning",
+            )
+        dispatcher.dispatch("CREW_INCIDENT_ALERT", {
+            "activity_id": new_activity.id, "matatu_id": matatu.id, "reg_number": matatu.reg_number,
+        })
+
     return new_activity

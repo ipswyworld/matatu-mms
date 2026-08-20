@@ -50,6 +50,10 @@ export async function getUsers(): Promise<User[]> {
   return apiFetch<User[]>("/api/users");
 }
 
+export async function getMyProfile(): Promise<User> {
+  return apiFetch<User>("/api/auth/me");
+}
+
 export async function getUserById(id: string): Promise<User | undefined> {
   const users = await getUsers();
   return users.find((u) => u.id === id);

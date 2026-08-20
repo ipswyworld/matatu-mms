@@ -43,7 +43,7 @@ class Sacco(Base):
     chief_officer_decided_by = Column(String, nullable=True)
     chief_officer_decided_at = Column(DateTime(timezone=True), nullable=True)
 
-    users = relationship("User", back_populates="sacco")
+    users = relationship("User", back_populates="sacco", foreign_keys="User.sacco_id")
     matatus = relationship("Matatu", back_populates="sacco")
 
 class User(Base):
@@ -52,6 +52,13 @@ class User(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    # Phone-first passenger self-registration (§ forgot-password-by-phone):
+    # a synthetic placeholder email is generated when a passenger signs up
+    # without a real one (see register() in routes/auth.py), so `email`
+    # itself stays NOT NULL/unique everywhere else in the system (admin
+    # user management, staff login, CrewIssueRequest, ...) unaffected.
+    # `phone` is the actual optional-vs-required split for passengers.
+    phone = Column(String, unique=True, index=True, nullable=True)
     password = Column(String, nullable=False)
     role = Column(String, nullable=False)  # ADMIN, ENFORCEMENT, SACCO_OPERATOR, VIEWER, PASSENGER, CREW
     sacco_id = Column(String, ForeignKey("saccos.id"), nullable=True)
@@ -77,9 +84,50 @@ class User(Base):
     reset_token = Column(String, nullable=True, index=True)
     reset_token_expires_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Phone-based reset (OTP), parallel to the token above but a short
+    # numeric code instead of a URL token — same single-use/time-boxed
+    # lifecycle, cleared after a successful reset or once expired.
+    phone_otp_code = Column(String, nullable=True)
+    phone_otp_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Minor/student self-registration (the public login page's "Register as
+    # a Student / Minor" path). A minor's account is created immediately
+    # but cannot sign in at all until their guardian approves — the
+    # approval gate is checked in login(), not just hidden in the UI, so
+    # there's no way to bypass it by hitting the API directly. Guardian
+    # fields are only ever populated when is_minor is true; left null for
+    # every adult/citizen/staff/crew account, which is the overwhelming
+    # majority of rows.
+    is_minor = Column(Boolean, default=False)
+    guardian_name = Column(String, nullable=True)
+    guardian_phone = Column(String, nullable=True)
+    guardian_relationship = Column(String, nullable=True)  # e.g. Parent, Guardian, Sibling
+    guardian_id_number = Column(String, nullable=True)  # guardian's national ID, for the consent record
+    guardian_approved = Column(Boolean, default=False)
+    guardian_approved_at = Column(DateTime(timezone=True), nullable=True)
+    # Single-use link token texted to the guardian, same lifecycle pattern
+    # as reset_token above (set on registration, cleared once consumed).
+    guardian_approval_token = Column(String, nullable=True, index=True)
+    guardian_approval_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Soft-delete for "remove this user" (admin/operator side, §24 roadmap)
+    # — a hard DELETE would orphan every FK referencing this user (bookings,
+    # fines, audit logs, crew assignments...); deactivating instead blocks
+    # login (checked in both login() and get_current_user, so an
+    # already-issued token stops working immediately too) while keeping
+    # every historical record intact.
+    is_active = Column(Boolean, default=True)
+
+    # Passenger's preferred operator (roadmap: "passenger side they can
+    # pick a favorite sacco/operator they prefer") — self-service only, set
+    # via PATCH /api/users/me/favorite-sacco, never by an admin/operator
+    # editing someone else's account.
+    favorite_sacco_id = Column(String, ForeignKey("saccos.id"), nullable=True)
+
     crew_assignments = relationship("CrewAssignment", back_populates="user")
 
-    sacco = relationship("Sacco", back_populates="users")
+    sacco = relationship("Sacco", back_populates="users", foreign_keys=[sacco_id])
+    favorite_sacco = relationship("Sacco", foreign_keys=[favorite_sacco_id])
     assigned_zone = relationship("Zone")
 
 class Route(Base):
@@ -232,6 +280,39 @@ class CrewAssignment(Base):
 
     user = relationship("User", back_populates="crew_assignments")
     matatu = relationship("Matatu", back_populates="crew_assignments")
+
+
+class Trip(Base):
+    """One crew-declared trip: a vehicle committing to a direction (origin →
+    destination stage) for a stretch of time. This is the primitive several
+    roadmap features share — "Activate Trip" (crew declares direction so
+    they only pick passengers headed the right way), the terminal queue
+    system (QUEUED trips at a stage, oldest-first), and passenger distance/
+    ETA (an IN_PROGRESS trip is the thing a passenger is tracking).
+
+    QUEUED means the vehicle is waiting at origin_stage_id for a full load
+    before departing — the crew's own "n vehicles before you" position is
+    computed from other QUEUED trips at the same stage+route, ordered by
+    started_at (FIFO), not from anything more elaborate.
+    """
+    __tablename__ = "trips"
+
+    id = Column(String, primary_key=True, index=True)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    origin_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    destination_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    started_by = Column(String, ForeignKey("users.id"), nullable=False)
+    status = Column(String, default="QUEUED")  # QUEUED, IN_PROGRESS, COMPLETED, CANCELLED
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    departed_at = Column(DateTime(timezone=True), nullable=True)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+
+    matatu = relationship("Matatu")
+    route = relationship("Route")
+    origin_stage = relationship("Stage", foreign_keys=[origin_stage_id])
+    destination_stage = relationship("Stage", foreign_keys=[destination_stage_id])
+    started_by_user = relationship("User")
 
 
 class VehiclePosition(Base):
@@ -410,6 +491,26 @@ class PassengerReport(Base):
     photo_path = Column(String, nullable=True)  # optional evidence photo, /uploads path
     status = Column(String, default="PENDING")  # PENDING, REVIEWED, ESCALATED, DISMISSED
     created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class ConditionReport(Base):
+    """Crowdsourced road-condition signal ("it's raining", "jam on Waiyaki
+    Way") — deliberately separate from PassengerReport, which is a
+    permanent complaint record reviewed by staff. This is ephemeral:
+    read-side queries (routes/public_updates.py) only look at the last ~90
+    minutes, so nothing needs to be expired or cleaned up here, and no
+    review workflow applies. No auth required to submit — the whole point
+    is zero-friction "tell the system what you're seeing right now".
+    """
+    __tablename__ = "condition_reports"
+
+    id = Column(String, primary_key=True, index=True)
+    category = Column(String, nullable=False)  # RAIN, TRAFFIC_JAM, ACCIDENT, ROAD_BLOCKED, POLICE_CHECK, OTHER
+    location_label = Column(String, nullable=False)
+    message = Column(String, nullable=True)
+    reporter_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

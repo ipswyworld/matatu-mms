@@ -1,17 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Ticket, MapPin, Bus, Armchair, XCircle, MessageSquareWarning, Send } from "lucide-react";
+import { Ticket, MapPin, Bus, Armchair, XCircle, MessageSquareWarning, Send, Navigation, LocateFixed, Star } from "lucide-react";
 import GisMap, { NAIROBI_STAGES } from "@/components/GisMap";
+import DestinationGuidance from "@/components/DestinationGuidance";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import EmptyState from "@/components/EmptyState";
 import PageBanner from "@/components/PageBanner";
-import { createBookingAction, getTakenSeatsAction, submitReportAction, updateBookingStatusAction } from "@/lib/actions";
-import { Booking, Matatu, Route, Stage } from "@/lib/types";
+import { createBookingAction, getTakenSeatsAction, submitReportAction, updateBookingStatusAction, setFavoriteSaccoAction } from "@/lib/actions";
+import { Booking, Matatu, Route, Sacco, Stage } from "@/lib/types";
+import { useLiveVehicles } from "@/lib/useLiveVehicles";
+import { usePassengerLocation, haversineMeters, formatDistance, formatEta } from "@/lib/geo";
 
 interface PassengerBookingClientProps {
   routes: Route[];
   matatus: Matatu[];
+  saccos: Sacco[];
+  favoriteSaccoId: string | null;
 }
 
 const CAPACITY_LABELS: Record<number, string> = {
@@ -23,7 +28,7 @@ const CAPACITY_LABELS: Record<number, string> = {
   61: "61-Seater City Bus",
 };
 
-export default function PassengerBookingClient({ routes, matatus }: PassengerBookingClientProps) {
+export default function PassengerBookingClient({ routes, matatus, saccos, favoriteSaccoId }: PassengerBookingClientProps) {
   const [activeTab, setActiveTab] = useState<"booking" | "feedback">("booking");
   const [selectedStage, setSelectedStage] = useState<Stage>(NAIROBI_STAGES[0]);
   const [selectedRouteId, setSelectedRouteId] = useState<string>("all");
@@ -47,10 +52,37 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
+  const saccoById = useMemo(() => new Map(saccos.map((s) => [s.id, s])), [saccos]);
 
-  const filteredMatatus = matatus.filter(
-    (m) => selectedRouteId === "all" || m.routeId === selectedRouteId
-  );
+  const [favSaccoId, setFavSaccoId] = useState(favoriteSaccoId);
+  const [, startFavTransition] = useTransition();
+
+  const toggleFavoriteSacco = (saccoId: string) => {
+    const next = favSaccoId === saccoId ? null : saccoId;
+    setFavSaccoId(next);
+    startFavTransition(async () => {
+      await setFavoriteSaccoAction(next);
+    });
+  };
+
+  const liveVehicles = useLiveVehicles();
+  const { location: myLocation, status: geoStatus, request: requestLocation } = usePassengerLocation();
+
+  const distanceTo = (matatuId: string): { meters: number; etaLabel: string; speed: number } | null => {
+    const live = liveVehicles[matatuId];
+    if (!live || !myLocation) return null;
+    const meters = haversineMeters(myLocation.lat, myLocation.lng, live.lat, live.lng);
+    return { meters, etaLabel: formatEta(meters, live.speed), speed: live.speed };
+  };
+
+  const filteredMatatus = matatus
+    .filter((m) => selectedRouteId === "all" || m.routeId === selectedRouteId)
+    .slice()
+    .sort((a, b) => {
+      const aFav = a.saccoId === favSaccoId ? 0 : 1;
+      const bFav = b.saccoId === favSaccoId ? 0 : 1;
+      return aFav - bFav;
+    });
 
   // Fetch real seat occupancy whenever the selected vehicle changes
   useEffect(() => {
@@ -178,15 +210,40 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
 
       {activeTab === "booking" ? (
         <>
+          <DestinationGuidance />
+
           <div className="flex flex-wrap items-center justify-between gap-3 px-1">
             <div className="flex items-center gap-2 text-sm">
               <span className="h-2 w-2 rounded-full bg-county-green" />
               <span className="text-black/60">Boarding at</span>
               <span className="font-bold text-county-black">{selectedStage.name}</span>
             </div>
-            <span className="badge bg-county-green/10 text-county-green font-bold">
-              {filteredMatatus.length} active {filteredMatatus.length === 1 ? "vehicle" : "vehicles"} on this corridor
-            </span>
+            <div className="flex items-center gap-2">
+              {geoStatus === "granted" ? (
+                <span className="badge bg-county-blue/10 text-county-blue font-bold flex items-center gap-1">
+                  <LocateFixed size={11} strokeWidth={2.5} />
+                  Showing live distance
+                </span>
+              ) : (
+                <button
+                  onClick={requestLocation}
+                  disabled={geoStatus === "locating" || geoStatus === "unsupported"}
+                  className="badge bg-black/5 text-county-black font-bold flex items-center gap-1 hover:bg-black/10 transition-colors disabled:opacity-50"
+                >
+                  <Navigation size={11} strokeWidth={2.5} />
+                  {geoStatus === "locating"
+                    ? "Locating…"
+                    : geoStatus === "denied"
+                    ? "Location blocked"
+                    : geoStatus === "unsupported"
+                    ? "Location unavailable"
+                    : "See distance to matatus"}
+                </button>
+              )}
+              <span className="badge bg-county-green/10 text-county-green font-bold">
+                {filteredMatatus.length} active {filteredMatatus.length === 1 ? "vehicle" : "vehicles"} on this corridor
+              </span>
+            </div>
           </div>
 
           <div className="grid lg:grid-cols-3 gap-6">
@@ -243,6 +300,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                     {filteredMatatus.map((m) => {
                       const route = routeById.get(m.routeId);
                       const isSelected = selectedMatatu?.id === m.id;
+                      const distance = distanceTo(m.id);
                       return (
                         <div
                           key={m.id}
@@ -276,12 +334,35 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                             </span>
                           </div>
 
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavoriteSacco(m.saccoId);
+                            }}
+                            className={`flex items-center gap-1 mt-2 text-[11px] font-bold ${
+                              m.saccoId === favSaccoId ? "text-county-yellow" : "text-black/35 hover:text-black/60"
+                            }`}
+                          >
+                            <Star size={12} strokeWidth={2} fill={m.saccoId === favSaccoId ? "currentColor" : "none"} />
+                            {saccoById.get(m.saccoId)?.name || "Operator"}
+                            {m.saccoId === favSaccoId && <span className="text-county-yellow">· Favorite</span>}
+                          </button>
+
                           <div className="flex justify-between items-center text-xs mt-3 pt-2 border-t border-black/5">
                             <span className="font-semibold text-black/70">
                               {CAPACITY_LABELS[m.capacity] || `${m.capacity}-Seater Matatu`}
                             </span>
                             <span className="font-bold text-county-green">{m.terminalSegment}</span>
                           </div>
+                          {distance && (
+                            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-black/5 text-xs">
+                              <Navigation size={11} strokeWidth={2.5} className="text-county-blue shrink-0" />
+                              <span className="font-extrabold text-county-blue">{formatDistance(distance.meters)} away</span>
+                              <span className="text-black/40">·</span>
+                              <span className="font-semibold text-black/60">{distance.etaLabel}</span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -303,6 +384,31 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                       style={{ width: `${selectedMatatu.capacity ? (freeSeatsCount / selectedMatatu.capacity) * 100 : 0}%` }}
                     />
                   </div>
+                  {(() => {
+                    const distance = distanceTo(selectedMatatu.id);
+                    if (distance) {
+                      return (
+                        <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-white/10">
+                          <Navigation size={13} strokeWidth={2.5} className="text-county-blue shrink-0" />
+                          <span className="text-sm font-extrabold">{formatDistance(distance.meters)} away</span>
+                          <span className="text-white/40">·</span>
+                          <span className="text-xs font-semibold text-white/70">{distance.etaLabel}</span>
+                        </div>
+                      );
+                    }
+                    if (!liveVehicles[selectedMatatu.id]) {
+                      return <p className="text-[11px] text-white/40 pt-2 mt-1 border-t border-white/10">Not broadcasting GPS right now.</p>;
+                    }
+                    return (
+                      <button
+                        onClick={requestLocation}
+                        className="text-[11px] font-bold text-county-blue pt-2 mt-1 border-t border-white/10 flex items-center gap-1 hover:text-county-blue/80"
+                      >
+                        <Navigation size={11} strokeWidth={2.5} />
+                        Enable location to see distance
+                      </button>
+                    );
+                  })()}
                 </div>
               )}
 

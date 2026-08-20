@@ -12,9 +12,12 @@ import { useLanguage } from "./LanguageProvider";
  */
 export default function PublicFooter({
   dark = false,
+  transparent = false,
   topSlot,
 }: {
   dark?: boolean;
+  /** No fill, so a background layered behind it (e.g. AuthSkyline) shows through instead of being clipped by an opaque footer. */
+  transparent?: boolean;
   /** Replaces the language toggle in the top slot, e.g. when a page already has one elsewhere. */
   topSlot?: React.ReactNode;
 }) {
@@ -25,7 +28,7 @@ export default function PublicFooter({
   const dividerClass = dark ? "text-white/30" : "text-county-ink/25";
 
   return (
-    <footer className={`px-5 py-8 ${dark ? "bg-county-black text-white" : "bg-county-cream"}`}>
+    <footer className={`relative px-5 py-8 ${dark ? "bg-county-black text-white" : transparent ? "bg-transparent" : "bg-county-cream"}`}>
       <div className="max-w-5xl mx-auto flex flex-col items-center gap-4 text-center">
         {topSlot ?? <LanguageToggle dark={dark} />}
 

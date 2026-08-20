@@ -21,6 +21,19 @@ DASHBOARD_RELEVANT_EVENTS = {
     "VEHICLE_STATUS_CHANGED",
     "SACCO_LICENSE_RENEWAL_SUBMITTED",
     "SACCO_LICENSE_RENEWAL_DECIDED",
+    # Enforcement case lifecycle — without these, a newly filed case (or a
+    # payment/release/waiver on an existing one) never nudges an open
+    # admin/enforcement dashboard; it only shows up on the next manual
+    # reload. Dispatched from routes/enforcement_cases.py.
+    "ENFORCEMENT_CASE_FILED",
+    "ENFORCEMENT_FINE_PAID",
+    "ENFORCEMENT_CASE_RELEASED",
+    "ENFORCEMENT_CASE_DISPUTED",
+    "ENFORCEMENT_CASE_WAIVED",
+    # Crew "Send Rapid Incident Alert" (routes/activity.py) — without this,
+    # an incident a crew member reports never nudges an open admin
+    # dashboard, only the Sacco operator's own notification toast.
+    "CREW_INCIDENT_ALERT",
 }
 
 DASHBOARD_CHANNEL = "dashboard:broadcast"

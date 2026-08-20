@@ -45,12 +45,18 @@ export async function verifySessionCookie(raw: string): Promise<SessionData | nu
   }
 }
 
-export async function setSessionCookie(data: SessionData) {
+const DEFAULT_MAX_AGE = 60 * 60 * 8; // 8 hours
+// Mirrors backend/app/config.py's REMEMBER_ME_EXPIRE_DAYS — kept as a
+// separate constant rather than read from the login response, since it's a
+// static config value, not something the user's request needs to round-trip.
+const REMEMBER_ME_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+export async function setSessionCookie(data: SessionData, rememberMe = false) {
   cookies().set(COOKIE_NAME, await createSessionCookieValue(data), {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 8, // 8 hours
+    maxAge: rememberMe ? REMEMBER_ME_MAX_AGE : DEFAULT_MAX_AGE,
   });
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
 import { useFormState, useFormStatus } from "react-dom";
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Send, Loader2 } from "lucide-react";
 import { forgotPasswordAction } from "@/lib/actions";
-import NairobiCrest from "@/components/NairobiCrest";
 import PublicFooter from "@/components/PublicFooter";
 
 function SubmitButton() {
@@ -25,14 +25,14 @@ export default function ForgotPasswordPage() {
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-6">
           <div className="text-center space-y-2">
-            <NairobiCrest size={48} className="mx-auto drop-shadow" />
+            <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={48} height={48} className="mx-auto object-contain drop-shadow" priority />
             <h1 className="text-2xl font-black tracking-tight text-county-ink">Reset your password</h1>
             <p className="text-sm text-county-ink/55">
               Enter the email on your account and we'll send a reset link.
             </p>
           </div>
 
-          <div className="card p-6 space-y-4">
+          <div className="card p-6 space-y-4 auth-card-enter">
             {state?.message ? (
               <div className="text-sm text-county-green bg-county-green/10 border border-county-green/30 rounded-lg px-3 py-2.5 font-semibold text-center">
                 {state.message}

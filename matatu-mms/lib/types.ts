@@ -25,6 +25,7 @@ export interface User {
   enforcementDuty?: "ARRESTING" | "RELEASING" | null;
   assignedZoneId?: string | null;
   commanderTitle?: string | null;
+  isActive?: boolean;
 }
 
 export interface Zone {

@@ -51,12 +51,13 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
+  const rememberMe = formData.get("rememberMe") === "on";
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, remember_me: rememberMe }),
       cache: "no-store",
     });
 
@@ -86,13 +87,16 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
 
     const data = await res.json();
     const userRole = data.user.role as Role;
-    await setSessionCookie({
-      userId: data.user.id,
-      name: data.user.name,
-      role: userRole,
-      saccoId: data.user.saccoId,
-      token: data.accessToken,
-    });
+    await setSessionCookie(
+      {
+        userId: data.user.id,
+        name: data.user.name,
+        role: userRole,
+        saccoId: data.user.saccoId,
+        token: data.accessToken,
+      },
+      rememberMe
+    );
 
     if (userRole === "PASSENGER") {
       redirect("/passenger-portal");
@@ -962,12 +966,22 @@ export async function addUserAction(_prevState: { error?: string } | undefined, 
 
 export async function updateUserAction(
   userId: string,
-  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string }
+  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean }
 ): Promise<{ error?: string }> {
   try {
     await apiWrite(`/api/users/${userId}`, "PATCH", input);
   } catch (err: any) {
     return { error: err.message || "Could not update user." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
+export async function setUserActiveAction(userId: string, isActive: boolean): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/users/${userId}`, "PATCH", { isActive });
+  } catch (err: any) {
+    return { error: err.message || "Could not update this account." };
   }
   revalidatePath("/users");
   return {};

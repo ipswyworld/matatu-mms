@@ -41,14 +41,19 @@ export default function LoginForm({ tagline }: LoginFormProps) {
           <input className="input" id="email" name="email" type="email" placeholder="you@nairobi.go.ke" required />
         </div>
         <div>
-          <div className="flex items-center justify-between">
-            <label className="label" htmlFor="password">{t("login.password")}</label>
-            <a href="/forgot-password" className="text-[11px] font-bold text-county-green hover:underline">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <label className="label !mb-0" htmlFor="password">{t("login.password")}</label>
+            <a href="/forgot-password" className="text-[11px] font-bold text-county-green hover:underline shrink-0">
               {t("login.forgotPassword")}
             </a>
           </div>
-          <input className="input" id="password" name="password" type="password" placeholder="••••••••" required />
+          <input className="input mt-1.5" id="password" name="password" type="password" placeholder="••••••••" required />
         </div>
+
+        <label className="flex items-center gap-2 text-xs font-semibold text-county-ink/70 cursor-pointer select-none">
+          <input type="checkbox" name="rememberMe" className="h-4 w-4 rounded border-black/20 text-county-green focus:ring-county-green/40" />
+          {t("login.rememberMe")}
+        </label>
 
         {state?.error && (
           <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold">

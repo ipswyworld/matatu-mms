@@ -51,12 +51,13 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
+  const rememberMe = formData.get("rememberMe") === "on";
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, remember_me: rememberMe }),
       cache: "no-store",
     });
 
@@ -86,13 +87,16 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
 
     const data = await res.json();
     const userRole = data.user.role as Role;
-    await setSessionCookie({
-      userId: data.user.id,
-      name: data.user.name,
-      role: userRole,
-      saccoId: data.user.saccoId,
-      token: data.accessToken,
-    });
+    await setSessionCookie(
+      {
+        userId: data.user.id,
+        name: data.user.name,
+        role: userRole,
+        saccoId: data.user.saccoId,
+        token: data.accessToken,
+      },
+      rememberMe
+    );
 
     if (userRole === "PASSENGER") {
       redirect("/passenger-portal");
@@ -121,13 +125,26 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
   }
 }
 
-export async function registerAction(_prevState: { error?: string } | undefined, formData: FormData) {
+export async function registerAction(_prevState: { error?: string; pendingGuardianApproval?: string } | undefined, formData: FormData) {
   const name = String(formData.get("name") || "").trim();
-  const email = String(formData.get("email") || "").trim();
+  const email = String(formData.get("email") || "").trim() || undefined;
+  const phone = String(formData.get("phone") || "").trim() || undefined;
   const password = String(formData.get("password") || "");
   const role = String(formData.get("role") || "PASSENGER") as Role;
   const saccoId = String(formData.get("saccoId") || "").trim() || undefined;
   const signature = String(formData.get("signature") || "").trim();
+  const isMinor = formData.get("isMinor") === "true";
+  const guardianName = String(formData.get("guardianName") || "").trim() || undefined;
+  const guardianPhone = String(formData.get("guardianPhone") || "").trim() || undefined;
+  const guardianRelationship = String(formData.get("guardianRelationship") || "").trim() || undefined;
+  const guardianIdNumber = String(formData.get("guardianIdNumber") || "").trim() || undefined;
+
+  if (role === "PASSENGER" && !phone) {
+    return { error: "A phone number is required to register." };
+  }
+  if (isMinor && !(guardianName && guardianPhone && guardianRelationship && guardianIdNumber)) {
+    return { error: "Guardian name, phone, relationship, and ID number are all required for a student/minor account." };
+  }
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
@@ -136,11 +153,17 @@ export async function registerAction(_prevState: { error?: string } | undefined,
       body: JSON.stringify({
         name,
         email,
+        phone,
         password,
         role,
         saccoId,
         termsAccepted: true,
         termsSignature: signature,
+        isMinor,
+        guardianName,
+        guardianPhone,
+        guardianRelationship,
+        guardianIdNumber,
       }),
       cache: "no-store",
     });
@@ -153,6 +176,15 @@ export async function registerAction(_prevState: { error?: string } | undefined,
     }
 
     const data = await res.json();
+
+    if (data.pendingGuardianApproval) {
+      // A minor's account isn't logged in on registration — no token, no
+      // session cookie to set (see register()'s backend comment). Surface
+      // the "check your guardian's SMS" message on the same form instead
+      // of redirecting anywhere, since there's nowhere to redirect to yet.
+      return { pendingGuardianApproval: data.message as string };
+    }
+
     const userRole = data.user.role as Role;
     await setSessionCookie({
       userId: data.user.id,
@@ -440,14 +472,29 @@ export async function updateOfficerAssignmentAction(
 
 const PUBLIC_BACKEND_URL = BACKEND_URL;
 
-export async function publicLookupCaseAction(caseReference: string): Promise<{ error?: string; caseData?: any }> {
+// Accepts either a case reference (MMS-...) or a phone number in the same
+// field — the point of this being one box instead of two is that the
+// person looking themselves up doesn't need to know or care which kind of
+// value they're holding. "Looks like a phone" is deliberately generous
+// (digits/+/spaces/dashes, at least 7 digits) rather than requiring a
+// specific format, since it only decides which backend route to call —
+// picking wrong just produces the normal "not found" error, not a crash.
+function looksLikePhone(value: string): boolean {
+  const digitCount = (value.match(/\d/g) || []).length;
+  return digitCount >= 7 && /^[+\d\s-]+$/.test(value);
+}
+
+export async function publicLookupCaseAction(query: string): Promise<{ error?: string; caseData?: any }> {
+  const trimmed = query.trim();
+  const isPhone = !trimmed.toUpperCase().startsWith("MMS") && looksLikePhone(trimmed);
+  const url = isPhone
+    ? `${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/lookup-by-phone?phone=${encodeURIComponent(trimmed)}`
+    : `${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(trimmed)}`;
   try {
-    const res = await fetch(`${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(caseReference.trim())}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
       const errText = await res.text();
-      let msg = "Case not found.";
+      let msg = isPhone ? "No cases found for that phone number." : "Case not found.";
       try { msg = JSON.parse(errText).detail || msg; } catch {}
       return { error: msg };
     }
@@ -862,6 +909,87 @@ export async function updateBookingStatusAction(
   }
 }
 
+export async function getRouteStagesAction(routeId: string, direction: string = "OUTBOUND"): Promise<import("./types").RouteStagePoint[]> {
+  try {
+    return await apiWrite(`/api/routes/${encodeURIComponent(routeId)}/stages?direction=${direction}`, "GET");
+  } catch {
+    return [];
+  }
+}
+
+export async function getActiveTripAction(matatuId: string): Promise<import("./types").Trip | null> {
+  try {
+    return await apiWrite(`/api/trips/active?matatu_id=${encodeURIComponent(matatuId)}`, "GET");
+  } catch {
+    return null;
+  }
+}
+
+export async function getQueueStatusAction(matatuId: string): Promise<import("./types").QueueStatus | null> {
+  try {
+    return await apiWrite(`/api/trips/queue?matatu_id=${encodeURIComponent(matatuId)}`, "GET");
+  } catch {
+    return null;
+  }
+}
+
+export async function activateTripAction(input: {
+  matatuId: string;
+  originStageId: string;
+  destinationStageId: string;
+}): Promise<{ trip?: import("./types").Trip; error?: string }> {
+  try {
+    const trip = await apiWrite<import("./types").Trip>("/api/trips/activate", "POST", {
+      matatuId: input.matatuId,
+      originStageId: input.originStageId,
+      destinationStageId: input.destinationStageId,
+    });
+    return { trip };
+  } catch (err: any) {
+    return { error: err.message || "Could not activate trip." };
+  }
+}
+
+export async function departTripAction(tripId: string): Promise<{ trip?: import("./types").Trip; error?: string }> {
+  try {
+    const trip = await apiWrite<import("./types").Trip>(`/api/trips/${tripId}/depart`, "POST");
+    return { trip };
+  } catch (err: any) {
+    return { error: err.message || "Could not mark trip as departed." };
+  }
+}
+
+export async function completeTripAction(tripId: string): Promise<{ trip?: import("./types").Trip; error?: string }> {
+  try {
+    const trip = await apiWrite<import("./types").Trip>(`/api/trips/${tripId}/complete`, "POST");
+    return { trip };
+  } catch (err: any) {
+    return { error: err.message || "Could not complete trip." };
+  }
+}
+
+export async function setFavoriteSaccoAction(saccoId: string | null): Promise<{ error?: string }> {
+  try {
+    await apiWrite("/api/users/me/favorite-sacco", "PATCH", { saccoId });
+  } catch (err: any) {
+    return { error: err.message || "Could not save your favorite operator." };
+  }
+  revalidatePath("/passenger-portal");
+  return {};
+}
+
+export async function alertCrewAction(input: { message: string; matatuId?: string }): Promise<{ notified?: number; error?: string }> {
+  try {
+    const result = await apiWrite<{ notified: number }>("/api/crew/alert", "POST", {
+      message: input.message,
+      matatuId: input.matatuId || undefined,
+    });
+    return { notified: result.notified };
+  } catch (err: any) {
+    return { error: err.message || "Could not send the alert." };
+  }
+}
+
 export async function logCrewIncidentAction(input: {
   matatuId: string;
   location: string;
@@ -1023,6 +1151,65 @@ export async function resetPasswordAction(
   }
 }
 
+// --- Phone-based password reset (OTP), the public app's forgot-password
+// flow: request a code by phone, then submit that code + a new password.
+// Two separate actions/steps rather than one, since the UI needs to know
+// when to swap the "enter phone" form for the "enter code" form.
+export async function requestPhoneOtpAction(
+  _prevState: { step?: "otp"; phone?: string; error?: string } | undefined,
+  formData: FormData
+): Promise<{ step?: "otp"; phone?: string; error?: string }> {
+  const phone = String(formData.get("phone") || "").trim();
+  if (!phone) return { error: "Enter your phone number." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password-phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { error: data.detail || "Could not process your request. Please try again." };
+    }
+    return { step: "otp", phone };
+  } catch {
+    return { error: "Could not process your request. Please try again." };
+  }
+}
+
+export async function resetPasswordWithOtpAction(
+  _prevState: { message?: string; error?: string } | undefined,
+  formData: FormData
+): Promise<{ message?: string; error?: string }> {
+  const phone = String(formData.get("phone") || "").trim();
+  const otp = String(formData.get("otp") || "").trim();
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (!phone) return { error: "Missing phone number. Please start over." };
+  if (!otp) return { error: "Enter the code we sent you." };
+  if (newPassword.length < 6) return { error: "Password must be at least 6 characters." };
+  if (newPassword !== confirmPassword) return { error: "Passwords do not match." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/reset-password-phone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, otp, newPassword }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data.detail || "Could not reset your password." };
+    }
+    return { message: data.message || "Password updated. You can now sign in." };
+  } catch {
+    return { error: "Could not process your request. Please try again." };
+  }
+}
+
 type CrewIssueState = {
   error?: string;
   success?: { crewName: string; crewEmail: string; generatedPassword: string; matatuRegNumber: string };
@@ -1071,6 +1258,16 @@ export async function revokeCrewAssignmentAction(assignmentId: string): Promise<
     await apiWrite(`/api/crew/${assignmentId}/revoke`, "PATCH");
   } catch (err: any) {
     return { error: err.message || "Could not revoke this crew assignment." };
+  }
+  revalidatePath("/sacco-portal");
+  return {};
+}
+
+export async function removeCrewMemberAction(userId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/crew/user/${userId}/deactivate`, "PATCH");
+  } catch (err: any) {
+    return { error: err.message || "Could not remove this crew member." };
   }
   revalidatePath("/sacco-portal");
   return {};

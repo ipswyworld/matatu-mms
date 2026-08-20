@@ -143,6 +143,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "manage_crew",
         "manage_fare_stages",
         "view_reports",
+        "view_enforcement_cases",
     ],
     "VIEWER": [
         "view_dashboard",
@@ -171,6 +172,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "update_booking_status",
         "log_activity",
         "view_reports",
+        "manage_trips",
     ],
 }
 

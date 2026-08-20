@@ -2,10 +2,10 @@
 
 import { useFormState } from "react-dom";
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Building2, ArrowRight } from "lucide-react";
 import { operatorOnboardingRegisterAction } from "@/lib/actions";
-import NairobiCrest from "@/components/NairobiCrest";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import PublicFooter from "@/components/PublicFooter";
 
@@ -35,7 +35,7 @@ export default function OperatorOnboardingPage() {
 
       <div className="w-full max-w-lg space-y-6 relative z-10">
         <div className="text-center space-y-2">
-          <NairobiCrest size={52} className="mx-auto drop-shadow-lg" />
+          <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={52} height={52} className="mx-auto object-contain drop-shadow-lg" priority />
           <h1 className="text-xl font-extrabold tracking-tight text-white">Nairobi City County</h1>
           <p className="text-xs font-semibold text-county-yellow uppercase tracking-widest">
             Operator Onboarding & Verification

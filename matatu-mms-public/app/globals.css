@@ -77,3 +77,22 @@ table td {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(13, 30, 20, 0.2);
 }
+
+/* Auth-card entrance: a single motivated transition (state transition -
+   "you've arrived") on login/register/reset/etc. Off entirely for reduced
+   motion instead of collapsing to a jump-cut. */
+@media (prefers-reduced-motion: no-preference) {
+  .auth-card-enter {
+    animation: auth-card-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+@keyframes auth-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

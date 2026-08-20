@@ -25,6 +25,8 @@ export interface User {
   enforcementDuty?: "ARRESTING" | "RELEASING" | null;
   assignedZoneId?: string | null;
   commanderTitle?: string | null;
+  isActive?: boolean;
+  favoriteSaccoId?: string | null;
 }
 
 export interface Zone {
@@ -161,6 +163,38 @@ export interface Route {
   description: string;
   fareKes: number;
   vehicleCount?: number;
+}
+
+export interface RouteStagePoint {
+  stageId: string;
+  name: string;
+  sequence: number;
+}
+
+export type TripStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export interface Trip {
+  id: string;
+  matatuId: string;
+  regNumber: string;
+  routeId: string;
+  routeName: string;
+  originStageId: string;
+  originStageName: string;
+  destinationStageId: string;
+  destinationStageName: string;
+  status: TripStatus;
+  startedAt: string;
+  departedAt?: string | null;
+  endedAt?: string | null;
+}
+
+export interface QueueStatus {
+  myTripId?: string | null;
+  position?: number | null;
+  vehiclesAhead?: number | null;
+  queuedAtStage: number;
+  activeOnRoute: number;
 }
 
 export type CrewRole = "DRIVER" | "CONDUCTOR";

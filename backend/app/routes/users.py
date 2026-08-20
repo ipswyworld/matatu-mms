@@ -7,13 +7,31 @@ from sqlalchemy.future import select
 
 from app.database import get_db
 from app.models import User, Sacco
-from app.schemas import UserResponse, UserCreate, UserUpdate
+from app.schemas import UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
 from app.rbac import ADMIN_TIER_ROLES, can
 from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/users", tags=["Users Management"])
+
+
+@router.patch("/me/favorite-sacco", response_model=UserResponse)
+async def set_favorite_sacco(
+    payload: FavoriteSaccoRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Self-service only — a passenger's own preferred operator, not
+    something an admin/operator sets on someone else's account."""
+    if payload.sacco_id:
+        sacco_result = await db.execute(select(Sacco).where(Sacco.id == payload.sacco_id))
+        if not sacco_result.scalars().first():
+            raise HTTPException(status_code=404, detail="Operator not found")
+    current_user.favorite_sacco_id = payload.sacco_id
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
 
 @router.get("", response_model=List[UserResponse])
 async def get_users(
@@ -143,6 +161,19 @@ async def update_user(
         user.reset_token = None
         user.reset_token_expires_at = None
         new_values["passwordReset"] = True
+
+    if payload.is_active is not None:
+        if payload.is_active is False:
+            if user.id == current_user.id:
+                raise HTTPException(status_code=400, detail="You cannot deactivate your own account.")
+            if user.role == "SUPERADMIN":
+                other_active_superadmins = await db.execute(
+                    select(User).where(User.role == "SUPERADMIN", User.id != user.id, User.is_active != False)
+                )
+                if not other_active_superadmins.scalars().first():
+                    raise HTTPException(status_code=400, detail="Cannot deactivate the last active Super Admin")
+        user.is_active = payload.is_active
+        new_values["isActive"] = user.is_active
 
     stage_audit_log(
         db, resource_type="user", resource_id=user_id, action="UPDATE",

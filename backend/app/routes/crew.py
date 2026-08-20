@@ -10,10 +10,11 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import CrewAssignment, Matatu, User
-from app.schemas import CrewIssueRequest, CrewIssueResponse, CrewAssignmentResponse
+from app.schemas import CrewIssueRequest, CrewIssueResponse, CrewAssignmentResponse, CrewAlertRequest
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
 from app.abac import sacco_scope_query, enforce_own_sacco
+from app.routes.notifications import notify_user
 
 router = APIRouter(prefix="/api/crew", tags=["Crew"])
 
@@ -143,3 +144,83 @@ async def revoke_crew_assignment(
     await db.commit()
     await db.refresh(assignment, attribute_names=["user", "matatu"])
     return _to_response(assignment)
+
+
+@router.patch("/user/{user_id}/deactivate", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_crew_member(
+    user_id: str,
+    current_user: User = Depends(requires_permission("manage_crew")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fully removes a crew member — deactivates their login (blocks it
+    immediately, same as users.py's admin-side deactivate) and ends every
+    active vehicle assignment. Distinct from revoke_crew_assignment above,
+    which only unassigns one vehicle so the crew's account and other
+    assignments are untouched — this is for "this person no longer works
+    for us at all," not "moving them to a different vehicle."
+    """
+    result = await db.execute(select(User).where(User.id == user_id, User.role == "CREW"))
+    crew_user = result.scalars().first()
+    if not crew_user:
+        raise HTTPException(status_code=404, detail="Crew member not found")
+    enforce_own_sacco(current_user, crew_user.sacco_id, "You can only manage your own Sacco's crew.")
+
+    crew_user.is_active = False
+
+    assignments_result = await db.execute(
+        select(CrewAssignment).where(CrewAssignment.user_id == user_id, CrewAssignment.unassigned_at.is_(None))
+    )
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for assignment in assignments_result.scalars().all():
+        assignment.unassigned_at = now
+
+    stage_audit_log(
+        db, resource_type="user", resource_id=user_id, action="UPDATE",
+        user_id=current_user.id, old_values={"isActive": True}, new_values={"isActive": False},
+    )
+    await db.commit()
+
+
+@router.post("/alert", status_code=status.HTTP_200_OK)
+async def alert_crew(
+    payload: CrewAlertRequest,
+    current_user: User = Depends(requires_permission("manage_crew")),
+    db: AsyncSession = Depends(get_db),
+):
+    """The other direction of crew.tsx's "Send Rapid Incident Alert" — an
+    operator (or admin) pushing a message TO their crew, e.g. "route
+    diversion on Waiyaki Way" or "return to depot". Delivered the same way
+    every other live notification is (routes/notifications.py's
+    notify_user over the already-open NotificationBell WebSocket each
+    crew member's session holds) — no new delivery channel needed, crew
+    accounts already receive these, nobody was just sending them one."""
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Write a message to send.")
+
+    query = (
+        select(CrewAssignment)
+        .join(Matatu, CrewAssignment.matatu_id == Matatu.id)
+        .where(CrewAssignment.unassigned_at.is_(None))
+        .options(selectinload(CrewAssignment.user), selectinload(CrewAssignment.matatu))
+    )
+    query = sacco_scope_query(current_user, query, Matatu.sacco_id)
+    if payload.matatu_id:
+        query = query.where(CrewAssignment.matatu_id == payload.matatu_id)
+
+    result = await db.execute(query)
+    assignments = result.scalars().all()
+    if not assignments:
+        raise HTTPException(status_code=404, detail="No active crew found to alert.")
+
+    notified_user_ids = set()
+    for assignment in assignments:
+        if assignment.user_id in notified_user_ids:
+            continue
+        notified_user_ids.add(assignment.user_id)
+        await notify_user(
+            assignment.user_id, title="Alert from your operator",
+            message=message, level="warning",
+        )
+
+    return {"notified": len(notified_user_ids)}

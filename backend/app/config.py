@@ -45,6 +45,12 @@ if not SECRET_KEY:
     )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+# "Remember me" — a login opting in gets a token/cookie that lasts this long
+# instead of ACCESS_TOKEN_EXPIRE_MINUTES. Deliberately a separate, much
+# longer-lived grant rather than just raising the default expiry for
+# everyone, since most logins are on shared/staff devices where a long-lived
+# token is the wrong default.
+REMEMBER_ME_EXPIRE_DAYS = int(os.getenv("REMEMBER_ME_EXPIRE_DAYS", "30"))
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "mms_session")
 
 # Simulates webhook configuration
@@ -71,3 +77,22 @@ if not NAIROBIPAY_CALLBACK_SECRET:
         "deploying.",
         NAIROBIPAY_CALLBACK_SECRET,
     )
+
+# SMS (phone-based password reset OTP). No real provider is wired in yet —
+# same "not available yet" situation as NairobiPay's real API — so
+# app/sms.py falls back to logging the OTP server-side when these aren't
+# set, exactly like the email reset link does today. Set both to switch a
+# real deployment over to Africa's Talking (the standard Kenyan SMS
+# gateway); the send_sms() call site is the only place that needs to change
+# for a different provider.
+AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME")
+AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY")
+SMS_SENDER_ID = os.getenv("SMS_SENDER_ID")  # optional registered short code / sender name
+
+# The one place an outbound message needs an absolute, clickable URL rather
+# than a relative path — the reset-password links above are only ever
+# logged (no real provider configured), so a relative path was fine; the
+# guardian approval SMS is written to actually be sent once Africa's
+# Talking is configured, and a guardian tapping a link with no scheme opens
+# nothing. Defaults to the local public-app dev port.
+PUBLIC_FRONTEND_URL = os.getenv("PUBLIC_FRONTEND_URL", "http://localhost:3001")

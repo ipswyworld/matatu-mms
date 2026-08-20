@@ -102,6 +102,11 @@ async def get_current_user(
     user = result.scalars().first()
     if user is None:
         raise credentials_exception
+    # Deactivated after this token was issued — reject immediately rather
+    # than waiting for it to expire on its own (same reasoning as the
+    # session-revocation check above).
+    if user.is_active is False:
+        raise credentials_exception
     return user
 
 class PermissionChecker:

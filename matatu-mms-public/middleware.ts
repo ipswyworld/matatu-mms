@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAndExtractPayload } from "./lib/sessionSign";
+import { homeForRole } from "./lib/roles";
 
 const SESSION_COOKIE_NAME = "mms_session";
 
@@ -12,16 +13,7 @@ const SESSION_COOKIE_NAME = "mms_session";
 // County staff (admin, enforcement, director/chief officer, viewer) sign
 // in through a completely separate app/deployment and never reach this
 // middleware at all.
-const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password"];
-
-// Single source of truth for "where does this role land by default" — used
-// for sending an already-authenticated user away from the public landing
-// page and for the strict per-role portal confinement below.
-function homeForRole(role: string): string {
-  if (role === "PASSENGER") return "/passenger-portal";
-  if (role === "CREW") return "/crew-portal";
-  return "/sacco-portal";
-}
+const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve"];
 
 /**
  * Verifies the HMAC signature before trusting anything in the cookie. A

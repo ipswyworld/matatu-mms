@@ -25,7 +25,7 @@ export default async function UsersPage() {
       />
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 min-w-0">
-          <UsersTable users={users} saccos={saccos} viewerRole={session.role} />
+          <UsersTable users={users} saccos={saccos} viewerRole={session.role} viewerUserId={session.userId} />
         </div>
         <NewUserForm saccos={saccos} viewerRole={session.role} />
       </div>
