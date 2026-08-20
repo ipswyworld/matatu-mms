@@ -8,6 +8,7 @@ import { Building2, ArrowRight } from "lucide-react";
 import { operatorOnboardingRegisterAction } from "@/lib/actions";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import PublicFooter from "@/components/PublicFooter";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function OperatorOnboardingPage() {
   const [state, formAction] = useFormState(operatorOnboardingRegisterAction, undefined);
@@ -126,10 +127,10 @@ export default function OperatorOnboardingPage() {
 
             <div>
               <label className="text-xs font-semibold text-white/70 block mb-1">Set Operator Dashboard Password</label>
-              <input
-                type="password"
+              <PasswordInput
                 name="password"
                 required
+                dark
                 placeholder="Create a strong password"
                 className="w-full bg-black/40 border border-white/15 rounded-lg px-3.5 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-county-green"
               />

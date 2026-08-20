@@ -4,6 +4,7 @@ import { useState } from "react";
 import { updateUserAction } from "@/lib/actions";
 import { ROLE_LABELS, ADMIN_TIER_ROLES, can } from "@/lib/rbac";
 import { Role, Sacco, User } from "@/lib/types";
+import PasswordInput from "./PasswordInput";
 
 export default function EditUserModal({ user, saccos, viewerRole }: { user: User; saccos: Sacco[]; viewerRole: Role }) {
   const canAssignAdminTier = can(viewerRole, "manage_admins");
@@ -105,13 +106,11 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
 
               <div className="pt-2 border-t border-black/5">
                 <label className="label">Reset Password (leave blank to keep current)</label>
-                <input
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  type="password"
                   placeholder="New password"
                   minLength={6}
-                  className="input"
                 />
               </div>
             </div>

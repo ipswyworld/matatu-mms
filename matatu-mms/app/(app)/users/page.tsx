@@ -38,12 +38,23 @@ export default async function UsersPage() {
         <Info size={16} strokeWidth={2} className="text-county-ink/40 shrink-0 mt-0.5" />
         <div>
           <span className="font-bold text-county-ink">Sacco operators, crew, and passengers aren't listed here</span> — they're
-          Sacco/fleet/commuter accounts, not county staff. {operatorCount} operator{operatorCount !== 1 ? "s" : ""} are onboarded via the{" "}
-          <Link href="/saccos/verify" className="font-bold text-county-green hover:underline inline-flex items-center gap-1">
-            <Bus size={12} strokeWidth={2.5} />
-            Sacco verification hub
-          </Link>
-          , {crewCount} crew account{crewCount !== 1 ? "s" : ""} are issued by their own Sacco operator, and {passengerCount} passenger{passengerCount !== 1 ? "s" : ""} self-register from the public portal.
+          Sacco/fleet/commuter accounts, not county staff, and each is managed in a different place:
+          <ul className="mt-1.5 space-y-1 list-disc list-inside">
+            <li>
+              <strong className="text-county-ink">{operatorCount} operator{operatorCount !== 1 ? "s" : ""}</strong> — reviewed and approved at the{" "}
+              <Link href="/saccos/verify" className="font-bold text-county-green hover:underline inline-flex items-center gap-1">
+                <Bus size={12} strokeWidth={2.5} />
+                Sacco verification hub
+              </Link>
+              . Open any operator card there and expand <strong className="text-county-ink">"Crew (Drivers &amp; Conductors)"</strong> to see every crew account that operator has issued.
+            </li>
+            <li>
+              <strong className="text-county-ink">{crewCount} crew account{crewCount !== 1 ? "s" : ""}</strong> — issued and revoked directly by their own Sacco operator from the Operator Dashboard. County admin can view them (via the verification hub above) but doesn't create or edit them.
+            </li>
+            <li>
+              <strong className="text-county-ink">{passengerCount} passenger{passengerCount !== 1 ? "s" : ""}</strong> — self-register from the public commuter portal; there's no admin management screen for them by design.
+            </li>
+          </ul>
         </div>
       </div>
 

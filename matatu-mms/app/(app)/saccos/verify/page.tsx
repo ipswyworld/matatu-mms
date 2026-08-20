@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BadgeCheck } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getSaccos, getRoutes, getMatatus } from "@/lib/data";
+import { getSaccos, getRoutes, getMatatus, getCrewAssignments } from "@/lib/data";
 import SaccoVerificationCard from "@/components/SaccoVerificationCard";
 import PageBanner from "@/components/PageBanner";
 import LicenseRenewalPanel from "@/components/LicenseRenewalPanel";
@@ -12,16 +12,29 @@ export const metadata: Metadata = { title: "Operator Verification" };
 
 export default async function SaccoVerifyPage() {
   const session = readSession()!;
-  const [saccos, routes, matatus] = await Promise.all([
+  const [saccos, routes, matatus, crewAssignments] = await Promise.all([
     getSaccos(),
     getRoutes(),
     getMatatus(),
+    getCrewAssignments(),
   ]);
 
   const routeMap = new Map(routes.map((r) => [r.id, r]));
   const matatuCountMap = new Map<string, number>();
+  const matatuToSacco = new Map(matatus.map((m) => [m.id, m.saccoId]));
   matatus.forEach((m) => {
     matatuCountMap.set(m.saccoId, (matatuCountMap.get(m.saccoId) || 0) + 1);
+  });
+  // CrewAssignment only carries matatuId, not saccoId (crew are tied to a
+  // vehicle, not directly to a Sacco) — join through the vehicle to group
+  // by Sacco for the per-operator crew roster below.
+  const crewBySacco = new Map<string, typeof crewAssignments>();
+  crewAssignments.forEach((c) => {
+    const saccoId = matatuToSacco.get(c.matatuId);
+    if (!saccoId) return;
+    const list = crewBySacco.get(saccoId) || [];
+    list.push(c);
+    crewBySacco.set(saccoId, list);
   });
 
   const pendingSaccos = saccos.filter((s) => s.status === "PENDING_VERIFICATION");
@@ -65,6 +78,7 @@ export default async function SaccoVerifyPage() {
                   primaryRouteName={primaryRoute?.name || "CBD Corridor"}
                   vehicleCount={vehicleCount}
                   viewerRole={session.role}
+                  crew={crewBySacco.get(s.id) || []}
                 />
               ),
             };

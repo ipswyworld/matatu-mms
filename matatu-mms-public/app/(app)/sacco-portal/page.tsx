@@ -17,6 +17,7 @@ import IssueCrewCredentialsModal from "@/components/IssueCrewCredentialsModal";
 import RevokeCrewAssignmentButton from "@/components/RevokeCrewAssignmentButton";
 import RemoveCrewMemberButton from "@/components/RemoveCrewMemberButton";
 import AlertCrewForm from "@/components/AlertCrewForm";
+import FareChartUploadCard from "@/components/FareChartUploadCard";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Operator Dashboard" };
@@ -61,6 +62,7 @@ export default async function SaccoPortalPage() {
 
   const primaryRoute = routeMap.get(sacco.primaryRouteId || "route-1");
   const secondaryRoutes = (sacco.secondaryRouteIds || ["route-2"]).map((id) => routeMap.get(id)).filter(Boolean);
+  const ownRoutes = [primaryRoute, ...secondaryRoutes].filter((r): r is NonNullable<typeof r> => Boolean(r));
 
   const pendingVehicles = saccoMatatus.filter((m) => m.status === "REGISTRATION_PENDING");
   const activeVehicles = saccoMatatus.filter((m) => m.status === "ACTIVE");
@@ -306,8 +308,9 @@ export default async function SaccoPortalPage() {
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="countyPermit" label="3. Permit from County" currentPath={sacco.docCountyPermit} />
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="singleBusinessPermit" label="4. Single Business Permit (SBP)" currentPath={sacco.docSingleBusinessPermit} />
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="taxComplianceCert" label="5. Tax Compliance Certificate" currentPath={sacco.docTaxComplianceCert} />
+            <SaccoDocumentUploadRow saccoId={sacco.id} docType="fareChart" label="6. Fare Chart" currentPath={sacco.docFareChart} />
             {sacco.saccoType === "NEW" && (
-              <SaccoDocumentUploadRow saccoId={sacco.id} docType="letterNoObjection" label="6. Letter of No Objection" currentPath={sacco.docLetterNoObjection} />
+              <SaccoDocumentUploadRow saccoId={sacco.id} docType="letterNoObjection" label="7. Letter of No Objection" currentPath={sacco.docLetterNoObjection} />
             )}
           </div>
 
@@ -318,6 +321,8 @@ export default async function SaccoPortalPage() {
           </div>
         </div>
       </div>
+
+      <FareChartUploadCard routes={ownRoutes} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sacco, Role } from "@/lib/types";
+import { Sacco, Role, CrewAssignment } from "@/lib/types";
 import { decideDirectorStageAction, decideChiefOfficerStageAction } from "@/lib/actions";
 import VerificationStageControl from "./VerificationStageControl";
 
@@ -45,13 +45,16 @@ export default function SaccoVerificationCard({
   primaryRouteName,
   vehicleCount,
   viewerRole,
+  crew = [],
 }: {
   sacco: Sacco;
   primaryRouteName: string;
   vehicleCount: number;
   viewerRole: Role;
+  crew?: CrewAssignment[];
 }) {
   const [showDocs, setShowDocs] = useState(false);
+  const [showCrew, setShowCrew] = useState(false);
   const officials = parseOfficials(sacco.docOfficialsContacts);
   const canDecideStage1 = viewerRole === "ADMIN" || viewerRole === "DIRECTOR_MOBILITY";
   const canDecideStage2 = viewerRole === "ADMIN" || viewerRole === "CHIEF_OFFICER";
@@ -173,6 +176,47 @@ export default function SaccoVerificationCard({
               <div className="p-2.5 rounded-lg border border-black/10 bg-black/[0.01] text-[11px] text-black/40 italic">
                 Not yet provided by the operator.
               </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowCrew((v) => !v)}
+          className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-black/10 bg-black/[0.01] hover:bg-black/[0.03] transition-colors text-left"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-extrabold text-county-black">Crew (Drivers &amp; Conductors)</span>
+            <span className="badge bg-county-blue/10 text-county-blue font-bold text-[10px]">{crew.length} active</span>
+          </div>
+          <span className={`text-black/40 text-xs transition-transform ${showCrew ? "rotate-180" : ""}`}>▾</span>
+        </button>
+
+        {showCrew && (
+          <div className="mt-3 space-y-1.5">
+            {crew.length === 0 ? (
+              <div className="p-2.5 rounded-lg border border-black/10 bg-black/[0.01] text-[11px] text-black/40 italic">
+                This Operator hasn't issued any crew credentials yet — crew accounts are created by the Operator
+                themselves from their own dashboard, not by county admin.
+              </div>
+            ) : (
+              crew.map((c) => (
+                <div
+                  key={c.id}
+                  className="p-2.5 rounded-lg border border-black/10 bg-black/[0.01] flex justify-between items-center text-xs"
+                >
+                  <div className="min-w-0">
+                    <span className="font-bold text-county-black">{c.userName}</span>{" "}
+                    <span className="text-black/50">({c.userEmail})</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="badge bg-county-green/10 text-county-green font-bold text-[10px]">{c.crewRole}</span>
+                    <span className="font-mono text-[11px] text-black/50">{c.matatuRegNumber}</span>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         )}

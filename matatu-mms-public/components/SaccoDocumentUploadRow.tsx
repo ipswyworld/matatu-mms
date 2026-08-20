@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { uploadSaccoDocumentAction } from "@/lib/actions";
+import { SaccoDocType } from "@/lib/types";
 
 // Browser-side link — behind nginx this is same-origin so an empty string
 // (relative path) is correct; in local dev without nginx it needs the
@@ -16,7 +17,7 @@ export default function SaccoDocumentUploadRow({
   required = true,
 }: {
   saccoId: string;
-  docType: string;
+  docType: SaccoDocType;
   label: string;
   currentPath?: string;
   required?: boolean;

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
 import { getReports } from "./data";
-import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role } from "./types";
+import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -299,7 +299,7 @@ async function apiWriteMultipart(path: string, formData: FormData): Promise<any>
 
 export async function uploadSaccoDocumentAction(
   saccoId: string,
-  docType: string,
+  docType: SaccoDocType,
   formData: FormData
 ): Promise<{ error?: string }> {
   const file = formData.get("file");
@@ -317,6 +317,25 @@ export async function uploadSaccoDocumentAction(
   revalidatePath("/sacco-portal");
   revalidatePath("/saccos/verify");
   return {};
+}
+
+export async function uploadFareChartAction(
+  routeId: string,
+  formData: FormData
+): Promise<{ error?: string; created?: number; unmatched?: number; total?: number }> {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Please choose a PDF fare chart to upload." };
+  }
+  const upload = new FormData();
+  upload.set("file", file);
+  try {
+    const result = await apiWriteMultipart(`/api/routes/${routeId}/fare-stages/upload`, upload);
+    revalidatePath("/sacco-portal");
+    return { created: result.created?.length ?? 0, unmatched: result.unmatchedRows ?? 0, total: result.totalRows ?? 0 };
+  } catch (err: any) {
+    return { error: err.message || "Upload failed." };
+  }
 }
 
 export async function updateSaccoOfficialsAction(

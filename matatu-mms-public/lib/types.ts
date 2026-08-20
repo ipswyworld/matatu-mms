@@ -101,6 +101,16 @@ export interface SaccoDocuments {
   bonafideOfficialsContacts: SaccoOfficialContact;
 }
 
+// Must match backend/app/routes/saccos.py's DOC_FIELD_MAP keys exactly.
+export type SaccoDocType =
+  | "registrationCert"
+  | "roadServiceLicense"
+  | "countyPermit"
+  | "singleBusinessPermit"
+  | "taxComplianceCert"
+  | "fareChart"
+  | "letterNoObjection";
+
 export type SaccoType = "NEW" | "EXISTING";
 export type VerificationStageStatus = "PENDING" | "APPROVED" | "REJECTED";
 

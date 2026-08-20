@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
 import { getReports } from "./data";
-import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role } from "./types";
+import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -271,7 +271,7 @@ async function apiWriteMultipart(path: string, formData: FormData): Promise<any>
 
 export async function uploadSaccoDocumentAction(
   saccoId: string,
-  docType: string,
+  docType: SaccoDocType,
   formData: FormData
 ): Promise<{ error?: string }> {
   const file = formData.get("file");
