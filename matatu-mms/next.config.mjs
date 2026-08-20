@@ -49,6 +49,16 @@ const SECURITY_HEADERS = [
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       CONNECT_SRC,
+      // maplibre-gl (used by the TomTom map SDK) fetches and parses vector
+      // tiles inside a Web Worker instantiated from a blob: URL. CSP has no
+      // dedicated worker-src fallback chain entry here otherwise, so it
+      // falls back to script-src, which doesn't allow blob: — the worker
+      // silently fails to spawn, the tile-loading pipeline never runs, and
+      // the map renders style/background/markers but zero tiles, on both
+      // Render and localhost since the header is identical in both. No
+      // console exception either: the browser reports this as a native CSP
+      // violation, not a thrown JS error.
+      "worker-src 'self' blob:",
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self'",
