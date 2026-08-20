@@ -137,6 +137,7 @@ export interface Sacco {
   docSingleBusinessPermit?: string;
   docOfficialsContacts?: string; // JSON string
   docTaxComplianceCert?: string;
+  docFareChart?: string;
   docLetterNoObjection?: string;
   directorMobilityStatus?: VerificationStageStatus;
   directorMobilityReason?: string;

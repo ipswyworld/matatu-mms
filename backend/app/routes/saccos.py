@@ -46,6 +46,7 @@ MANDATORY_DOC_FIELDS = [
     ("doc_county_permit", "Permit from County"),
     ("doc_single_business_permit", "Single Business Permit"),
     ("doc_tax_compliance_cert", "Tax Compliance Certificate"),
+    ("doc_fare_chart", "Fare Chart"),
 ]
 
 
@@ -64,6 +65,7 @@ DOC_FIELD_MAP = {
     "countyPermit": "doc_county_permit",
     "singleBusinessPermit": "doc_single_business_permit",
     "taxComplianceCert": "doc_tax_compliance_cert",
+    "fareChart": "doc_fare_chart",
     "letterNoObjection": "doc_letter_no_objection",
 }
 

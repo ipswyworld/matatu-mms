@@ -55,6 +55,24 @@ export type Action =
 // server-side should be gated by this set client-side too.
 export const ADMIN_TIER_ROLES: Role[] = ["ADMIN", "SUPERADMIN"];
 
+// County staff/government accounts — the population the "Users & Roles"
+// admin page manages. Deliberately excludes SACCO_OPERATOR, CREW, and
+// PASSENGER: those are Sacco/fleet/commuter accounts with their own
+// lifecycle (created via Sacco verification, issued by an operator, or
+// self-registered) and mixing them into one staff roster made "how many
+// county staff do we have" impossible to answer at a glance.
+export const STAFF_ROLES: Role[] = [
+  "SUPERADMIN",
+  "ADMIN",
+  "DIRECTOR_MOBILITY",
+  "CHIEF_OFFICER",
+  "ENFORCEMENT",
+  "ARRESTING_OFFICER",
+  "RELEASING_OFFICER",
+  "ENFORCEMENT_COMMANDER",
+  "VIEWER",
+];
+
 const MATRIX: Record<Role, Action[]> = {
   SUPERADMIN: [
     "view_dashboard",

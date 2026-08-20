@@ -81,6 +81,7 @@ class SaccoResponse(SaccoBase):
     doc_single_business_permit: Optional[str] = None
     doc_officials_contacts: Optional[str] = None
     doc_tax_compliance_cert: Optional[str] = None
+    doc_fare_chart: Optional[str] = None
     doc_letter_no_objection: Optional[str] = None
     director_mobility_status: Optional[str] = "PENDING"
     director_mobility_reason: Optional[str] = None

@@ -27,6 +27,7 @@ class Sacco(Base):
     doc_county_permit = Column(String, nullable=True)
     doc_single_business_permit = Column(String, nullable=True)
     doc_tax_compliance_cert = Column(String, nullable=True)
+    doc_fare_chart = Column(String, nullable=True)  # published fare chart for the operator's routes
     doc_letter_no_objection = Column(String, nullable=True)  # NEW Saccos only
     doc_officials_contacts = Column(Text, nullable=True)  # JSON String of Chairperson, Secretary, Treasurer contacts
     rejection_reason = Column(Text, nullable=True)

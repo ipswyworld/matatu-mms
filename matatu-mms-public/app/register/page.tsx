@@ -9,6 +9,7 @@ import { UserPlus, ArrowLeft } from "lucide-react";
 import { registerAction } from "@/lib/actions";
 import AuthSkyline from "@/components/AuthSkyline";
 import PublicFooter from "@/components/PublicFooter";
+import PasswordInput from "@/components/PasswordInput";
 
 // Passenger self-registration only. Crew accounts are issued by the
 // operator when they onboard a vehicle (see the Sacco Operator dashboard's
@@ -166,7 +167,7 @@ function RegisterFormBody({
 
         <div>
           <label className="label" htmlFor="password">Password</label>
-          <input className="input" id="password" type="password" name="password" required placeholder="Create a strong password" />
+          <PasswordInput id="password" name="password" required placeholder="Create a strong password" />
         </div>
 
         {isStudent && (

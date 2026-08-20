@@ -4,6 +4,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import { LogIn, Loader2 } from "lucide-react";
 import { loginAction } from "@/lib/actions";
 import { useLanguage } from "@/components/LanguageProvider";
+import PasswordInput from "@/components/PasswordInput";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -47,7 +48,7 @@ export default function LoginForm({ tagline }: LoginFormProps) {
               {t("login.forgotPassword")}
             </a>
           </div>
-          <input className="input mt-1.5" id="password" name="password" type="password" placeholder="••••••••" required />
+          <PasswordInput className="mt-1.5" id="password" name="password" placeholder="••••••••" required />
         </div>
 
         <label className="flex items-center gap-2 text-xs font-semibold text-county-ink/70 cursor-pointer select-none">

@@ -978,6 +978,15 @@ export async function setFavoriteSaccoAction(saccoId: string | null): Promise<{ 
   return {};
 }
 
+export async function searchStagesAction(q: string): Promise<{ id: string; name: string; lat: number; lng: number }[]> {
+  if (!q.trim()) return [];
+  try {
+    return await apiWrite(`/api/search/stages?q=${encodeURIComponent(q.trim())}`, "GET");
+  } catch {
+    return [];
+  }
+}
+
 export async function alertCrewAction(input: { message: string; matatuId?: string }): Promise<{ notified?: number; error?: string }> {
   try {
     const result = await apiWrite<{ notified: number }>("/api/crew/alert", "POST", {

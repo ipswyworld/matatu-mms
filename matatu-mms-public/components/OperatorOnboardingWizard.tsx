@@ -23,6 +23,7 @@ function missingItems(sacco: Sacco): string[] {
   if (!sacco.docCountyPermit) missing.push("Permit from County");
   if (!sacco.docSingleBusinessPermit) missing.push("Single Business Permit");
   if (!sacco.docTaxComplianceCert) missing.push("Tax Compliance Certificate");
+  if (!sacco.docFareChart) missing.push("Fare Chart");
   if (sacco.saccoType === "NEW" && !sacco.docLetterNoObjection) missing.push("Letter of No Objection");
   if (!sacco.docOfficialsContacts) missing.push("Bonafide Officials Contacts");
   return missing;
@@ -169,8 +170,9 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="countyPermit" label="3. Permit from County" currentPath={sacco.docCountyPermit} />
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="singleBusinessPermit" label="4. Single Business Permit (SBP)" currentPath={sacco.docSingleBusinessPermit} />
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="taxComplianceCert" label="5. Tax Compliance Certificate" currentPath={sacco.docTaxComplianceCert} />
+            <SaccoDocumentUploadRow saccoId={sacco.id} docType="fareChart" label="6. Fare Chart" currentPath={sacco.docFareChart} />
             {sacco.saccoType === "NEW" && (
-              <SaccoDocumentUploadRow saccoId={sacco.id} docType="letterNoObjection" label="6. Letter of No Objection" currentPath={sacco.docLetterNoObjection} />
+              <SaccoDocumentUploadRow saccoId={sacco.id} docType="letterNoObjection" label="7. Letter of No Objection" currentPath={sacco.docLetterNoObjection} />
             )}
           </div>
           <button onClick={() => setStep(2)} className="btn-primary w-full font-bold mt-2">Next: Bonafide Officials →</button>

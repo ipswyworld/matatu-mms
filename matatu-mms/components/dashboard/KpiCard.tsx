@@ -60,10 +60,10 @@ export default function KpiCard({ label, value, delta, accent = "neutral", href,
           {delta.label}
         </div>
       )}
-      {href && (
-        <div className="mt-3 text-[11px] font-bold uppercase tracking-wider text-county-green">Open →</div>
-      )}
     </div>
   );
+  // The whole card is already the click target when href is set — a
+  // trailing "Open →" line was redundant with that, not an affordance for
+  // it. hover:shadow-md above is the only cue the card needs.
   return href ? <Link href={href} className="block">{inner}</Link> : inner;
 }

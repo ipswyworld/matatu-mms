@@ -14,6 +14,7 @@ const dictionary = {
   "nav.revenueFines": { en: "Revenue & Fines", sw: "Mapato na Faini" },
   "nav.operatorDashboard": { en: "Operator Dashboard", sw: "Dashibodi ya Mwendeshaji" },
   "nav.passengerPortal": { en: "Passenger Portal", sw: "Ukurasa wa Abiria" },
+  "nav.feedback": { en: "Feedback & Reports", sw: "Maoni na Ripoti" },
   "nav.crewDashboard": { en: "Crew Dashboard", sw: "Dashibodi ya Wafanyakazi" },
   "nav.signOut": { en: "Sign out", sw: "Toka" },
 

@@ -69,8 +69,10 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Strict PASSENGER portal restriction: Passengers can ONLY access /passenger-portal
-  if (role === "PASSENGER" && !pathname.startsWith("/passenger-portal")) {
+  // Strict PASSENGER portal restriction: Passengers can only access
+  // /passenger-portal and /feedback (its own sidebar-linked route, split
+  // out of what used to be a tab inside /passenger-portal).
+  if (role === "PASSENGER" && !pathname.startsWith("/passenger-portal") && !pathname.startsWith("/feedback")) {
     return NextResponse.redirect(new URL("/passenger-portal", request.url));
   }
 

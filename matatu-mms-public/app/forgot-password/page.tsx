@@ -7,6 +7,7 @@ import { ArrowLeft, Send, KeyRound, Loader2 } from "lucide-react";
 import { requestPhoneOtpAction, resetPasswordWithOtpAction } from "@/lib/actions";
 import AuthSkyline from "@/components/AuthSkyline";
 import PublicFooter from "@/components/PublicFooter";
+import PasswordInput from "@/components/PasswordInput";
 
 function SendCodeButton() {
   const { pending } = useFormStatus();
@@ -66,11 +67,11 @@ export default function ForgotPasswordPage() {
                 </div>
                 <div>
                   <label className="label" htmlFor="newPassword">New Password</label>
-                  <input className="input" id="newPassword" name="newPassword" type="password" placeholder="••••••••" required minLength={6} />
+                  <PasswordInput id="newPassword" name="newPassword" placeholder="••••••••" required minLength={6} />
                 </div>
                 <div>
                   <label className="label" htmlFor="confirmPassword">Confirm Password</label>
-                  <input className="input" id="confirmPassword" name="confirmPassword" type="password" placeholder="••••••••" required minLength={6} />
+                  <PasswordInput id="confirmPassword" name="confirmPassword" placeholder="••••••••" required minLength={6} />
                 </div>
                 {resetState?.error && (
                   <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold">

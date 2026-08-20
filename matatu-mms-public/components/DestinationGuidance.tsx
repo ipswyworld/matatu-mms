@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Navigation2, MapPin, Footprints, CheckCircle2, X } from "lucide-react";
-import { NAIROBI_STAGES } from "@/components/GisMap";
+import { Navigation2, MapPin, Footprints, CheckCircle2, X, Search, Loader2 } from "lucide-react";
+import { searchStagesAction } from "@/lib/actions";
 import {
   usePassengerLocation,
   haversineMeters,
@@ -57,7 +57,6 @@ function saveStored(value: StoredDestination | null) {
  */
 export default function DestinationGuidance() {
   const [destination, setDestination] = useState<StoredDestination | null>(null);
-  const [pickerStageId, setPickerStageId] = useState(NAIROBI_STAGES[0].id);
   const [hydrated, setHydrated] = useState(false);
   const { location, status, request } = usePassengerLocation();
 
@@ -73,9 +72,7 @@ export default function DestinationGuidance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startGuidance = () => {
-    const stage = NAIROBI_STAGES.find((s) => s.id === pickerStageId);
-    if (!stage) return;
+  const startGuidance = (stage: { id: string; name: string; lat: number; lng: number }) => {
     const next: StoredDestination = { stageId: stage.id, name: stage.name, lat: stage.lat, lng: stage.lng, alighted: false };
     setDestination(next);
     saveStored(next);
@@ -106,17 +103,7 @@ export default function DestinationGuidance() {
         <p className="text-xs text-black/50 -mt-1">
           Tell us your real destination once — we'll keep guiding you on foot even after you get off the matatu.
         </p>
-        <div className="flex gap-2">
-          <select value={pickerStageId} onChange={(e) => setPickerStageId(e.target.value)} className="input flex-1 text-xs">
-            {NAIROBI_STAGES.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-          <button onClick={startGuidance} className="btn-primary !px-4 text-xs font-bold shrink-0 flex items-center gap-1.5">
-            <Navigation2 size={13} strokeWidth={2} />
-            Guide Me There
-          </button>
-        </div>
+        <StageSearchField onSelect={startGuidance} />
       </div>
     );
   }
@@ -193,6 +180,91 @@ export default function DestinationGuidance() {
           </div>
           <WalkingMap myLat={location.lat} myLng={location.lng} destLat={destination.lat} destLng={destination.lng} />
         </>
+      )}
+    </div>
+  );
+}
+
+interface StageOption {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Free-text destination search, backed by the real BRN stage list
+ * (hundreds of stops) instead of a fixed 7-option dropdown — the
+ * passenger types where they're going and picks from live suggestions,
+ * the same "type to search" pattern as everywhere else people search a
+ * place, rather than scrolling a list.
+ */
+function StageSearchField({ onSelect }: { onSelect: (stage: StageOption) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<StageOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.trim().length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      const matches = await searchStagesAction(query);
+      setResults(matches);
+      setLoading(false);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query]);
+
+  const handleSelect = (stage: StageOption) => {
+    onSelect(stage);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search size={13} strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30" />
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Type where you're going… e.g. Church House"
+          className="input pl-8 text-xs w-full"
+        />
+        {loading && <Loader2 size={13} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-black/30" />}
+      </div>
+      {open && query.trim().length >= 2 && (
+        <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/10 bg-white shadow-lg max-h-56 overflow-y-auto scrollbar-ghost">
+          {results.length === 0 && !loading ? (
+            <p className="px-3 py-3 text-xs text-black/40 text-center">No stage matches "{query}".</p>
+          ) : (
+            results.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onMouseDown={() => handleSelect(s)}
+                className="block w-full text-left px-3 py-2 text-xs font-semibold text-county-black hover:bg-county-green/10"
+              >
+                {s.name}
+              </button>
+            ))
+          )}
+        </div>
       )}
     </div>
   );

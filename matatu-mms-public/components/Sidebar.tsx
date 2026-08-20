@@ -11,6 +11,7 @@ import {
   UserCog,
   Building2,
   LogOut,
+  MessageSquareWarning,
   type LucideIcon,
 } from "lucide-react";
 import { Role } from "@/lib/types";
@@ -22,6 +23,7 @@ import TalkToUsPanel from "./TalkToUsPanel";
 // One icon per destination, keyed by href.
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/passenger-portal": Ticket,
+  "/feedback": MessageSquareWarning,
   "/crew-portal": UserCog,
   "/sacco-portal": Building2,
   "/matatus": Bus,
@@ -69,6 +71,7 @@ export default function Sidebar({
     if (role === "PASSENGER") {
       return [
         { href: "/passenger-portal", label: t("nav.passengerPortal"), action: "view_passenger_portal" as const },
+        { href: "/feedback", label: t("nav.feedback"), action: "view_passenger_portal" as const },
       ];
     }
     if (role === "CREW") {

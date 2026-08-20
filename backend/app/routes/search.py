@@ -29,6 +29,35 @@ from app.routes.fare_stages import get_fare_for_stage_pair
 router = APIRouter(prefix="/api/search", tags=["Passenger Search"])
 
 
+class StageSearchResult(BaseModelCamel):
+    id: str
+    name: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+@router.get("/stages", response_model=List[StageSearchResult])
+async def search_stages(
+    q: str = Query(..., min_length=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Type-ahead over the real BRN stage list (hundreds of real stops,
+    not the old 7-stage hardcoded dropdown) — backs "Guide Me"'s free-text
+    destination field. Only geocoded stages: a stage with no real lat/lng
+    can't be used as a walking-guidance target."""
+    query = q.strip()
+    if not query:
+        return []
+    result = await db.execute(
+        select(Stage)
+        .where(Stage.name.ilike(f"%{query}%"), Stage.geocoded == True, Stage.lat.is_not(None))
+        .order_by(Stage.name)
+        .limit(15)
+    )
+    return [StageSearchResult(id=s.id, name=s.name, lat=s.lat, lng=s.lng) for s in result.scalars().all()]
+
+
 class ODSearchResult(BaseModelCamel):
     matatu_id: str
     reg_number: str

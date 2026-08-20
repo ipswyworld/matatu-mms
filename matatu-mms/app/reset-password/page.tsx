@@ -8,6 +8,7 @@ import Link from "next/link";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { resetPasswordAction } from "@/lib/actions";
 import PublicFooter from "@/components/PublicFooter";
+import PasswordInput from "@/components/PasswordInput";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -39,11 +40,11 @@ function ResetPasswordForm() {
           <input type="hidden" name="token" value={token} />
           <div>
             <label className="label" htmlFor="newPassword">New password</label>
-            <input className="input" id="newPassword" name="newPassword" type="password" placeholder="••••••••" required minLength={6} />
+            <PasswordInput id="newPassword" name="newPassword" placeholder="••••••••" required minLength={6} />
           </div>
           <div>
             <label className="label" htmlFor="confirmPassword">Confirm password</label>
-            <input className="input" id="confirmPassword" name="confirmPassword" type="password" placeholder="••••••••" required minLength={6} />
+            <PasswordInput id="confirmPassword" name="confirmPassword" placeholder="••••••••" required minLength={6} />
           </div>
           {state?.error && (
             <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold">

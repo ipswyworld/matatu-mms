@@ -62,6 +62,7 @@ export default function SaccoVerificationCard({
     ["Permit from County", sacco.docCountyPermit],
     ["Single Business Permit (SBP)", sacco.docSingleBusinessPermit],
     ["Tax Compliance Certificate", sacco.docTaxComplianceCert],
+    ["Fare Chart", sacco.docFareChart],
     ...(sacco.saccoType === "NEW"
       ? ([["Letter of No Objection", sacco.docLetterNoObjection]] as [string, string | undefined][])
       : []),
@@ -147,8 +148,9 @@ export default function SaccoVerificationCard({
             <DocRow label="3. Permit from County" path={sacco.docCountyPermit} />
             <DocRow label="4. Single Business Permit (SBP)" path={sacco.docSingleBusinessPermit} />
             <DocRow label="5. Tax Compliance Certificate" path={sacco.docTaxComplianceCert} />
+            <DocRow label="6. Fare Chart" path={sacco.docFareChart} />
             {sacco.saccoType === "NEW" && (
-              <DocRow label="6. Letter of No Objection (required before RSL for new operators)" path={sacco.docLetterNoObjection} />
+              <DocRow label="7. Letter of No Objection (required before RSL for new operators)" path={sacco.docLetterNoObjection} />
             )}
 
             <h5 className="text-xs font-extrabold text-black/70 uppercase tracking-wider pt-2">Bonafide Officials Contacts</h5>
