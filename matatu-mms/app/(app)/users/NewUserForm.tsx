@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { addUserAction } from "@/lib/actions";
-import { can } from "@/lib/rbac";
-import { Role, Sacco } from "@/lib/types";
+import { can, ADMIN_TIER_ROLES, ROLE_LABELS, ROLE_CAPABILITY_SUMMARY, STAFF_ROLE_TIERS } from "@/lib/rbac";
+import { Role } from "@/lib/types";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -15,14 +15,19 @@ function SubmitButton() {
   );
 }
 
-export default function NewUserForm({ saccos, viewerRole }: { saccos: Sacco[]; viewerRole: Role }) {
+// Operators/Crew/Passengers are deliberately not offered here — they're
+// public accounts with their own real lifecycle (onboarding wizard +
+// county approval, issued by their own operator, or self-registration),
+// not something this staff-roster shortcut should create. See STAFF_ROLES.
+export default function NewUserForm({ viewerRole }: { viewerRole: Role }) {
   const [state, formAction] = useFormState(addUserAction, undefined);
-  const [role, setRole] = useState<Role>("VIEWER");
   const canAssignAdminTier = can(viewerRole, "manage_admins");
+  const defaultRole = STAFF_ROLE_TIERS.find((t) => t.label === "Oversight")!.roles[0];
+  const [role, setRole] = useState<Role>(defaultRole);
 
   return (
     <div className="card p-5 h-fit">
-      <h3 className="font-bold text-sm mb-4">Add a user</h3>
+      <h3 className="font-bold text-sm mb-4">Add a county staff user</h3>
       <form action={formAction} className="space-y-3">
         <div>
           <label className="label" htmlFor="name">Full name</label>
@@ -45,22 +50,22 @@ export default function NewUserForm({ saccos, viewerRole }: { saccos: Sacco[]; v
             value={role}
             onChange={(e) => setRole(e.target.value as Role)}
           >
-            {canAssignAdminTier && <option value="SUPERADMIN">Super Administrator</option>}
-            {canAssignAdminTier && <option value="ADMIN">System Administrator</option>}
-            <option value="ENFORCEMENT">Enforcement Officer</option>
-            <option value="SACCO_OPERATOR">Operator</option>
-            <option value="VIEWER">Viewer / Executive</option>
+            {STAFF_ROLE_TIERS.map((tier) => {
+              const isAdminTierGroup = tier.roles.every((r) => ADMIN_TIER_ROLES.includes(r));
+              if (isAdminTierGroup && !canAssignAdminTier) return null;
+              return (
+                <optgroup key={tier.label} label={tier.label}>
+                  {tier.roles.map((r) => (
+                    <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
+          {ROLE_CAPABILITY_SUMMARY[role] && (
+            <p className="text-[11px] text-county-ink/50 mt-1">{ROLE_CAPABILITY_SUMMARY[role]}</p>
+          )}
         </div>
-        {role === "SACCO_OPERATOR" && (
-          <div>
-            <label className="label" htmlFor="saccoId">Operator</label>
-            <select className="input" id="saccoId" name="saccoId" required defaultValue="">
-              <option value="" disabled>Select an operator</option>
-              {saccos.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-        )}
 
         {state?.error && (
           <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2">

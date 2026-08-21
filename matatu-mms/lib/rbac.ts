@@ -255,3 +255,30 @@ export const ROLE_LABELS: Record<Role, string> = {
   RELEASING_OFFICER: "Releasing Officer",
   ENFORCEMENT_COMMANDER: "Enforcement Commander",
 };
+
+// One-line capability summary shown inline on the "Add a user" role picker
+// — same purpose as a Role Matrix tab would serve, just surfaced at the
+// point of assignment instead of a separate page.
+export const ROLE_CAPABILITY_SUMMARY: Partial<Record<Role, string>> = {
+  SUPERADMIN: "Full system access, including creating other Admins.",
+  ADMIN: "Full operational access — cannot create other Admins/Super Admins.",
+  DIRECTOR_MOBILITY: "Decides Stage 1 of Operator verification.",
+  CHIEF_OFFICER: "Decides Stage 2 (final) of Operator verification.",
+  ENFORCEMENT: "Logs activity and issues citations, no case decisions.",
+  ENFORCEMENT_COMMANDER: "Assigns officer duty/zone, decides enforcement cases.",
+  ARRESTING_OFFICER: "Files enforcement cases from the roadside.",
+  RELEASING_OFFICER: "Decides paid/disputed/waived cases and releases vehicles.",
+  VIEWER: "Read-only access — dashboards and reports, no edits.",
+};
+
+// Groups STAFF_ROLES for the "Add a user" role picker so it reads as a
+// structured org chart instead of a flat list — mirrors how the audit
+// described the 12 real roles (Admin / Verification / Enforcement /
+// Oversight tiers, plus the Public tier that's deliberately excluded here
+// since those accounts are never created from this form — see STAFF_ROLES).
+export const STAFF_ROLE_TIERS: { label: string; roles: Role[] }[] = [
+  { label: "Admin", roles: ["SUPERADMIN", "ADMIN"] },
+  { label: "Verification", roles: ["DIRECTOR_MOBILITY", "CHIEF_OFFICER"] },
+  { label: "Enforcement", roles: ["ENFORCEMENT", "ENFORCEMENT_COMMANDER", "ARRESTING_OFFICER", "RELEASING_OFFICER"] },
+  { label: "Oversight", roles: ["VIEWER"] },
+];

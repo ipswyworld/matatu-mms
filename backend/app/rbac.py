@@ -5,6 +5,25 @@ from typing import List, Dict
 # ADMIN/SUPERADMIN — enforced in routes/users.py, not just here.
 ADMIN_TIER_ROLES = {"ADMIN", "SUPERADMIN"}
 
+# County staff/government accounts, formalizing what routes/users.py's
+# get_users() and create_user() already implicitly assume — the roles
+# managed on the "Users & Roles" staff roster, as opposed to the public
+# accounts (SACCO_OPERATOR, CREW, PASSENGER) that each have their own
+# separate lifecycle (onboarding wizard + county approval, issued by their
+# operator, or self-registration). Kept in sync with the frontend's
+# STAFF_ROLES (matatu-mms/lib/rbac.ts).
+STAFF_ROLES = {
+    "SUPERADMIN",
+    "ADMIN",
+    "DIRECTOR_MOBILITY",
+    "CHIEF_OFFICER",
+    "ENFORCEMENT",
+    "ARRESTING_OFFICER",
+    "RELEASING_OFFICER",
+    "ENFORCEMENT_COMMANDER",
+    "VIEWER",
+}
+
 ROLE_MATRIX: Dict[str, List[str]] = {
     "SUPERADMIN": [
         "view_dashboard",
