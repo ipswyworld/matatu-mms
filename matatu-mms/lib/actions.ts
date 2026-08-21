@@ -1056,6 +1056,16 @@ export async function setUserActiveAction(userId: string, isActive: boolean): Pr
   return {};
 }
 
+export async function revokeUserSessionsAction(userId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/users/${userId}/revoke-sessions`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not revoke this account's sessions." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
 export async function forgotPasswordAction(
   _prevState: { message?: string; error?: string } | undefined,
   formData: FormData

@@ -7,6 +7,7 @@ import NewUserForm from "./NewUserForm";
 import PageBanner from "@/components/PageBanner";
 import UsersTable from "@/components/UsersTable";
 import PublicDirectoryTable from "@/components/PublicDirectoryTable";
+import RoleMatrix from "@/components/RoleMatrix";
 import UsersTabs from "@/components/UsersTabs";
 
 export const metadata: Metadata = { title: "Users & Roles" };
@@ -45,6 +46,7 @@ export default async function UsersPage() {
           </div>
         }
         publicPanel={<PublicDirectoryTable users={publicUsers} saccos={saccos} />}
+        roleMatrixPanel={<RoleMatrix />}
       />
     </div>
   );

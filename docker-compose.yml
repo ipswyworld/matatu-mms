@@ -118,6 +118,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # Superuser / technical monitoring console — same nginx container,
+      # a separate server block (see nginx/nginx.conf's ":3002" block,
+      # which defaults its own `allow`/`deny` to localhost-only too).
+      # 127.0.0.1-only here: reachable via SSH tunnel/VPN into the host
+      # for now. This is ADMIN_DASHBOARD_AUDIT_AND_RECOMMENDATIONS.md §4.3
+      # Option A: reuse the existing /system page + RBAC gate, add network
+      # separation via nginx rather than a new app.
+      - "127.0.0.1:3002:3002"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
@@ -169,8 +177,15 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
+    # Was 127.0.0.1:3001:3000 — collided with frontend-public's 3001:3001
+    # above (only masked because Grafana bound to 127.0.0.1 and
+    # frontend-public didn't, so it never surfaced unless both were started
+    # on the same host). 3003 is a genuinely free slot, alongside the new
+    # :3002 ops-nginx block below which is the real "own port" front door
+    # for Grafana going forward — this direct mapping stays as a
+    # localhost-only fallback for debugging without going through nginx.
     ports:
-      - "127.0.0.1:3001:3000" # bind to localhost only — put behind nginx/VPN before exposing
+      - "127.0.0.1:3003:3000" # bind to localhost only — put behind nginx/VPN before exposing
     depends_on:
       - prometheus
     networks: [internal]

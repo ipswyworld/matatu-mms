@@ -5,7 +5,7 @@ import { Search, Shield } from "lucide-react";
 import { ROLE_LABELS, ADMIN_TIER_ROLES, can } from "@/lib/rbac";
 import { Role, Sacco, User } from "@/lib/types";
 import EditUserModal from "./EditUserModal";
-import DeactivateUserButton from "./DeactivateUserButton";
+import AccountActionsMenu from "./AccountActionsMenu";
 
 export default function UsersTable({
   users,
@@ -85,7 +85,7 @@ export default function UsersTable({
                     <div className="flex items-center gap-3">
                       <EditUserModal user={u} saccos={saccos} viewerRole={viewerRole} />
                       {u.id !== viewerUserId && (
-                        <DeactivateUserButton userId={u.id} isActive={u.isActive !== false} />
+                        <AccountActionsMenu userId={u.id} targetRole={u.role} isActive={u.isActive !== false} viewerRole={viewerRole} />
                       )}
                     </div>
                   )}

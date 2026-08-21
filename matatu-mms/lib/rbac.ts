@@ -74,7 +74,10 @@ export const STAFF_ROLES: Role[] = [
   "VIEWER",
 ];
 
-const MATRIX: Record<Role, Action[]> = {
+// Exported so the read-only Role Matrix tab (ADMIN_DASHBOARD_AUDIT §3.3)
+// can render straight from this source of truth instead of hand-maintaining
+// a second copy of the permission grid.
+export const MATRIX: Record<Role, Action[]> = {
   SUPERADMIN: [
     "view_dashboard",
     "view_matatus",

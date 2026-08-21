@@ -8,23 +8,26 @@ export default function UsersTabs({
   publicCount,
   staffPanel,
   publicPanel,
+  roleMatrixPanel,
 }: {
   staffCount: number;
   publicCount: number;
   staffPanel: ReactNode;
   publicPanel: ReactNode;
+  roleMatrixPanel: ReactNode;
 }) {
-  const [tab, setTab] = useState<"staff" | "public">("staff");
+  const [tab, setTab] = useState<"staff" | "public" | "matrix">("staff");
+
+  const tabs = [
+    { key: "staff" as const, label: "County Staff", count: staffCount },
+    { key: "public" as const, label: "Public Directory", count: publicCount },
+    { key: "matrix" as const, label: "Role Matrix", count: null },
+  ];
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1.5 border-b border-black/10">
-        {(
-          [
-            { key: "staff", label: "County Staff", count: staffCount },
-            { key: "public", label: "Public Directory", count: publicCount },
-          ] as const
-        ).map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -34,11 +37,13 @@ export default function UsersTabs({
                 : "border-transparent text-black/40 hover:text-black/60"
             }`}
           >
-            {t.label} <span className="text-[10px] font-normal">({t.count})</span>
+            {t.label} {t.count !== null && <span className="text-[10px] font-normal">({t.count})</span>}
           </button>
         ))}
       </div>
-      {tab === "staff" ? staffPanel : publicPanel}
+      {tab === "staff" && staffPanel}
+      {tab === "public" && publicPanel}
+      {tab === "matrix" && roleMatrixPanel}
     </div>
   );
 }
