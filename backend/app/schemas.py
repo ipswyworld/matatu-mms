@@ -91,10 +91,42 @@ class SaccoResponse(SaccoBase):
     chief_officer_reason: Optional[str] = None
     chief_officer_decided_by: Optional[str] = None
     chief_officer_decided_at: Optional[datetime.datetime] = None
+    shadow_contact_name: Optional[str] = None
+    shadow_contact_phone: Optional[str] = None
+    shadow_source: Optional[str] = None
+    compliance_deadline: Optional[datetime.datetime] = None
+    invited_at: Optional[datetime.datetime] = None
 
 class SaccoVerificationUpdate(BaseModelCamel):
     status: str  # ACTIVE or REJECTED
     reason: Optional[str] = None
+
+class ShadowSaccoCreate(BaseModelCamel):
+    name: str
+    contact_name: Optional[str] = None
+    contact_phone: str
+    compliance_deadline: Optional[datetime.datetime] = None
+    primary_route_id: Optional[str] = None
+
+class ShadowSaccoBulkCreate(BaseModelCamel):
+    entries: List[ShadowSaccoCreate]
+
+class ComplianceFunnelEntry(BaseModelCamel):
+    id: str
+    name: str
+    status: str
+    contact_phone: Optional[str] = None
+    compliance_deadline: Optional[datetime.datetime] = None
+    days_remaining: Optional[int] = None
+    invited_at: Optional[datetime.datetime] = None
+
+class ComplianceFunnelResponse(BaseModelCamel):
+    unregistered: int
+    invited: int
+    pending_verification: int
+    active: int
+    rejected_or_suspended: int
+    entries: List[ComplianceFunnelEntry]
 
 class LicenseRenewalDecision(BaseModelCamel):
     approve: bool

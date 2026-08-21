@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -57,6 +57,10 @@ export async function getUserById(id: string): Promise<User | undefined> {
 
 export async function getSaccos(): Promise<Sacco[]> {
   return apiFetch<Sacco[]>("/api/saccos");
+}
+
+export async function getComplianceFunnel(): Promise<ComplianceFunnel> {
+  return apiFetch<ComplianceFunnel>("/api/saccos/compliance-funnel");
 }
 
 export async function getSaccoById(id: string): Promise<Sacco | undefined> {

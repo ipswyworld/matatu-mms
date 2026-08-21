@@ -122,7 +122,7 @@ export interface OfficerAssignment {
   commanderTitle?: string | null;
 }
 
-export type SaccoStatus = "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "SUSPENDED";
+export type SaccoStatus = "UNREGISTERED" | "INVITED" | "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "SUSPENDED";
 export type SaccoLicenseStatus = "ACTIVE" | "RENEWAL_DUE" | "RENEWAL_SUBMITTED" | "EXPIRED";
 
 export interface SaccoOfficialContact {
@@ -183,6 +183,30 @@ export interface Sacco {
   chiefOfficerReason?: string;
   chiefOfficerDecidedBy?: string;
   chiefOfficerDecidedAt?: string;
+  shadowContactName?: string;
+  shadowContactPhone?: string;
+  shadowSource?: string;
+  complianceDeadline?: string;
+  invitedAt?: string;
+}
+
+export interface ComplianceFunnelEntry {
+  id: string;
+  name: string;
+  status: SaccoStatus;
+  contactPhone?: string;
+  complianceDeadline?: string;
+  daysRemaining?: number;
+  invitedAt?: string;
+}
+
+export interface ComplianceFunnel {
+  unregistered: number;
+  invited: number;
+  pendingVerification: number;
+  active: number;
+  rejectedOrSuspended: number;
+  entries: ComplianceFunnelEntry[];
 }
 
 export type MatatuStatus = "REGISTRATION_PENDING" | "ACTIVE" | "FLAGGED" | "IMPOUNDED" | "DECOMMISSIONED";

@@ -8,10 +8,26 @@ class Sacco(Base):
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    status = Column(String, default="ACTIVE")  # PENDING_VERIFICATION, ACTIVE, REJECTED, SUSPENDED
+    # UNREGISTERED, INVITED, PENDING_VERIFICATION, ACTIVE, REJECTED, SUSPENDED.
+    # UNREGISTERED/INVITED are "shadow registry" rows the county seeds from
+    # its own route-permit records for operators who have never touched the
+    # system — see shadow_* fields below. They're not real accounts and
+    # never get docs/verification stages; a county rep marks the shadow row
+    # gone once the operator has actually self-registered for real through
+    # the normal onboarding wizard (which always creates its own fresh Sacco
+    # row — there's no automatic name-matching/merge between the two).
+    status = Column(String, default="ACTIVE")
     license_status = Column(String, default="ACTIVE")  # ACTIVE, RENEWAL_DUE, EXPIRED
     primary_route_id = Column(String, nullable=True)
     secondary_route_ids = Column(String, nullable=True)  # Comma separated route IDs
+
+    # Shadow registry (compliance funnel) fields — only meaningful while
+    # status is UNREGISTERED or INVITED.
+    shadow_contact_name = Column(String, nullable=True)
+    shadow_contact_phone = Column(String, nullable=True)
+    shadow_source = Column(String, nullable=True)  # MANUAL, BULK_IMPORT
+    compliance_deadline = Column(DateTime(timezone=True), nullable=True)
+    invited_at = Column(DateTime(timezone=True), nullable=True)
 
     # NEW Saccos (never operated in Nairobi before) require a Letter of No
     # Objection before their Road Service License is accepted; EXISTING

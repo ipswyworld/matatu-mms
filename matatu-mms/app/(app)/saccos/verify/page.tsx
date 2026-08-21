@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { BadgeCheck } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getSaccos, getRoutes, getMatatus, getCrewAssignments } from "@/lib/data";
+import { getSaccos, getRoutes, getMatatus, getCrewAssignments, getComplianceFunnel } from "@/lib/data";
+import { can } from "@/lib/rbac";
 import SaccoVerificationCard from "@/components/SaccoVerificationCard";
 import PageBanner from "@/components/PageBanner";
 import LicenseRenewalPanel from "@/components/LicenseRenewalPanel";
+import ShadowRegistryPanel from "@/components/ShadowRegistryPanel";
 import OperatorVerificationBrowser, { OperatorEntry } from "@/components/OperatorVerificationBrowser";
 import type { Metadata } from "next";
 
@@ -12,12 +14,18 @@ export const metadata: Metadata = { title: "Operator Verification" };
 
 export default async function SaccoVerifyPage() {
   const session = readSession()!;
-  const [saccos, routes, matatus, crewAssignments] = await Promise.all([
+  const canManageShadowRegistry = can(session.role, "verify_saccos");
+  const [allSaccos, routes, matatus, crewAssignments, funnel] = await Promise.all([
     getSaccos(),
     getRoutes(),
     getMatatus(),
     getCrewAssignments(),
+    canManageShadowRegistry ? getComplianceFunnel() : Promise.resolve(null),
   ]);
+  // Shadow-registry rows (UNREGISTERED/INVITED) have no docs/verification
+  // stages — they don't belong in the verification pipeline browser below,
+  // they get their own panel.
+  const saccos = allSaccos.filter((s) => s.status !== "UNREGISTERED" && s.status !== "INVITED");
 
   const routeMap = new Map(routes.map((r) => [r.id, r]));
   const matatuCountMap = new Map<string, number>();
@@ -54,6 +62,8 @@ export default async function SaccoVerifyPage() {
           </>
         }
       />
+
+      {canManageShadowRegistry && funnel && <ShadowRegistryPanel funnel={funnel} />}
 
       <LicenseRenewalPanel saccos={saccos} />
 

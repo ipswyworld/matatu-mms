@@ -429,6 +429,41 @@ export async function waiveEnforcementCaseAction(caseId: string, reason: string,
   return {};
 }
 
+export async function addShadowSaccosAction(
+  entries: { name: string; contactName?: string; contactPhone: string; complianceDeadline?: string }[]
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite("/api/saccos/shadow", "POST", { entries });
+  } catch (err: any) {
+    return { error: err.message || "Could not add these operators to the registry." };
+  }
+  revalidatePath("/saccos/verify");
+  revalidatePath("/dashboard");
+  return {};
+}
+
+export async function inviteShadowSaccoAction(saccoId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/saccos/${saccoId}/invite`, "PATCH");
+  } catch (err: any) {
+    return { error: err.message || "Could not send the invite." };
+  }
+  revalidatePath("/saccos/verify");
+  revalidatePath("/dashboard");
+  return {};
+}
+
+export async function deleteShadowSaccoAction(saccoId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/saccos/${saccoId}/shadow`, "DELETE");
+  } catch (err: any) {
+    return { error: err.message || "Could not remove this entry." };
+  }
+  revalidatePath("/saccos/verify");
+  revalidatePath("/dashboard");
+  return {};
+}
+
 export async function assignCaseReviewerAction(caseId: string, reviewerId: string): Promise<{ error?: string }> {
   try {
     await apiWrite(`/api/enforcement/cases/${caseId}/assign-reviewer`, "PATCH", { reviewerId });

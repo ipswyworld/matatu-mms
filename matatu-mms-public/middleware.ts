@@ -13,7 +13,7 @@ const SESSION_COOKIE_NAME = "mms_session";
 // County staff (admin, enforcement, director/chief officer, viewer) sign
 // in through a completely separate app/deployment and never reach this
 // middleware at all.
-const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve"];
+const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve", "/compliance-notice"];
 
 /**
  * Verifies the HMAC signature before trusting anything in the cookie. A

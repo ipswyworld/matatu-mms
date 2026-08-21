@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard } from "lucide-react";
+import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -129,6 +129,8 @@ export default async function DashboardPage() {
   const pendingSaccos = saccos.filter((s) => s.status === "PENDING_VERIFICATION");
   const pendingRenewals = saccos.filter((s) => s.licenseStatus === "RENEWAL_SUBMITTED");
   const pendingApprovals = pendingSaccos.length + pendingRenewals.length;
+  const unregisteredCount = saccos.filter((s) => s.status === "UNREGISTERED").length;
+  const invitedCount = saccos.filter((s) => s.status === "INVITED").length;
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -179,6 +181,16 @@ export default async function DashboardPage() {
             accent="yellow"
             href="/saccos/verify"
             icon={BadgeCheck}
+          />
+        )}
+        {!isSacco && (unregisteredCount > 0 || invitedCount > 0) && (
+          <KpiCard
+            label="Unregistered operators"
+            value={unregisteredCount.toString()}
+            delta={{ label: `${invitedCount} invited, awaiting response`, tone: unregisteredCount > 0 ? "attention" : "positive" }}
+            accent="red"
+            href="/saccos/verify"
+            icon={UserX}
           />
         )}
         {isSacco && (
