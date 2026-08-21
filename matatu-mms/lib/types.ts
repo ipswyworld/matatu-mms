@@ -57,8 +57,25 @@ export interface OffenceType {
   isOther: boolean;
 }
 
-export type EnforcementCaseStatus = "ARRESTED" | "PAID" | "RELEASED" | "DISPUTED" | "WAIVED";
+export type EnforcementCaseStatus =
+  | "ARRESTED"
+  | "PAID"
+  | "RELEASED"
+  | "DISPUTED"
+  | "UNDER_REVIEW"
+  | "RESOLVED_UPHELD"
+  | "RESOLVED_OVERTURNED"
+  | "RESOLVED_PARTIAL"
+  | "WAIVED";
+export type CaseResolution = "UPHELD" | "OVERTURNED" | "PARTIAL";
 export type EnforcementAction = "IMPOUND" | "SELF_DRIVE_IMPOUND" | "TOLL";
+
+export interface CaseReviewNote {
+  authorId: string;
+  authorName: string;
+  note: string;
+  at: string;
+}
 
 export interface EnforcementCase {
   id: string;
@@ -82,6 +99,15 @@ export interface EnforcementCase {
   releasingOfficerName?: string;
   releasedAt?: string;
   disputeReason?: string;
+  disputedAt?: string;
+  reviewerId?: string;
+  reviewerName?: string;
+  reviewNotes: CaseReviewNote[];
+  resolution?: CaseResolution;
+  resolutionReason?: string;
+  resolvedById?: string;
+  resolvedByName?: string;
+  resolvedAt?: string;
   waivedReason?: string;
   waivedAuthorizedBy?: string;
 }

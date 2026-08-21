@@ -44,6 +44,7 @@ export type Action =
   | "view_enforcement_cases"
   | "file_enforcement_case"
   | "decide_enforcement_case"
+  | "review_case_dispute"
   | "manage_officer_assignments"
   | "view_audit_logs"
   | "manage_admins"
@@ -102,6 +103,7 @@ const MATRIX: Record<Role, Action[]> = {
     "view_enforcement_cases",
     "file_enforcement_case",
     "decide_enforcement_case",
+    "review_case_dispute",
     "manage_officer_assignments",
     "view_audit_logs",
     "view_system_health",
@@ -134,6 +136,7 @@ const MATRIX: Record<Role, Action[]> = {
     "view_enforcement_cases",
     "file_enforcement_case",
     "decide_enforcement_case",
+    "review_case_dispute",
     "manage_officer_assignments",
     "view_audit_logs",
   ],
@@ -192,6 +195,7 @@ const MATRIX: Record<Role, Action[]> = {
     "view_enforcement_cases",
     "file_enforcement_case",
     "decide_enforcement_case",
+    "review_case_dispute",
     "manage_officer_assignments",
     "view_users",
     "view_reports",

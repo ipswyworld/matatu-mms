@@ -17,6 +17,7 @@ import {
   ClipboardList,
   FileWarning,
   FolderOpen,
+  Gavel,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/activity": ClipboardList,
   "/enforcement/scene": FileWarning,
   "/enforcement/cases": FolderOpen,
+  "/enforcement/disputes": Gavel,
   "/dashboard": LayoutDashboard,
   "/saccos/verify": BadgeCheck,
   "/passengers": MessageSquare,
@@ -110,6 +112,7 @@ export default function Sidebar({
       return [
         { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" as const },
         { href: "/enforcement/cases", label: "Case Queue", action: "view_enforcement_cases" as const },
+        { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" as const },
         { href: "/enforcement/scene", label: "Report Offence", action: "file_enforcement_case" as const },
         { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" as const },
         { href: "/activity", label: "My Activity Log", action: "view_activity" as const },
@@ -127,6 +130,7 @@ export default function Sidebar({
       { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "verify_saccos" as const },
       { href: "/matatus", label: t("nav.fleetRegistry"), action: "view_matatus" as const },
       { href: "/enforcement", label: t("nav.enforcement"), action: "view_enforcement" as const },
+      { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" as const },
       { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers" as const },
       { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue" as const },
       { href: "/routes", label: t("nav.routes"), action: "view_routes" as const },

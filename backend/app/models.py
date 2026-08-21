@@ -635,7 +635,12 @@ class EnforcementCase(Base):
     arresting_officer_id = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
-    status = Column(String, default="ARRESTED")  # ARRESTED, PAID, RELEASED, DISPUTED, WAIVED
+    # ARRESTED, PAID, RELEASED, DISPUTED, UNDER_REVIEW, RESOLVED_UPHELD,
+    # RESOLVED_OVERTURNED, RESOLVED_PARTIAL, WAIVED. DISPUTED -> UNDER_REVIEW
+    # -> RESOLVED_* mirrors Sacco verification's two-stage
+    # (director_mobility_status / chief_officer_status) pattern: a dispute
+    # is raised, a reviewer picks it up, then records a final outcome.
+    status = Column(String, default="ARRESTED")
     payment_reference = Column(String, nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -643,6 +648,14 @@ class EnforcementCase(Base):
     released_at = Column(DateTime(timezone=True), nullable=True)
 
     dispute_reason = Column(Text, nullable=True)
+    disputed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewer_id = Column(String, ForeignKey("users.id"), nullable=True)
+    review_notes = Column(Text, nullable=True)  # JSON list of {authorId, authorName, note, at}
+    resolution = Column(String, nullable=True)  # UPHELD, OVERTURNED, PARTIAL
+    resolution_reason = Column(Text, nullable=True)
+    resolved_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
     waived_reason = Column(Text, nullable=True)
     waived_authorized_by = Column(String, nullable=True)
 
@@ -650,6 +663,8 @@ class EnforcementCase(Base):
     zone = relationship("Zone")
     arresting_officer = relationship("User", foreign_keys=[arresting_officer_id])
     releasing_officer = relationship("User", foreign_keys=[releasing_officer_id])
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
+    resolved_by = relationship("User", foreign_keys=[resolved_by_id])
 
 class WebhookSubscription(Base):
     __tablename__ = "webhook_subscriptions"

@@ -590,6 +590,12 @@ class EnforcementCaseDecision(BaseModelCamel):
     reason: Optional[str] = None
     authorized_by: Optional[str] = None  # for waivers
 
+class CaseReviewNote(BaseModelCamel):
+    author_id: str
+    author_name: str
+    note: str
+    at: datetime.datetime
+
 class EnforcementCaseResponse(BaseModelCamel):
     id: str
     case_reference: str
@@ -612,6 +618,15 @@ class EnforcementCaseResponse(BaseModelCamel):
     releasing_officer_name: Optional[str] = None
     released_at: Optional[datetime.datetime] = None
     dispute_reason: Optional[str] = None
+    disputed_at: Optional[datetime.datetime] = None
+    reviewer_id: Optional[str] = None
+    reviewer_name: Optional[str] = None
+    review_notes: List[CaseReviewNote] = []
+    resolution: Optional[str] = None
+    resolution_reason: Optional[str] = None
+    resolved_by_id: Optional[str] = None
+    resolved_by_name: Optional[str] = None
+    resolved_at: Optional[datetime.datetime] = None
     waived_reason: Optional[str] = None
     waived_authorized_by: Optional[str] = None
 
@@ -623,6 +638,20 @@ class PublicCaseResponse(BaseModelCamel):
     fine_amount_kes: float
     status: str
     created_at: datetime.datetime
+
+class PublicDisputeCreate(BaseModelCamel):
+    reason: str
+    contact_phone: Optional[str] = None
+
+class CaseAssignReviewer(BaseModelCamel):
+    reviewer_id: str
+
+class CaseNoteCreate(BaseModelCamel):
+    note: str
+
+class CaseResolve(BaseModelCamel):
+    resolution: str  # UPHELD, OVERTURNED, PARTIAL
+    reason: str
 
 # --- Webhook Subscription Schemas ---
 class WebhookSubscriptionCreate(BaseModelCamel):

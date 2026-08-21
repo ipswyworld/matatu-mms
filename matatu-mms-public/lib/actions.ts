@@ -541,6 +541,30 @@ export async function publicPayCaseAction(caseReference: string): Promise<{ erro
   }
 }
 
+export async function publicDisputeCaseAction(
+  caseReference: string,
+  reason: string,
+  contactPhone: string
+): Promise<{ error?: string; caseData?: any }> {
+  try {
+    const res = await fetch(`${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(caseReference.trim())}/dispute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason, contactPhone: contactPhone || undefined }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      let msg = "Could not submit your dispute.";
+      try { msg = JSON.parse(errText).detail || msg; } catch {}
+      return { error: msg };
+    }
+    return { caseData: await res.json() };
+  } catch (err: any) {
+    return { error: err.message || "Could not submit your dispute." };
+  }
+}
+
 export async function logoutAction() {
   try {
     await apiWrite("/api/auth/logout", "POST");

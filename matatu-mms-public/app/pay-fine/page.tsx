@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Search, CreditCard, ArrowLeft } from "lucide-react";
-import { publicLookupCaseAction, publicPayCaseAction } from "@/lib/actions";
+import { Search, CreditCard, ArrowLeft, MessageSquareWarning } from "lucide-react";
+import { publicLookupCaseAction, publicPayCaseAction, publicDisputeCaseAction } from "@/lib/actions";
 import AuthSkyline from "@/components/AuthSkyline";
 import NairobiPayBadge from "@/components/NairobiPayBadge";
 import PublicFooter from "@/components/PublicFooter";
@@ -14,6 +14,10 @@ export default function PayFinePage() {
   const [caseData, setCaseData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputePhone, setDisputePhone] = useState("");
+  const [disputeSubmitted, setDisputeSubmitted] = useState(false);
 
   const handleLookup = () => {
     if (!reference.trim()) {
@@ -35,6 +39,21 @@ export default function PayFinePage() {
       const result = await publicPayCaseAction(reference);
       if (result.error) { setError(result.error); return; }
       setCaseData(result.caseData);
+    });
+  };
+
+  const handleDispute = () => {
+    if (!disputeReason.trim()) {
+      setError("Tell us why you're disputing this fine.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await publicDisputeCaseAction(caseData.caseReference, disputeReason.trim(), disputePhone.trim());
+      if (result.error) { setError(result.error); return; }
+      setCaseData(result.caseData);
+      setDisputeSubmitted(true);
+      setShowDisputeForm(false);
     });
   };
 
@@ -83,7 +102,7 @@ export default function PayFinePage() {
                   <div className="flex justify-between"><span className="text-county-ink/50">Status</span><span className="font-bold text-county-green">{caseData.status}</span></div>
                 </div>
 
-                {caseData.status === "ARRESTED" && (
+                {(caseData.status === "ARRESTED" || caseData.status === "RESOLVED_UPHELD") && (
                   <>
                     <button onClick={handlePay} disabled={isPending} className="btn-primary w-full font-bold flex items-center justify-center gap-2">
                       <CreditCard size={15} strokeWidth={2} />
@@ -95,6 +114,50 @@ export default function PayFinePage() {
                       is pending an API key. Once paid, the releasing officer finalizes release of your vehicle.
                     </p>
                   </>
+                )}
+
+                {(caseData.status === "ARRESTED" || caseData.status === "PAID") && !disputeSubmitted && (
+                  <div className="pt-1">
+                    {!showDisputeForm ? (
+                      <button
+                        onClick={() => setShowDisputeForm(true)}
+                        className="w-full text-xs font-bold text-county-ink/50 hover:text-county-red flex items-center justify-center gap-1.5 py-1"
+                      >
+                        <MessageSquareWarning size={13} strokeWidth={2} />
+                        Think this fine is wrong? Dispute it
+                      </button>
+                    ) : (
+                      <div className="space-y-2.5 pt-2 border-t border-black/5">
+                        <label className="text-xs font-bold text-county-ink/70 block">Why are you disputing this fine?</label>
+                        <textarea
+                          value={disputeReason}
+                          onChange={(e) => setDisputeReason(e.target.value)}
+                          rows={3}
+                          placeholder="e.g. The sign was obscured, or this isn't my vehicle..."
+                          className="input text-sm w-full"
+                        />
+                        <input
+                          value={disputePhone}
+                          onChange={(e) => setDisputePhone(e.target.value)}
+                          placeholder="Your phone number (optional, in case county needs to reach you)"
+                          className="input text-sm w-full"
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={() => setShowDisputeForm(false)} className="btn-secondary flex-1 text-xs font-bold">
+                            Cancel
+                          </button>
+                          <button onClick={handleDispute} disabled={isPending} className="btn-primary flex-1 text-xs font-bold">
+                            {isPending ? "Submitting..." : "Submit Dispute"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {disputeSubmitted && (
+                  <div className="bg-county-yellow/10 border border-county-yellow/30 text-yellow-700 text-xs p-3 rounded-lg font-semibold">
+                    Your dispute has been submitted and will be reviewed by the county. You can check back here for updates.
+                  </div>
                 )}
                 {caseData.status === "PAID" && (
                   <div className="bg-county-blue/10 border border-county-blue/30 text-county-blue text-xs p-3 rounded-lg font-semibold">
@@ -113,7 +176,27 @@ export default function PayFinePage() {
                 )}
                 {caseData.status === "DISPUTED" && (
                   <div className="bg-county-yellow/10 border border-county-yellow/30 text-yellow-700 text-xs p-3 rounded-lg font-semibold">
-                    This case is under dispute review.
+                    Your dispute has been received and is waiting to be picked up for review.
+                  </div>
+                )}
+                {caseData.status === "UNDER_REVIEW" && (
+                  <div className="bg-county-yellow/10 border border-county-yellow/30 text-yellow-700 text-xs p-3 rounded-lg font-semibold">
+                    Your dispute is currently being reviewed by the county.
+                  </div>
+                )}
+                {caseData.status === "RESOLVED_OVERTURNED" && (
+                  <div className="bg-county-green/10 border border-county-green/30 text-county-green text-xs p-3 rounded-lg font-semibold">
+                    Your dispute was upheld — this fine has been overturned.
+                  </div>
+                )}
+                {caseData.status === "RESOLVED_UPHELD" && (
+                  <div className="bg-county-red/10 border border-county-red/30 text-county-red text-xs p-3 rounded-lg font-semibold">
+                    Your dispute was reviewed and the original fine was upheld. It's still payable above.
+                  </div>
+                )}
+                {caseData.status === "RESOLVED_PARTIAL" && (
+                  <div className="bg-county-blue/10 border border-county-blue/30 text-county-blue text-xs p-3 rounded-lg font-semibold">
+                    Your dispute was partially upheld. Contact the county for details on any adjustment.
                   </div>
                 )}
               </div>

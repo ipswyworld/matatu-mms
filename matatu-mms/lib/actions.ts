@@ -429,6 +429,40 @@ export async function waiveEnforcementCaseAction(caseId: string, reason: string,
   return {};
 }
 
+export async function assignCaseReviewerAction(caseId: string, reviewerId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/enforcement/cases/${caseId}/assign-reviewer`, "PATCH", { reviewerId });
+  } catch (err: any) {
+    return { error: err.message || "Could not assign a reviewer to this case." };
+  }
+  revalidatePath("/enforcement/disputes");
+  return {};
+}
+
+export async function addCaseNoteAction(caseId: string, note: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/enforcement/cases/${caseId}/notes`, "POST", { note });
+  } catch (err: any) {
+    return { error: err.message || "Could not add this note." };
+  }
+  revalidatePath("/enforcement/disputes");
+  return {};
+}
+
+export async function resolveCaseDisputeAction(
+  caseId: string,
+  resolution: "UPHELD" | "OVERTURNED" | "PARTIAL",
+  reason: string
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/enforcement/cases/${caseId}/resolve`, "PATCH", { resolution, reason });
+  } catch (err: any) {
+    return { error: err.message || "Could not resolve this dispute." };
+  }
+  revalidatePath("/enforcement/disputes");
+  return {};
+}
+
 export async function updateOfficerAssignmentAction(
   userId: string,
   update: { enforcementDuty?: string | null; assignedZoneId?: string | null; commanderTitle?: string | null }
