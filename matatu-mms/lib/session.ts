@@ -65,3 +65,30 @@ export function clearSessionCookie() {
 }
 
 export const SESSION_COOKIE_NAME = COOKIE_NAME;
+
+// --- MFA-pending state ---------------------------------------------------
+// Between a correct password and a verified TOTP code, the user has no
+// valid session yet (see loginAction) — the backend's short-lived mfaToken
+// (already a signed JWT) is stashed in its own httpOnly cookie rather than
+// in the real session cookie, so a half-authenticated request can never be
+// mistaken for a full one by middleware or readSession(). 5 minutes matches
+// the backend token's own expiry (routes/auth.py's create_access_token call).
+const MFA_PENDING_COOKIE_NAME = "mms_mfa_pending";
+const MFA_PENDING_MAX_AGE = 60 * 5;
+
+export function setMfaPendingCookie(mfaToken: string) {
+  cookies().set(MFA_PENDING_COOKIE_NAME, mfaToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: MFA_PENDING_MAX_AGE,
+  });
+}
+
+export function readMfaPendingCookie(): string | null {
+  return cookies().get(MFA_PENDING_COOKIE_NAME)?.value ?? null;
+}
+
+export function clearMfaPendingCookie() {
+  cookies().delete(MFA_PENDING_COOKIE_NAME);
+}

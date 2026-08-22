@@ -307,6 +307,11 @@ export interface SessionData {
   role: Role;
   saccoId?: string;
   token?: string;
+  // True when this account's role requires MFA (ADMIN/SUPERADMIN) but
+  // hasn't enrolled yet — middleware force-redirects every page except
+  // /mfa/setup until this flips to false (see backend's "enforce, don't
+  // just offer" design, SESSION_SECURITY_STATUS.md).
+  mfaSetupRequired?: boolean;
 }
 
 export interface AbacPolicy {

@@ -7,7 +7,11 @@ const SESSION_COOKIE_NAME = "mms_session";
 // and Sacco Operator roles sign in through a completely separate app/
 // deployment and never reach this middleware — /login is this app's real
 // front door; "/" just redirects there (see app/page.tsx).
-const PUBLIC_PATHS = ["/login", "/faq", "/terms", "/contact", "/forgot-password", "/reset-password"];
+// /mfa/verify is reachable pre-session (it reads its own short-lived
+// mms_mfa_pending cookie, not mms_session) — /mfa/setup is deliberately NOT
+// here since it requires a real (if MFA-incomplete) session; see the gate
+// below.
+const PUBLIC_PATHS = ["/login", "/faq", "/terms", "/contact", "/forgot-password", "/reset-password", "/mfa/verify"];
 
 const ENFORCEMENT_ROLES = ["ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"];
 const ADMIN_TIER_ROLES = ["ADMIN", "SUPERADMIN"];
@@ -27,14 +31,17 @@ function homeForRole(role: string): string {
  * lib/session.ts's readSession() trusts that requests reaching a page have
  * already passed through here.
  */
-async function readVerifiedRole(request: NextRequest): Promise<string | null> {
+async function readVerifiedSession(request: NextRequest): Promise<{ role: string; mfaSetupRequired: boolean } | null> {
   const raw = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!raw) return null;
   const payloadBase64 = await verifyAndExtractPayload(raw);
   if (!payloadBase64) return null;
   try {
     const json = Buffer.from(payloadBase64, "base64").toString("utf-8");
-    return (JSON.parse(json).role as string) ?? null;
+    const parsed = JSON.parse(json);
+    const role = parsed.role as string;
+    if (!role) return null;
+    return { role, mfaSetupRequired: !!parsed.mfaSetupRequired };
   } catch {
     return null;
   }
@@ -52,18 +59,27 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const role = await readVerifiedRole(request);
+  const session = await readVerifiedSession(request);
 
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  if (!role) {
+  if (!session) {
     const loginUrl = new URL("/login", request.url);
     const response = NextResponse.redirect(loginUrl);
     // Clear a tampered/invalid cookie outright rather than leaving it to be re-checked forever.
     response.cookies.delete(SESSION_COOKIE_NAME);
     return response;
+  }
+
+  const { role, mfaSetupRequired } = session;
+
+  // Enforce, don't just offer: an ADMIN/SUPERADMIN account that logged in
+  // without MFA enrolled is confined to /mfa/setup until it completes —
+  // everything else in the app is off-limits, not just hidden from the nav.
+  if (mfaSetupRequired && !pathname.startsWith("/mfa/setup")) {
+    return NextResponse.redirect(new URL("/mfa/setup", request.url));
   }
 
   // Director of Mobility / Chief Officer: confined to the Operator

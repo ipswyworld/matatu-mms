@@ -2,7 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { clearSessionCookie, readSession, setSessionCookie } from "./session";
+import {
+  clearSessionCookie, readSession, setSessionCookie,
+  setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
+} from "./session";
 import { getReports } from "./data";
 import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
 
@@ -48,6 +51,28 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   return res.json() as Promise<T>;
 }
 
+// Single source of truth for "where does a freshly-authenticated user land",
+// shared by loginAction and verifyMfaAction (the second-step completion of
+// the same login) so the two never drift.
+function redirectHome(role: Role): never {
+  if (role === "PASSENGER") {
+    redirect("/passenger-portal");
+  } else if (role === "CREW") {
+    redirect("/crew-portal");
+  } else if (role === "SACCO_OPERATOR") {
+    redirect("/sacco-portal");
+  } else if (
+    role === "ENFORCEMENT" ||
+    role === "ARRESTING_OFFICER" ||
+    role === "RELEASING_OFFICER" ||
+    role === "ENFORCEMENT_COMMANDER"
+  ) {
+    redirect("/enforcement");
+  } else {
+    redirect("/dashboard");
+  }
+}
+
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
@@ -86,6 +111,16 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
     }
 
     const data = await res.json();
+
+    // Password was correct but this account has MFA enabled — no session
+    // yet. The backend's short-lived mfaToken goes into its own cookie
+    // (not the real session) and the user finishes the second step at
+    // /mfa/verify. See lib/session.ts for why these are separate cookies.
+    if (data.mfaRequired) {
+      setMfaPendingCookie(data.mfaToken);
+      redirect("/mfa/verify");
+    }
+
     const userRole = data.user.role as Role;
     await setSessionCookie(
       {
@@ -94,26 +129,12 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
         role: userRole,
         saccoId: data.user.saccoId,
         token: data.accessToken,
+        mfaSetupRequired: !!data.mfaSetupRequired,
       },
       rememberMe
     );
 
-    if (userRole === "PASSENGER") {
-      redirect("/passenger-portal");
-    } else if (userRole === "CREW") {
-      redirect("/crew-portal");
-    } else if (userRole === "SACCO_OPERATOR") {
-      redirect("/sacco-portal");
-    } else if (
-      userRole === "ENFORCEMENT" ||
-      userRole === "ARRESTING_OFFICER" ||
-      userRole === "RELEASING_OFFICER" ||
-      userRole === "ENFORCEMENT_COMMANDER"
-    ) {
-      redirect("/enforcement");
-    } else {
-      redirect("/dashboard");
-    }
+    redirectHome(userRole);
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
     // fetch() itself throwing (as opposed to resolving with a non-2xx
@@ -122,6 +143,84 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
     // cold start. Same honesty principle as above: don't call this a
     // wrong password.
     return { error: "Could not reach the authentication server. Please check your connection and try again." };
+  }
+}
+
+export async function verifyMfaAction(_prevState: { error?: string } | undefined, formData: FormData) {
+  const code = String(formData.get("code") || "").trim();
+  const mfaToken = readMfaPendingCookie();
+
+  if (!mfaToken) {
+    return { error: "This sign-in attempt has expired. Please sign in again." };
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/verify-mfa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mfaToken, code }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      // Deliberately NOT clearing the pending cookie here — a mistyped code
+      // shouldn't force the user back through their password too. The
+      // cookie carries its own 5-minute expiry matching the backend JWT, so
+      // it stops working on its own once actually stale.
+      if (res.status === 401) {
+        return { error: "That code is incorrect. Please try again." };
+      }
+      let detail: string | undefined;
+      try { detail = (await res.json()).detail; } catch {}
+      return { error: detail || `Verification failed (${res.status}). Please try again.` };
+    }
+
+    const data = await res.json();
+    clearMfaPendingCookie();
+
+    const userRole = data.user.role as Role;
+    await setSessionCookie({
+      userId: data.user.id,
+      name: data.user.name,
+      role: userRole,
+      saccoId: data.user.saccoId,
+      token: data.accessToken,
+      mfaSetupRequired: !!data.mfaSetupRequired,
+    });
+
+    redirectHome(userRole);
+  } catch (err: any) {
+    if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
+    return { error: "Could not reach the authentication server. Please check your connection and try again." };
+  }
+}
+
+// --- MFA enrollment (called directly from client components, not via a
+// <form> action — see components/MfaSetupFlow.tsx) ------------------------
+
+export async function enrollMfaAction(): Promise<{ qrCodeDataUri: string; manualEntryKey: string } | { error: string }> {
+  try {
+    return await apiWrite("/api/auth/mfa/enroll", "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not start MFA enrollment." };
+  }
+}
+
+export async function confirmMfaAction(_prevState: { error?: string; backupCodes?: string[] } | undefined, formData: FormData) {
+  const code = String(formData.get("code") || "").trim();
+  try {
+    const result = await apiWrite<{ backupCodes: string[] }>("/api/auth/mfa/confirm", "POST", { code });
+    // MFA is now enabled and satisfied for this session — flip the flag
+    // immediately so middleware stops confining the user to /mfa/setup as
+    // soon as they click through past the backup-codes screen, without
+    // waiting for a fresh login.
+    const session = readSession();
+    if (session) {
+      await setSessionCookie({ ...session, mfaSetupRequired: false });
+    }
+    return { backupCodes: result.backupCodes };
+  } catch (err: any) {
+    return { error: err.message || "That code didn't match. Check your authenticator app and try again." };
   }
 }
 
