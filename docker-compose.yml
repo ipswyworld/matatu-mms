@@ -160,11 +160,31 @@ services:
       - "127.0.0.1:9090:9090" # bind to localhost only — not for public exposure
     networks: [internal]
 
+  # One-shot: resolves ${SLACK_WEBHOOK_URL} in alertmanager.yml into a real
+  # config alertmanager can read, so the webhook URL lives in an env var /
+  # .env file instead of being committed in plaintext. The official
+  # alertmanager image has no shell/envsubst (busybox-based, minimal by
+  # design) — this runs the substitution in a throwaway alpine container
+  # before the real service starts, writing the result to a shared volume.
+  alertmanager-config-init:
+    image: alpine:3.20
+    restart: "no"
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:?Set SLACK_WEBHOOK_URL in .env — create a Slack incoming webhook first, see alertmanager/alertmanager.yml}
+    volumes:
+      - ./alertmanager/alertmanager.yml:/template/alertmanager.yml:ro
+      - alertmanager_config:/out
+    command: sh -c "apk add --no-cache gettext >/dev/null && envsubst < /template/alertmanager.yml > /out/alertmanager.yml"
+    networks: [internal]
+
   alertmanager:
     image: prom/alertmanager:latest
     restart: unless-stopped
+    depends_on:
+      alertmanager-config-init:
+        condition: service_completed_successfully
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_config:/etc/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
     networks: [internal]
@@ -191,6 +211,7 @@ services:
     networks: [internal]
 
 volumes:
+  alertmanager_config:
   backend_data:
   backend_uploads:
   postgres_data:
