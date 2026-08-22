@@ -116,6 +116,50 @@ services:
       # key to the deployed frontend domain in the TomTom console too).
       - key: NEXT_PUBLIC_TOMTOM_API_KEY
         sync: false
+      # Where the retired /system page redirects to (see
+      # app/(app)/system/page.tsx) — the ops console's real Render URL,
+      # not the internal service name (this redirect runs in the user's
+      # browser, which can't resolve Render's internal networking).
+      - key: OPS_APP_URL
+        value: https://matatu-mms-ops.onrender.com
+
+  # Ops console (ADMIN_DASHBOARD_AUDIT §4.3 Option B) — Superadmin-only
+  # infrastructure/security console, split out as its own app/process so a
+  # crash or bad deploy in the staff app above can't take it down too. Its
+  # own session cookie, own signing secret — same backend accounts/MFA as
+  # the staff app, but a genuinely separate session. On the self-hosted
+  # docker-compose stack this sits behind nginx's :3002 network
+  # restriction; on Render there's no equivalent network-layer gate, so its
+  # own SUPERADMIN-only session check (matatu-mms-ops/middleware.ts) plus
+  # the backend's requires_permission("view_system_health") are the only
+  # two layers protecting it — reachable at its own public URL, not
+  # hidden.
+  - type: web
+    name: matatu-mms-ops
+    runtime: docker
+    plan: free
+    dockerfilePath: ./matatu-mms-ops/Dockerfile
+    dockerContext: ./matatu-mms-ops
+    healthCheckPath: /api/health
+    envVars:
+      - key: BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      # Independent of the staff app's SESSION_SECRET and the public app's
+      # — a compromise of one app's session-signing key shouldn't forge
+      # sessions in another.
+      - key: OPS_SESSION_SECRET
+        generateValue: true
+      # No nginx /grafana/ proxy exists on Render (that's the
+      # docker-compose-only Option A path) — Grafana isn't deployed as a
+      # Render service in this blueprint, so the embed has nothing to
+      # point at yet. Leaving this unset means the iframe shows nothing
+      # rather than erroring; set it once Grafana is actually reachable
+      # from the public internet somewhere.
+      - key: GRAFANA_EMBED_URL
+        sync: false
+      # For the "Open Audit Trail" link back to the staff app.
+      - key: STAFF_APP_URL
+        value: https://matatu-mms-frontend.onrender.com
 
   # Public app — passengers, crew, and Sacco operators. Front door is "/"
   # (booking, live tracking, registration, operator onboarding, pay-fine).
