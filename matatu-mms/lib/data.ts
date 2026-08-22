@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -130,10 +130,6 @@ export async function getAuditLogs(limit?: number, beforeId?: number): Promise<A
   if (beforeId !== undefined) params.set("before_id", String(beforeId));
   const qs = params.toString();
   return apiFetch<AuditLog[]>(`/api/audit-logs${qs ? `?${qs}` : ""}`);
-}
-
-export async function getSystemHealth(): Promise<SystemHealth> {
-  return apiFetch<SystemHealth>("/api/system/health");
 }
 
 export async function getCrimes(): Promise<import("./types").CrimeRecord[]> {

@@ -73,6 +73,10 @@ services:
       NEXT_PUBLIC_PUBLIC_APP_URL: ${PUBLIC_APP_ORIGIN:-https://localhost:3001}
       NEXT_PUBLIC_TOMTOM_API_KEY: ${NEXT_PUBLIC_TOMTOM_API_KEY:-}
       SESSION_SECRET: ${SESSION_SECRET}
+      # Where the retired /system page now redirects — the real external
+      # address of the :3002 ops console front door (nginx/nginx.conf),
+      # not the internal Docker service name (browsers can't resolve it).
+      OPS_APP_URL: ${OPS_APP_ORIGIN:-https://localhost:3002}
     depends_on:
       backend:
         condition: service_healthy

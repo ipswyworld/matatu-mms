@@ -11,8 +11,9 @@ const ALL_ACTIONS: Action[] = Array.from(new Set(ALL_ROLES.flatMap((r) => MATRIX
 // Read-only — generated straight from lib/rbac.ts's MATRIX (the same
 // source of truth the app enforces against), not a hand-maintained second
 // copy. Answers "what can a Director of Mobility actually do" without
-// reading source or opening the /system ABAC inspector. See
-// ADMIN_DASHBOARD_AUDIT_AND_RECOMMENDATIONS.md §3.3.
+// reading source or opening the ops console's ABAC inspector
+// (matatu-mms-ops, ADMIN_DASHBOARD_AUDIT_AND_RECOMMENDATIONS.md §4.3
+// Option B). See §3.3.
 export default function RoleMatrix() {
   return (
     <div className="card p-5 space-y-3">
