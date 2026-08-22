@@ -152,11 +152,65 @@ the backend, and the frontend together.
 **Known limits of this path, worth setting expectations with investors:**
 - Free services sleep after ~15 min idle; first load after that can take
   30–60s. Open the link a minute before a call.
-- Uploaded files (sacco documents, crime-report photos) write to local disk,
-  which is **ephemeral** on Render — they vanish on redeploy. Fine for a demo
-  built on seed data; don't rely on uploads persisting.
 - This is a public URL. Seed/demo data only — never real citizen or operator
   data.
+
+Postgres (`matatu-mms-db`) is a real managed database, separate from the web
+services — everything backed by it (users, saccos, matatus, fines, bookings,
+cases) survives every future redeploy on its own, no extra setup needed.
+
+**Uploaded files (sacco documents, crime/enforcement scene photos) are the
+one exception** — `app/storage.py` writes to local disk by default, which is
+**ephemeral** on Render (no persistent Disk on a free/starter web service; a
+redeploy or even a plain restart wipes it, while the DB row pointing at it
+survives, leaving a broken file link). Set up S3-compatible storage before
+onboarding anyone who'll actually upload something real:
+
+### Setting up Cloudflare R2 for uploads (recommended — free tier covers a demo/early-stage deployment easily)
+
+1. **Create the bucket.** [dash.cloudflare.com](https://dash.cloudflare.com) →
+   **R2 Object Storage** → **Create bucket**. Name it something like
+   `matatu-mms-uploads`. Location: Automatic is fine.
+2. **Make it public.** Open the bucket → **Settings** → **Public access** →
+   enable **R2.dev subdomain** (gives you an instant public URL, no custom
+   domain needed for now — e.g. `https://pub-xxxxxxxx.r2.dev`). Copy that
+   URL; it's your `S3_PUBLIC_URL_BASE`.
+   - This matches how uploads already behave today (the local-disk
+     `/uploads/...` path has never been access-controlled — it's a plain
+     unauthenticated static mount), so a public-read bucket doesn't narrow
+     anything.
+3. **Create an API token.** R2 → **Manage R2 API Tokens** → **Create API
+   Token**. Permissions: **Object Read & Write**, scoped to the
+   `matatu-mms-uploads` bucket only (not "all buckets"). Save the **Access
+   Key ID** and **Secret Access Key** it shows you once — R2 won't show the
+   secret again.
+4. **Find your Account ID.** Cloudflare dashboard → right sidebar (or the R2
+   overview page) shows your Account ID. Your S3-compatible endpoint is:
+   `https://<account-id>.r2.cloudflarestorage.com`
+5. **Set the six env vars** on `matatu-mms-backend` in the Render dashboard
+   (already declared as `sync: false` in `render.yaml`, so Render will
+   prompt for them on the next deploy — or set them proactively under the
+   service's **Environment** tab now):
+
+   | Env var | Value |
+   |---|---|
+   | `S3_BUCKET` | `matatu-mms-uploads` |
+   | `S3_ENDPOINT_URL` | `https://<account-id>.r2.cloudflarestorage.com` |
+   | `S3_REGION` | `auto` |
+   | `S3_ACCESS_KEY_ID` | the Access Key ID from step 3 |
+   | `S3_SECRET_ACCESS_KEY` | the Secret Access Key from step 3 |
+   | `S3_PUBLIC_URL_BASE` | the `pub-xxxxxxxx.r2.dev` URL from step 2 |
+
+6. **Redeploy.** Manual Deploy on `matatu-mms-backend`, or just push a commit
+   — either triggers a restart that picks up the new env vars. New uploads
+   from that point on go to R2 and survive every future redeploy. (Anything
+   uploaded *before* this point, while still on local disk, is already
+   gone — R2 doesn't retroactively pick those up.)
+
+Verify it worked: upload a sacco document or file an enforcement case with a
+photo, then check the R2 bucket in the Cloudflare dashboard — the object
+should appear under `saccos/...` or `enforcement_cases/...`, matching the
+same folder structure local disk used.
 
 ## Still outstanding (not built this session)
 
