@@ -10,7 +10,6 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { TimeseriesPoint } from "@/lib/types";
 import { getTimeseriesAction } from "@/lib/actions";
 
 const RANGE_PRESETS = [
@@ -19,53 +18,66 @@ const RANGE_PRESETS = [
   { label: "90d", days: 90 },
 ] as const;
 
-function formatKes(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return n.toString();
-}
-
 function formatBucketLabel(bucket: string): string {
   const d = new Date(bucket);
   if (Number.isNaN(d.getTime())) return bucket;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export interface TrendChartProps {
+  /** Must match a metric the backend's /api/analytics/timeseries actually
+   * aggregates — see backend/app/routes/analytics.py. */
+  metric: "fines" | "bookings";
+  title: string;
+  /** Short unit noun for the count line, e.g. "fines", "bookings". */
+  countUnit: string;
+  /** Hex color driving the line/fill/tooltip accent. */
+  color?: string;
+  valueFormat?: "currency" | "number";
+  /** Formats the value axis/tooltip/summary — default plain thousands. */
+  valueFormatter?: (n: number) => string;
+}
+
+const defaultFormatter = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}k` : n.toString());
+const currencyFormatter = (n: number) => `KES ${n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}k` : n.toString()}`;
+
 /**
- * Real Recharts-based interactive time-series chart, consuming the
- * server-pre-aggregated /api/analytics/timeseries endpoint (never raw
- * rows — ARCHITECTURE_DECISIONS.md §23.3). First chart built against this
- * pattern; the shared shape (date-range presets + Recharts + a bucketed
- * endpoint) is the template for replacing the other hand-rolled charts
- * (RevenueBarChart, ComplianceDonut) later, not done in this pass.
+ * Generic Recharts-backed trend widget (ADMIN_DASHBOARD_AUDIT §5.1) —
+ * replaces the one-off FinesTrendChart this was extracted from. Any
+ * metric the backend's /api/analytics/timeseries endpoint supports can
+ * use this without a new bespoke component; adding a metric to the
+ * backend union is the only step needed to wire up a new trend widget.
  */
-export default function FinesTrendChart() {
+export default function TrendChart({
+  metric,
+  title,
+  countUnit,
+  color = "#0F5132",
+  valueFormat,
+  valueFormatter,
+}: TrendChartProps) {
+  const activeFormatter = valueFormat === "currency" ? currencyFormatter : (metric === "fines" && !valueFormat && !valueFormatter ? currencyFormatter : (valueFormatter || defaultFormatter));
   const [days, setDays] = useState<number>(30);
-  const [points, setPoints] = useState<TimeseriesPoint[]>([]);
+  const [points, setPoints] = useState<{ bucket: string; count: number; value: number }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     startTransition(() => {
-      getTimeseriesAction("fines", days, "day").then((result) => {
-        setPoints(result.points as TimeseriesPoint[]);
+      getTimeseriesAction(metric, days, "day").then((result) => {
+        setPoints(result.points);
         setError(result.error || null);
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days]);
+  }, [days, metric]);
 
   const loading = isPending && points.length === 0;
-
   const totalValue = points.reduce((sum, p) => sum + p.value, 0);
   const totalCount = points.reduce((sum, p) => sum + p.count, 0);
 
-  // Narrative insight + trend-vs-baseline (ARCHITECTURE_DECISIONS.md §24.3
-  // items 13-14 — a plain-language "so what" sentence, not just a bare
-  // number). Compares the first half of the loaded range against the
-  // second half as a simple baseline; a real "vs previous period" would
-  // need the endpoint to return an adjacent comparison window too — this
-  // is the honest version buildable from what /timeseries already returns.
+  // Narrative insight (first half vs second half of the loaded range) —
+  // same "so what" pattern the original FinesTrendChart established.
   const midpoint = Math.floor(points.length / 2);
   const firstHalfValue = points.slice(0, midpoint).reduce((sum, p) => sum + p.value, 0);
   const secondHalfValue = points.slice(midpoint).reduce((sum, p) => sum + p.value, 0);
@@ -79,13 +91,15 @@ export default function FinesTrendChart() {
       ? `Trending down ${Math.abs(percentChange)}% versus earlier in this range.`
       : "Holding steady across this range.";
 
+  const gradientId = `trendFill-${metric}`;
+
   return (
     <div className="rounded-2xl bg-white p-4 md:p-5 shadow-sm ring-1 ring-county-ink/[0.06] flex flex-col">
       <div className="flex items-start justify-between mb-1">
         <div>
-          <h3 className="font-black text-county-ink text-base tracking-tight">Fines issued over time</h3>
+          <h3 className="font-black text-county-ink text-base tracking-tight">{title}</h3>
           <p className="text-[11px] text-county-ink/50 mt-1">
-            {totalCount} fines &middot; KES {formatKes(totalValue)}
+            {totalCount} {countUnit} &middot; {activeFormatter(totalValue)}
           </p>
         </div>
         <div className="flex gap-1 rounded-lg bg-county-ink/5 p-0.5">
@@ -118,15 +132,15 @@ export default function FinesTrendChart() {
           <div className="h-full flex items-center justify-center text-xs text-county-red">{error}</div>
         ) : points.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-county-ink/40">
-            No fines issued in this range.
+            No {countUnit} in this range.
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={points} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <defs>
-                <linearGradient id="finesTrendFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#B4232C" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#B4232C" stopOpacity={0} />
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#00110A0F" />
@@ -140,11 +154,11 @@ export default function FinesTrendChart() {
               />
               <YAxis tick={{ fontSize: 10, fill: "#00110A80" }} axisLine={false} tickLine={false} width={36} />
               <Tooltip
-                formatter={(value) => [`KES ${Number(value).toLocaleString()}`, "Amount"]}
+                formatter={(value) => [activeFormatter(Number(value)), "Amount"]}
                 labelFormatter={(label) => formatBucketLabel(String(label))}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #00110A14" }}
               />
-              <Area type="monotone" dataKey="value" stroke="#B4232C" strokeWidth={2} fill="url(#finesTrendFill)" />
+              <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gradientId})`} />
             </AreaChart>
           </ResponsiveContainer>
         )}

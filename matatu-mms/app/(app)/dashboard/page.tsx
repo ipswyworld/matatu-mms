@@ -7,15 +7,14 @@ import { can } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 
 export const metadata: Metadata = { title: "Overview" };
-import ComplianceDonut from "@/components/dashboard/ComplianceDonut";
-import RevenueBars from "@/components/dashboard/RevenueBars";
+import StatusBreakdown from "@/components/widgets/StatusBreakdown";
+import TrendChart from "@/components/widgets/TrendChart";
 import KpiCard from "@/components/dashboard/KpiCard";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
 import CorridorHealth from "@/components/dashboard/CorridorHealth";
 import BookingsPanel from "@/components/dashboard/BookingsPanel";
 import FleetLiveStatus from "@/components/dashboard/FleetLiveStatus";
 import DashboardLiveRefresh from "@/components/DashboardLiveRefresh";
-import FinesTrendChart from "@/components/dashboard/FinesTrendChart";
 import LiveConditions from "@/components/dashboard/LiveConditions";
 
 export default async function DashboardPage() {
@@ -208,23 +207,47 @@ export default async function DashboardPage() {
       {/* Row 2: two feature panels + activity rail */}
       <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
         <div className="lg:col-span-2 grid sm:grid-cols-2 gap-4 md:gap-6">
-          <ComplianceDonut
-            total={totalFleet}
-            active={activeCount}
-            flagged={flaggedCount}
-            impounded={impoundedCount}
-            decommissioned={decommissionedCount}
+          <StatusBreakdown
+            title="Fleet compliance"
+            subtitle="Current status across the registered fleet"
+            variant="donut"
+            centerMetricLabel="Compliant"
+            totalUnitLabel="vehicles"
+            headerStat={{ label: "Status", value: "Live", tone: "positive" }}
+            segments={[
+              { key: "active", label: "Active", color: "#0F5132", value: activeCount },
+              { key: "flagged", label: "Flagged", color: "#F5C518", value: flaggedCount },
+              { key: "impounded", label: "Impounded", color: "#B4232C", value: impoundedCount },
+              { key: "decommissioned", label: "Decommissioned", color: "#3E4A44", value: decommissionedCount },
+            ]}
           />
-          <RevenueBars
-            paid={paidKes}
-            pending={pendingKes}
-            disputed={disputedKes}
-            waived={waivedKes}
-            collectionRate={collectionRate}
+          <StatusBreakdown
+            title="Fine revenue"
+            subtitle="KES by settlement status"
+            variant="bar"
+            valueFormat="currency"
+            headerStat={{
+              label: "Collection rate",
+              value: `${collectionRate}%`,
+              tone: collectionRate >= 60 ? "positive" : "attention",
+            }}
+            footerStat={{ label: "Total issued", value: `KES ${(paidKes + pendingKes + disputedKes + waivedKes).toLocaleString()}` }}
+            segments={[
+              { key: "paid", label: "Paid", color: "#0F5132", value: paidKes },
+              { key: "pending", label: "Pending", color: "#F5C518", value: pendingKes },
+              { key: "disputed", label: "Disputed", color: "#B4232C", value: disputedKes },
+              { key: "waived", label: "Waived", color: "#8A9691", value: waivedKes },
+            ]}
           />
           {/* Interactive Recharts time-series (ARCHITECTURE_DECISIONS.md §23) —
               server-pre-aggregated, not raw rows charted client-side. */}
-          <FinesTrendChart />
+          <TrendChart
+            metric="fines"
+            title="Fines issued over time"
+            countUnit="fines"
+            color="#B4232C"
+            valueFormat="currency"
+          />
         </div>
 
         <ActivityFeed

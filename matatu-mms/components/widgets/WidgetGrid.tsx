@@ -1,6 +1,8 @@
 import { WidgetConfig } from "@/lib/widgets";
 import KpiCard from "@/components/dashboard/KpiCard";
-import FinesTrendChart from "@/components/dashboard/FinesTrendChart";
+import TrendChart from "./TrendChart";
+import StatusBreakdown from "./StatusBreakdown";
+import WorkQueueList from "./WorkQueueList";
 
 /**
  * Renders a WidgetConfig[] (lib/widgets.ts) as a responsive grid — the
@@ -24,13 +26,25 @@ export default function WidgetGrid({ widgets }: { widgets: WidgetConfig[] }) {
               />
             );
           case "trend":
-            // FinesTrendChart is currently hardcoded to the "fines" metric
-            // (Task 19) — a generic TrendChart accepting `metric` as a prop
-            // is the natural next step once a second trend widget
-            // (bookings) is actually needed on a real dashboard.
             return (
               <div key={widget.key} className="sm:col-span-2">
-                <FinesTrendChart />
+                <TrendChart metric={widget.metric} title={widget.title} countUnit={widget.countUnit} color={widget.color} />
+              </div>
+            );
+          case "status":
+            return (
+              <StatusBreakdown
+                key={widget.key}
+                title={widget.title}
+                subtitle={widget.subtitle}
+                variant={widget.variant}
+                segments={widget.segments}
+              />
+            );
+          case "workqueue":
+            return (
+              <div key={widget.key} className="sm:col-span-2">
+                <WorkQueueList title={widget.title} subtitle={widget.subtitle} items={widget.items} viewAllHref={widget.viewAllHref} />
               </div>
             );
           case "table":

@@ -4,16 +4,17 @@
 // N hand-built pages; components/widgets/WidgetGrid.tsx renders whichever
 // component a config's `type` maps to.
 //
-// Existing components already fit this shape without a rewrite:
-// KpiCard (components/dashboard/KpiCard.tsx) is the KPI-tile widget,
-// FinesTrendChart (Task 19) is the first trend-widget. This file is the
-// registry/type layer connecting configs to those components — migrating
-// every existing dashboard page to compose from WidgetConfig[] instead of
-// hand-placed JSX is real follow-up work, not done in this pass (it would
-// touch every role's dashboard page); what's here is the real,
-// usable pattern + one live example (see WidgetGrid.tsx).
+// Widget types map to the shared kit in components/widgets/ (extracted
+// per ADMIN_DASHBOARD_AUDIT §5): KpiCard, TrendChart, StatusBreakdown,
+// WorkQueueList. Migrating every existing dashboard page to compose from
+// WidgetConfig[] instead of hand-placed JSX is real follow-up work, not
+// done in this pass — what's here is the real, usable pattern; the admin
+// dashboard (app/(app)/dashboard/page.tsx) already uses the underlying
+// components directly (StatusBreakdown, TrendChart) without going through
+// this config layer, which is fine — WidgetGrid is for roles/pages that
+// want the config-driven composition, not a requirement for every page.
 
-export type WidgetType = "kpi" | "trend" | "table";
+export type WidgetType = "kpi" | "trend" | "status" | "workqueue" | "table";
 
 export interface KpiWidgetConfig {
   type: "kpi";
@@ -29,6 +30,26 @@ export interface TrendWidgetConfig {
   key: string;
   metric: "fines" | "bookings";
   title: string;
+  countUnit: string;
+  color?: string;
+}
+
+export interface StatusWidgetConfig {
+  type: "status";
+  key: string;
+  title: string;
+  subtitle?: string;
+  variant?: "donut" | "bar";
+  segments: { key: string; label: string; color: string; value: number }[];
+}
+
+export interface WorkQueueWidgetConfig {
+  type: "workqueue";
+  key: string;
+  title: string;
+  subtitle?: string;
+  items: { id: string; label: string; detail?: string; ageLabel?: string; href?: string }[];
+  viewAllHref?: string;
 }
 
 export interface TableWidgetConfig {
@@ -39,18 +60,26 @@ export interface TableWidgetConfig {
   rows: Array<Record<string, string | number>>;
 }
 
-export type WidgetConfig = KpiWidgetConfig | TrendWidgetConfig | TableWidgetConfig;
+export type WidgetConfig = KpiWidgetConfig | TrendWidgetConfig | StatusWidgetConfig | WorkQueueWidgetConfig | TableWidgetConfig;
 
 // Example role templates — the "configuration" half of §25.1. Not wired
-// into any page yet (see module docstring above); demonstrates the target
-// shape a role's dashboard would be authored as.
+// into any page yet; demonstrates the target shape a role's dashboard
+// would be authored as once a page actually consumes WidgetGrid.
 export const ADMIN_DASHBOARD_TEMPLATE: WidgetConfig[] = [
   { type: "kpi", key: "fleet", label: "Registered vehicles", value: "", href: "/matatus" },
   { type: "kpi", key: "fines", label: "Outstanding fines", value: "", href: "/revenue" },
-  { type: "trend", key: "fines-trend", metric: "fines", title: "Fines issued over time" },
+  { type: "trend", key: "fines-trend", metric: "fines", title: "Fines issued over time", countUnit: "fines" },
 ];
 
 export const SACCO_OPERATOR_DASHBOARD_TEMPLATE: WidgetConfig[] = [
   { type: "kpi", key: "fleet", label: "My fleet", value: "", href: "/matatus" },
-  { type: "trend", key: "fines-trend", metric: "fines", title: "My fines over time" },
+  { type: "trend", key: "fines-trend", metric: "fines", title: "My fines over time", countUnit: "fines" },
+];
+
+// Target shape for the still-missing Director/Chief Officer persona
+// dashboard (SYSTEM_AUDIT §6, ADMIN_DASHBOARD_AUDIT §6.1) — built on
+// WorkQueueList once that page actually exists; not wired up yet.
+export const VERIFICATION_STAGE_DASHBOARD_TEMPLATE: WidgetConfig[] = [
+  { type: "kpi", key: "awaiting", label: "Awaiting your decision", value: "", href: "/saccos/verify" },
+  { type: "workqueue", key: "queue", title: "Applications awaiting your stage", items: [], viewAllHref: "/saccos/verify" },
 ];
