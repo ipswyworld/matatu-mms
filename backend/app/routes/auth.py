@@ -14,11 +14,16 @@ from app.models import User
 from app.schemas import (
     UserLogin, Token, UserResponse, UserCreate, ForgotPasswordRequest, ResetPasswordRequest,
     PhoneForgotPasswordRequest, PhoneResetPasswordRequest,
+    MfaRequiredResponse, MfaEnrollResponse, MfaConfirmRequest, MfaConfirmResponse,
+    MfaDisableRequest, MfaVerifyRequest,
 )
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash
-from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS
+from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
 from app.rate_limit import limiter
 from app.sms import send_sms
+from app.rbac import ADMIN_TIER_ROLES
+from app import mfa as mfa_lib
+import jwt as pyjwt_lib
 
 logger = logging.getLogger(__name__)
 RESET_TOKEN_TTL_MINUTES = 30
@@ -36,12 +41,49 @@ def _as_aware_utc(dt: datetime.datetime) -> datetime.datetime:
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-@router.post("/login", response_model=Token)
+def _issue_token_response(response: Response, user: User, remember_me: bool, mfa_setup_required: bool = False) -> Token:
+    """Shared by the normal login path and /verify-mfa — the part that
+    actually mints a session, run only once MFA (if required) is satisfied."""
+    token_data = {
+        "userId": user.id,
+        "name": user.name,
+        "role": user.role,
+        "saccoId": user.sacco_id
+    }
+    remember_me_delta = datetime.timedelta(days=REMEMBER_ME_EXPIRE_DAYS) if remember_me else None
+    access_token = create_access_token(data=token_data, expires_delta=remember_me_delta)
+
+    session_json = json.dumps({
+        "userId": user.id,
+        "name": user.name,
+        "role": user.role,
+        "saccoId": user.sacco_id
+    })
+    encoded_cookie = base64.b64encode(session_json.encode('utf-8')).decode('utf-8')
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=encoded_cookie,
+        path="/",
+        httponly=False,
+        samesite="lax",
+        max_age=REMEMBER_ME_EXPIRE_DAYS * 24 * 3600 if remember_me else None,
+    )
+
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse.model_validate(user),
+        mfa_setup_required=mfa_setup_required,
+    )
+
+
+@router.post("/login", response_model=None)
 @limiter.limit("10/minute")
 async def login(request: Request, response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalars().first()
-    
+
     if not user or not await verify_password(credentials.password, user.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,40 +107,128 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
             detail="This account is awaiting guardian approval. Ask your guardian to check their SMS for the approval link.",
         )
 
-    # Generate JWT token — "remember me" gets a long-lived token/cookie
-    # instead of the normal ACCESS_TOKEN_EXPIRE_MINUTES; see config.py.
-    token_data = {
-        "userId": user.id,
-        "name": user.name,
-        "role": user.role,
-        "saccoId": user.sacco_id
-    }
-    remember_me_delta = datetime.timedelta(days=REMEMBER_ME_EXPIRE_DAYS) if credentials.remember_me else None
-    access_token = create_access_token(data=token_data, expires_delta=remember_me_delta)
+    # MFA (§19 / SESSION_SECURITY_STATUS.md) — password is correct, but if
+    # this account has MFA enabled, no access token is issued yet. A
+    # short-lived pending token (5 min, distinguishable from a real session
+    # token by carrying "mfaPendingUserId" instead of "userId") is the only
+    # thing returned; /api/auth/verify-mfa exchanges it for the real one.
+    if user.mfa_enabled:
+        mfa_token = create_access_token(
+            data={"mfaPendingUserId": user.id, "rememberMe": credentials.remember_me},
+            expires_delta=datetime.timedelta(minutes=5),
+        )
+        return MfaRequiredResponse(mfa_token=mfa_token)
 
-    session_json = json.dumps({
-        "userId": user.id,
-        "name": user.name,
-        "role": user.role,
-        "saccoId": user.sacco_id
-    })
-    encoded_cookie = base64.b64encode(session_json.encode('utf-8')).decode('utf-8')
+    # Enforce, don't just offer, for ADMIN/SUPERADMIN (SESSION_SECURITY_STATUS.md's
+    # own recommendation) — an admin-tier account that hasn't enrolled yet
+    # still gets a normal session (never locked out of an account they
+    # haven't set MFA up on), but mfa_setup_required tells the frontend to
+    # force a stop at /mfa/setup before anywhere else.
+    mfa_setup_required = user.role in ADMIN_TIER_ROLES and not user.mfa_enabled
+    return _issue_token_response(response, user, credentials.remember_me, mfa_setup_required)
 
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=encoded_cookie,
-        path="/",
-        httponly=False,
-        samesite="lax",
-        max_age=REMEMBER_ME_EXPIRE_DAYS * 24 * 3600 if credentials.remember_me else None,
-    )
 
-    user_resp = UserResponse.model_validate(user)
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user=user_resp
-    )
+@router.post("/verify-mfa", response_model=Token)
+@limiter.limit("10/minute")
+async def verify_mfa(request: Request, response: Response, payload: MfaVerifyRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        pending = pyjwt_lib.decode(payload.mfa_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=401, detail="This sign-in attempt has expired. Please sign in again.")
+
+    user_id = pending.get("mfaPendingUserId")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="This sign-in attempt has expired. Please sign in again.")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user or not user.mfa_enabled or not user.totp_secret:
+        raise HTTPException(status_code=401, detail="This sign-in attempt has expired. Please sign in again.")
+
+    code_ok = mfa_lib.verify_totp_code(mfa_lib.decrypt_secret(user.totp_secret), payload.code)
+    if not code_ok:
+        # Not a valid TOTP code — try it as a backup code instead. Each
+        # backup code is single-use: found and verified, it's removed from
+        # the stored (hashed) list so it can never be replayed.
+        codes = json.loads(user.mfa_backup_codes) if user.mfa_backup_codes else []
+        matched_index = None
+        for i, hashed in enumerate(codes):
+            if await verify_password(payload.code.strip(), hashed):
+                matched_index = i
+                break
+        if matched_index is None:
+            raise HTTPException(status_code=401, detail="Invalid code.")
+        del codes[matched_index]
+        user.mfa_backup_codes = json.dumps(codes)
+        await db.commit()
+
+    return _issue_token_response(response, user, remember_me=bool(pending.get("rememberMe")))
+
+
+@router.post("/mfa/enroll", response_model=MfaEnrollResponse)
+async def enroll_mfa(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Step 1 of enrollment — generates a secret and its QR code, but does
+    NOT enable MFA yet (that only happens once /mfa/confirm proves the user
+    actually has it working, so no one can lock themselves out with a typo'd
+    scan)."""
+    if current_user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is already enabled on this account.")
+    secret = mfa_lib.generate_totp_secret()
+    current_user.totp_secret = mfa_lib.encrypt_secret(secret)
+    # Not committed to mfa_enabled yet — a fresh secret is fine to
+    # regenerate on a repeat call to this endpoint (e.g. user re-scans),
+    # it just overwrites the not-yet-confirmed one.
+    await db.commit()
+    uri = mfa_lib.totp_provisioning_uri(secret, current_user.email)
+    return MfaEnrollResponse(qr_code_data_uri=mfa_lib.qr_code_data_uri(uri), manual_entry_key=secret)
+
+
+@router.post("/mfa/confirm", response_model=MfaConfirmResponse)
+async def confirm_mfa(
+    payload: MfaConfirmRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is already enabled on this account.")
+    if not current_user.totp_secret:
+        raise HTTPException(status_code=400, detail="Start enrollment first — no secret to confirm.")
+
+    secret = mfa_lib.decrypt_secret(current_user.totp_secret)
+    if not mfa_lib.verify_totp_code(secret, payload.code):
+        raise HTTPException(status_code=400, detail="That code didn't match. Check your authenticator app and try again.")
+
+    backup_codes = mfa_lib.generate_backup_codes()
+    hashed_codes = [await get_password_hash(c) for c in backup_codes]
+    current_user.mfa_enabled = True
+    current_user.mfa_backup_codes = json.dumps(hashed_codes)
+    await db.commit()
+
+    return MfaConfirmResponse(backup_codes=backup_codes)
+
+
+@router.post("/mfa/disable", status_code=status.HTTP_204_NO_CONTENT)
+async def disable_mfa(
+    payload: MfaDisableRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not current_user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is not enabled on this account.")
+    if not await verify_password(payload.password, current_user.password):
+        raise HTTPException(status_code=401, detail="Incorrect password.")
+
+    code_ok = current_user.totp_secret and mfa_lib.verify_totp_code(mfa_lib.decrypt_secret(current_user.totp_secret), payload.code)
+    if not code_ok:
+        codes = json.loads(current_user.mfa_backup_codes) if current_user.mfa_backup_codes else []
+        code_ok = any([await verify_password(payload.code.strip(), h) for h in codes])
+    if not code_ok:
+        raise HTTPException(status_code=401, detail="Invalid code.")
+
+    current_user.mfa_enabled = False
+    current_user.totp_secret = None
+    current_user.mfa_backup_codes = None
+    await db.commit()
 
 SELF_REGISTRATION_ALLOWED_ROLES = {"PASSENGER"}
 

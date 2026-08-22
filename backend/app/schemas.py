@@ -289,6 +289,36 @@ class Token(BaseModelCamel):
     access_token: str
     token_type: str
     user: UserResponse
+    # True once, right after a successful login, when this account's role
+    # requires MFA (ADMIN/SUPERADMIN) but hasn't enrolled yet. The frontend
+    # forces a stop at /mfa/setup before anywhere else — this is the
+    # "enforce, don't just offer" path from SESSION_SECURITY_STATUS.md
+    # without locking anyone out of an account they haven't set MFA up on.
+    mfa_setup_required: bool = False
+
+class MfaRequiredResponse(BaseModelCamel):
+    """Returned instead of Token when the account has MFA enabled — no
+    access token is issued until /api/auth/verify-mfa succeeds."""
+    mfa_required: bool = True
+    mfa_token: str
+
+class MfaEnrollResponse(BaseModelCamel):
+    qr_code_data_uri: str
+    manual_entry_key: str  # for "can't scan the code" — typed in by hand
+
+class MfaConfirmRequest(BaseModelCamel):
+    code: str
+
+class MfaConfirmResponse(BaseModelCamel):
+    backup_codes: List[str]  # shown exactly once — not retrievable again
+
+class MfaDisableRequest(BaseModelCamel):
+    password: str
+    code: str  # a live TOTP code or an unused backup code
+
+class MfaVerifyRequest(BaseModelCamel):
+    mfa_token: str
+    code: str
 
 # --- Route Schemas ---
 class RouteBase(BaseModelCamel):

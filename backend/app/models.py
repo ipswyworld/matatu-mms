@@ -135,6 +135,16 @@ class User(Base):
     # every historical record intact.
     is_active = Column(Boolean, default=True)
 
+    # TOTP-based MFA (§19, SESSION_SECURITY_STATUS.md's spec'd-but-not-built
+    # section, ADMIN_DASHBOARD_AUDIT §6.2) — enforced for ADMIN/SUPERADMIN,
+    # opt-in for everyone else. totp_secret is Fernet-encrypted at rest
+    # (see app/mfa.py), never stored or returned in plaintext.
+    # mfa_backup_codes is a JSON list of bcrypt-hashed single-use codes —
+    # same hashing helper as the password itself, consumed one at a time.
+    totp_secret = Column(String, nullable=True)
+    mfa_enabled = Column(Boolean, default=False, nullable=False)
+    mfa_backup_codes = Column(Text, nullable=True)
+
     # Passenger's preferred operator (roadmap: "passenger side they can
     # pick a favorite sacco/operator they prefer") — self-service only, set
     # via PATCH /api/users/me/favorite-sacco, never by an admin/operator
