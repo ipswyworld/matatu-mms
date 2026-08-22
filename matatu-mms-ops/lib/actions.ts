@@ -42,14 +42,10 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
       return { error: "This console is for Superadmin accounts only." };
     }
 
-    if (data.mfaSetupRequired) {
-      // A Superadmin who hasn't finished MFA enrollment yet — enrollment
-      // itself only happens once, via the staff app's /mfa/setup (same
-      // account, same TOTP secret). Send them there instead of duplicating
-      // the enrollment UI in a second app for a one-time setup step.
-      return { error: "Finish setting up two-factor authentication in the staff app first, then come back here." };
-    }
-
+    // MFA is opt-in, not required, to reach this console — a Superadmin who
+    // hasn't enrolled just signs straight in. Anyone who does enable MFA
+    // (via the staff app) still goes through the mfaRequired branch above
+    // on their next login, same as any other account.
     await setSessionCookie({ userId: data.user.id, name: data.user.name, role: "SUPERADMIN", token: data.accessToken });
     redirect("/");
   } catch (err: any) {

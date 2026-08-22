@@ -73,14 +73,10 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const { role, mfaSetupRequired } = session;
+  const { role } = session;
 
-  // Enforce, don't just offer: an ADMIN/SUPERADMIN account that logged in
-  // without MFA enrolled is confined to /mfa/setup until it completes —
-  // everything else in the app is off-limits, not just hidden from the nav.
-  if (mfaSetupRequired && !pathname.startsWith("/mfa/setup")) {
-    return NextResponse.redirect(new URL("/mfa/setup", request.url));
-  }
+  // MFA is opt-in, not enforced — /mfa/setup stays reachable for anyone who
+  // wants to turn it on voluntarily, but no role is confined there.
 
   // Director of Mobility / Chief Officer: confined to the Operator
   // Verification hub (and their dashboard) — they don't need the full
