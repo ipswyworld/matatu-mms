@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX } from "lucide-react";
+import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX, TrendingUp } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -9,6 +8,7 @@ import PageBanner from "@/components/PageBanner";
 export const metadata: Metadata = { title: "Overview" };
 import StatusBreakdown from "@/components/widgets/StatusBreakdown";
 import TrendChart from "@/components/widgets/TrendChart";
+import WorkQueueList, { WorkQueueItem } from "@/components/widgets/WorkQueueList";
 import KpiCard from "@/components/dashboard/KpiCard";
 import ActivityFeed from "@/components/dashboard/ActivityFeed";
 import CorridorHealth from "@/components/dashboard/CorridorHealth";
@@ -17,23 +17,66 @@ import FleetLiveStatus from "@/components/dashboard/FleetLiveStatus";
 import DashboardLiveRefresh from "@/components/DashboardLiveRefresh";
 import LiveConditions from "@/components/dashboard/LiveConditions";
 
+// "3d 4h", "6h", "40m" — a submitted-at timestamp compared to now. Used for
+// WorkQueueList's ageLabel (oldest-first work queues) across persona
+// dashboards, not just this one.
+function ageLabel(fromIso?: string): string | undefined {
+  if (!fromIso) return undefined;
+  const ms = Date.now() - new Date(fromIso).getTime();
+  if (ms < 0) return undefined;
+  const hours = ms / 3_600_000;
+  if (hours < 1) return `${Math.max(1, Math.round(ms / 60_000))}m`;
+  if (hours < 24) return `${Math.round(hours)}h`;
+  const days = Math.floor(hours / 24);
+  const rem = Math.round(hours % 24);
+  return rem > 0 ? `${days}d ${rem}h` : `${days}d`;
+}
+
+function averageDays(msValues: number[]): string {
+  if (msValues.length === 0) return "—";
+  const avgMs = msValues.reduce((sum, v) => sum + v, 0) / msValues.length;
+  const days = avgMs / 86_400_000;
+  return days < 1 ? `${Math.round(days * 24)}h` : `${days.toFixed(1)}d`;
+}
+
 export default async function DashboardPage() {
   const session = readSession()!;
   const isSacco = session.role === "SACCO_OPERATOR";
 
+  // --- Director of Mobility / Chief Officer: a work-queue dashboard, not
+  // a briefing — their whole job on this system is "decide the next
+  // application," so the queue itself (oldest first, with SLA aging) is
+  // the primary surface, not a supporting panel. Built on WorkQueueList
+  // per ADMIN_DASHBOARD_AUDIT §5.1/§6.1. ---
   if (session.role === "DIRECTOR_MOBILITY" || session.role === "CHIEF_OFFICER") {
     const saccos = await getSaccos();
     const isDirector = session.role === "DIRECTOR_MOBILITY";
     const stageField = isDirector ? "directorMobilityStatus" : "chiefOfficerStatus";
+    const decidedAtField = isDirector ? "directorMobilityDecidedAt" : "chiefOfficerDecidedAt";
 
-    const awaitingYou = saccos.filter((s) => {
-      if (!s.applicationSubmittedAt) return false;
-      if (isDirector) return s[stageField] === "PENDING";
-      return s.directorMobilityStatus === "APPROVED" && s[stageField] === "PENDING";
-    });
+    const awaitingYou = saccos
+      .filter((s) => {
+        if (!s.applicationSubmittedAt) return false;
+        if (isDirector) return s[stageField] === "PENDING";
+        return s.directorMobilityStatus === "APPROVED" && s[stageField] === "PENDING";
+      })
+      .sort((a, b) => new Date(a.applicationSubmittedAt!).getTime() - new Date(b.applicationSubmittedAt!).getTime());
     const approvedByYou = saccos.filter((s) => s[stageField] === "APPROVED");
     const rejectedByYou = saccos.filter((s) => s[stageField] === "REJECTED");
     const notYetSubmitted = saccos.filter((s) => !s.applicationSubmittedAt && s.status === "PENDING_VERIFICATION");
+    const decided = saccos.filter((s) => (s[stageField] === "APPROVED" || s[stageField] === "REJECTED") && s[decidedAtField] && s.applicationSubmittedAt);
+    const decisionTimesMs = decided.map((s) => new Date(s[decidedAtField]!).getTime() - new Date(s.applicationSubmittedAt!).getTime());
+    const oldestWaitingHours = awaitingYou[0]?.applicationSubmittedAt
+      ? (Date.now() - new Date(awaitingYou[0].applicationSubmittedAt).getTime()) / 3_600_000
+      : 0;
+
+    const queueItems: WorkQueueItem[] = awaitingYou.map((s) => ({
+      id: s.id,
+      label: s.name,
+      detail: s.saccoType === "NEW" ? "New Applicant" : "Existing Operator",
+      ageLabel: ageLabel(s.applicationSubmittedAt),
+      href: "/saccos/verify",
+    }));
 
     return (
       <div className="space-y-6">
@@ -48,7 +91,10 @@ export default async function DashboardPage() {
           <KpiCard
             label="Awaiting your decision"
             value={awaitingYou.length.toString()}
-            delta={{ label: "Submitted applications", tone: awaitingYou.length > 0 ? "attention" : "positive" }}
+            delta={{
+              label: oldestWaitingHours > 48 ? `Oldest waiting ${Math.round(oldestWaitingHours / 24)}d — SLA risk` : "Submitted applications",
+              tone: oldestWaitingHours > 48 ? "negative" : awaitingYou.length > 0 ? "attention" : "positive",
+            }}
             accent="yellow"
             href="/saccos/verify"
             icon={Clock}
@@ -56,38 +102,112 @@ export default async function DashboardPage() {
           <KpiCard label="Approved by you" value={approvedByYou.length.toString()} delta={{ label: "All time", tone: "positive" }} accent="green" icon={CheckCircle2} />
           <KpiCard label="Rejected by you" value={rejectedByYou.length.toString()} delta={{ label: "All time", tone: "negative" }} accent="red" icon={XCircle} />
           <KpiCard
-            label="Not yet submitted"
-            value={notYetSubmitted.length.toString()}
-            delta={{ label: "Still filling onboarding wizard", tone: "positive" }}
+            label="Avg. time to decision"
+            value={averageDays(decisionTimesMs)}
+            delta={{ label: `${decided.length} decided, all time`, tone: "positive" }}
             icon={FileClock}
           />
         </div>
 
-        <div className="card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-county-black">Applications Awaiting Your Decision</h3>
-            <Link href="/saccos/verify" className="text-xs font-semibold text-county-green hover:underline">
-              Full verification hub →
-            </Link>
-          </div>
-          {awaitingYou.length === 0 ? (
-            <p className="text-sm text-black/40 py-6 text-center">Nothing waiting on you right now.</p>
-          ) : (
-            <div className="space-y-2">
-              {awaitingYou.map((s) => (
-                <div key={s.id} className="flex items-center justify-between text-sm border-b border-black/5 pb-2 last:border-0">
-                  <div>
-                    <span className="font-semibold text-county-black">{s.name}</span>
-                    <span className="text-xs text-black/50 ml-2">{s.saccoType === "NEW" ? "New Applicant" : "Existing Operator"}</span>
-                  </div>
-                  <span className="text-xs text-black/50">
-                    Submitted {s.applicationSubmittedAt && new Date(s.applicationSubmittedAt).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+        <WorkQueueList
+          title="Applications Awaiting Your Decision"
+          subtitle="Oldest first — same order the SLA clock would flag."
+          items={queueItems}
+          viewAllHref="/saccos/verify"
+          viewAllLabel="Full verification hub"
+          emptyLabel="Nothing waiting on you right now."
+          maxVisible={8}
+        />
+
+        {notYetSubmitted.length > 0 && (
+          <p className="text-xs text-black/40 text-center">
+            {notYetSubmitted.length} more operator{notYetSubmitted.length !== 1 ? "s" : ""} still filling out the onboarding wizard — not yet submitted, so not in your queue.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // --- Viewer / Executive: read-only oversight. Deliberately no
+  // per-item action queues here (Viewer can't act on any of them) — this
+  // is a briefing, not a work list. Was previously routed through the
+  // operational admin dashboard below, which showed "Awaiting your
+  // approval" cards a Viewer has no permission to act on. ---
+  if (session.role === "VIEWER") {
+    const [viewerMatatus, viewerFines, viewerSaccos, viewerRoutes] = await Promise.all([
+      getMatatus(),
+      getFines(),
+      getSaccos(),
+      getRoutes(),
+    ]);
+    const activeV = viewerMatatus.filter((m) => m.status === "ACTIVE").length;
+    const flaggedV = viewerMatatus.filter((m) => m.status === "FLAGGED").length;
+    const impoundedV = viewerMatatus.filter((m) => m.status === "IMPOUNDED").length;
+    const decommissionedV = viewerMatatus.filter((m) => m.status === "DECOMMISSIONED").length;
+    const compliancePctV = viewerMatatus.length > 0 ? Math.round((activeV / viewerMatatus.length) * 100) : 0;
+    const paidV = viewerFines.filter((f) => f.status === "PAID").reduce((s, f) => s + f.amountKes, 0);
+    const pendingV = viewerFines.filter((f) => f.status === "PENDING").reduce((s, f) => s + f.amountKes, 0);
+    const disputedV = viewerFines.filter((f) => f.status === "DISPUTED").reduce((s, f) => s + f.amountKes, 0);
+    const waivedV = viewerFines.filter((f) => f.status === "WAIVED").reduce((s, f) => s + f.amountKes, 0);
+    const collectionRateV = paidV + pendingV > 0 ? Math.round((paidV / (paidV + pendingV)) * 100) : 0;
+    const activeOperators = viewerSaccos.filter((s) => s.status === "ACTIVE").length;
+
+    return (
+      <div className="space-y-4 md:space-y-6">
+        <PageBanner
+          icon={TrendingUp}
+          eyebrow="Nairobi City County Government"
+          title="Executive Briefing"
+          subtitle={`Welcome back, ${session.name}. Read-only oversight across Nairobi's matatu sector — no action items, just the current state and trend.`}
+        />
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard label="Registered vehicles" value={viewerMatatus.length.toString()} delta={{ label: `${activeV} in service`, tone: "positive" }} href="/matatus" icon={Bus} />
+          <KpiCard
+            label="Fleet compliance"
+            value={`${compliancePctV}%`}
+            delta={{ label: `${flaggedV + impoundedV} flagged or impounded`, tone: flaggedV + impoundedV > 0 ? "negative" : "positive" }}
+            accent="green"
+            href="/matatus"
+            icon={ShieldCheck}
+          />
+          <KpiCard label="Revenue collected" value={`KES ${(paidV / 1000).toFixed(0)}k`} delta={{ label: `${collectionRateV}% collection rate`, tone: "positive" }} href="/revenue" icon={Banknote} />
+          <KpiCard label="Active operators" value={activeOperators.toString()} delta={{ label: `${viewerSaccos.length} total on record`, tone: "positive" }} href="/saccos/verify" icon={BadgeCheck} />
         </div>
+
+        <div className="grid sm:grid-cols-2 gap-4 md:gap-6">
+          <StatusBreakdown
+            title="Fleet compliance"
+            subtitle="Current status across the registered fleet"
+            variant="donut"
+            centerMetricLabel="Compliant"
+            totalUnitLabel="vehicles"
+            segments={[
+              { key: "active", label: "Active", color: "#0F5132", value: activeV },
+              { key: "flagged", label: "Flagged", color: "#F5C518", value: flaggedV },
+              { key: "impounded", label: "Impounded", color: "#B4232C", value: impoundedV },
+              { key: "decommissioned", label: "Decommissioned", color: "#3E4A44", value: decommissionedV },
+            ]}
+          />
+          <StatusBreakdown
+            title="Fine revenue"
+            subtitle="KES by settlement status"
+            variant="bar"
+            valueFormat="currency"
+            headerStat={{ label: "Collection rate", value: `${collectionRateV}%`, tone: collectionRateV >= 60 ? "positive" : "attention" }}
+            footerStat={{ label: "Total issued", value: `KES ${(paidV + pendingV + disputedV + waivedV).toLocaleString()}` }}
+            segments={[
+              { key: "paid", label: "Paid", color: "#0F5132", value: paidV },
+              { key: "pending", label: "Pending", color: "#F5C518", value: pendingV },
+              { key: "disputed", label: "Disputed", color: "#B4232C", value: disputedV },
+              { key: "waived", label: "Waived", color: "#8A9691", value: waivedV },
+            ]}
+          />
+          <TrendChart metric="fines" title="Fines issued over time" countUnit="fines" color="#B4232C" valueFormat="currency" />
+          <TrendChart metric="bookings" title="Passenger demand over time" countUnit="bookings" color="#0F5132" />
+        </div>
+
+        <CorridorHealth routes={viewerRoutes} matatus={viewerMatatus} fines={viewerFines} />
       </div>
     );
   }
