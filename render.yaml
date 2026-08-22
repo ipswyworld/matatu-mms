@@ -34,6 +34,25 @@ services:
         value: mms_session
       - key: TERMS_VERSION
         value: "2026-07-25"
+      # Uploaded files (SACCO verification docs, enforcement/crime scene
+      # photos) — without these, app/storage.py falls back to local disk,
+      # which resets to empty on every deploy/restart on this plan (no
+      # persistent Disk attached to a free/starter web service). Set all
+      # four before onboarding real users so uploads actually survive.
+      # sync: false means set these manually in the Render dashboard —
+      # they're real credentials, not something to generate or commit.
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_PUBLIC_URL_BASE
+        sync: false
       # Must match both frontends' actual Render URLs (comma-separated —
       # app/main.py splits on ","). Render assigns https://<name>.onrender.com
       # by default (subject to a random suffix if that exact name is taken)

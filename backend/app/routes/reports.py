@@ -1,7 +1,5 @@
 import datetime
-import os
 import random
-import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,10 +10,9 @@ from app.models import PassengerReport, CrimeRecord, Matatu, User
 from app.schemas import PassengerReportResponse, PassengerReportStatusUpdate
 from app.auth import requires_permission
 from app.audit import stage_audit_log
+from app.storage import save_upload
 
 router = APIRouter(prefix="/api/reports", tags=["Passenger Reports"])
-
-UPLOAD_ROOT = os.path.join(os.getcwd(), "uploads", "passenger_reports")
 
 CATEGORY_TO_OFFENCE = {
     "Overcharging Complaint": "Overcharging Beyond Gazetted Fare (Passenger Reported)",
@@ -86,14 +83,8 @@ async def create_report(
 
     photo_path = None
     if photo is not None and photo.filename:
-        report_dir = os.path.join(UPLOAD_ROOT, report_id)
-        os.makedirs(report_dir, exist_ok=True)
-        safe_name = os.path.basename(photo.filename)
-        stored_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
         contents = await photo.read()
-        with open(os.path.join(report_dir, stored_name), "wb") as f:
-            f.write(contents)
-        photo_path = f"/uploads/passenger_reports/{report_id}/{stored_name}"
+        photo_path = await save_upload("passenger_reports", report_id, photo.filename, contents)
 
     new_report = PassengerReport(
         id=report_id,

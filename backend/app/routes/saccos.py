@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 import uuid
 from typing import List, Optional
 
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
+from app.storage import save_upload
 from app.models import Sacco, User
 from app.schemas import (
     SaccoResponse,
@@ -41,8 +41,6 @@ async def _notify_sacco_operators(db: AsyncSession, sacco_id: str, title: str, m
     result = await db.execute(select(User).where(User.sacco_id == sacco_id, User.role == "SACCO_OPERATOR"))
     for operator in result.scalars().all():
         await notify_user(operator.id, title=title, message=f"{operator.name}, {message}", level=level)
-
-UPLOAD_ROOT = os.path.join(os.getcwd(), "uploads", "saccos")
 
 MANDATORY_DOC_FIELDS = [
     ("doc_registration_cert", "Registration Certificate"),
@@ -352,20 +350,13 @@ async def upload_sacco_document(
     if not sacco:
         raise HTTPException(status_code=404, detail="Sacco not found")
 
-    sacco_dir = os.path.join(UPLOAD_ROOT, sacco_id)
-    os.makedirs(sacco_dir, exist_ok=True)
-
-    safe_name = os.path.basename(file.filename or "document")
-    stored_name = f"{doc_type}_{uuid.uuid4().hex[:8]}_{safe_name}"
-    dest_path = os.path.join(sacco_dir, stored_name)
     contents = await file.read()
-    with open(dest_path, "wb") as f:
-        f.write(contents)
+    doc_url = await save_upload("saccos", sacco_id, file.filename or "document", contents, prefix=f"{doc_type}_")
 
-    setattr(sacco, field_name, f"/uploads/saccos/{sacco_id}/{stored_name}")
+    setattr(sacco, field_name, doc_url)
     stage_audit_log(
         db, resource_type="sacco", resource_id=sacco_id, action="DOCUMENT_UPLOADED",
-        user_id=current_user.id, new_values={"docType": doc_type, "filename": safe_name},
+        user_id=current_user.id, new_values={"docType": doc_type, "filename": file.filename or "document"},
     )
 
     await db.commit()

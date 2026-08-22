@@ -89,6 +89,26 @@ AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME")
 AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY")
 SMS_SENDER_ID = os.getenv("SMS_SENDER_ID")  # optional registered short code / sender name
 
+# Object storage for uploaded files (verification documents, scene/crime
+# photos) — see app/storage.py. Unset by default: local disk under ./uploads
+# is fine for dev, but is NOT persistent on most hosting platforms (Render's
+# free/starter web services have no disk survives a redeploy or restart).
+# Set all four to switch to S3-compatible storage (AWS S3, Cloudflare R2,
+# Backblaze B2, MinIO...) before a deployment that needs uploads to survive
+# redeploys. S3_ENDPOINT_URL stays unset for real AWS S3; set it for any
+# S3-compatible alternative (e.g. R2's account-specific endpoint).
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+S3_REGION = os.getenv("S3_REGION", "auto")
+S3_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY_ID")
+S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY")
+# The base URL files are served back from — a public-read bucket's own
+# endpoint, or a CDN/custom domain in front of it. Uploaded files here have
+# never been access-controlled (the local-disk path is a plain unauthenticated
+# StaticFiles mount today), so a public-read bucket matches existing behavior
+# rather than narrowing it.
+S3_PUBLIC_URL_BASE = os.getenv("S3_PUBLIC_URL_BASE")
+
 # The one place an outbound message needs an absolute, clickable URL rather
 # than a relative path — the reset-password links above are only ever
 # logged (no real provider configured), so a relative path was fine; the

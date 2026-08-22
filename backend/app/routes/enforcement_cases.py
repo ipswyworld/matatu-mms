@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 import random
 import string
 import uuid
@@ -32,10 +31,9 @@ from app.audit import stage_audit_log
 from app.routes.notifications import notify_user
 from app.sms import send_sms
 from app.config import PUBLIC_FRONTEND_URL
+from app.storage import save_upload
 
 router = APIRouter(prefix="/api/enforcement", tags=["Enforcement Cases"])
-
-UPLOAD_ROOT = os.path.join(os.getcwd(), "uploads", "enforcement_cases")
 
 VALID_ACTIONS = ["IMPOUND", "SELF_DRIVE_IMPOUND", "TOLL"]
 VALID_DUTIES = ["ARRESTING", "RELEASING", None]
@@ -307,15 +305,9 @@ async def create_case(
     case_reference = _generate_case_reference(reg_clean)
 
     photo_paths = []
-    case_dir = os.path.join(UPLOAD_ROOT, case_id)
-    os.makedirs(case_dir, exist_ok=True)
     for photo in valid_photos:
-        safe_name = os.path.basename(photo.filename)
-        stored_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
         contents = await photo.read()
-        with open(os.path.join(case_dir, stored_name), "wb") as f:
-            f.write(contents)
-        photo_paths.append(f"/uploads/enforcement_cases/{case_id}/{stored_name}")
+        photo_paths.append(await save_upload("enforcement_cases", case_id, photo.filename, contents))
 
     zone_id = current_user.assigned_zone_id if current_user.role == "ARRESTING_OFFICER" else None
 

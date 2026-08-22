@@ -1,7 +1,5 @@
 import datetime
-import os
 import random
-import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,10 +11,9 @@ from app.models import CrimeRecord, User, Matatu, Fine
 from app.schemas import CrimeRecordResponse
 from app.auth import requires_permission
 from app.audit import stage_audit_log
+from app.storage import save_upload
 
 router = APIRouter(prefix="/api/enforcement/crimes", tags=["Enforcement Crimes"])
-
-UPLOAD_ROOT = os.path.join(os.getcwd(), "uploads", "crime_records")
 
 @router.get("", response_model=List[CrimeRecordResponse])
 async def get_crimes(
@@ -66,14 +63,8 @@ async def create_crime(
     now_iso = datetime.datetime.now(datetime.timezone.utc)
     reg_number_normalized = reg_number.upper().strip()
 
-    record_dir = os.path.join(UPLOAD_ROOT, crime_id)
-    os.makedirs(record_dir, exist_ok=True)
-    safe_name = os.path.basename(photo.filename)
-    stored_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
     contents = await photo.read()
-    with open(os.path.join(record_dir, stored_name), "wb") as f:
-        f.write(contents)
-    photo_path = f"/uploads/crime_records/{crime_id}/{stored_name}"
+    photo_path = await save_upload("crime_records", crime_id, photo.filename, contents)
 
     new_crime = CrimeRecord(
         id=crime_id,
