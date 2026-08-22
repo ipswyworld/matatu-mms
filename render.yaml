@@ -35,10 +35,17 @@ services:
       - key: TERMS_VERSION
         value: "2026-07-25"
       # Uploaded files (SACCO verification docs, enforcement/crime scene
-      # photos) — without these, app/storage.py falls back to local disk,
-      # which resets to empty on every deploy/restart on this plan (no
-      # persistent Disk attached to a free/starter web service). Set all
-      # four before onboarding real users so uploads actually survive.
+      # photos) — local disk resets to empty on every deploy/restart on this
+      # plan (no persistent Disk attached to a free/starter web service), so
+      # app/storage.py needs a different backend here. "db" (file bytes
+      # stored as a row in the same Postgres this service already has) is
+      # the default for this deploy — no object-storage account or payment
+      # method needed. Once there's a real bucket with billing set up
+      # somewhere (R2, B2, Supabase Storage...), fill in the six S3_* vars
+      # below AND change this value to "s3" — explicit, not automatic, so a
+      # half-configured bucket can't silently start being used.
+      - key: STORAGE_BACKEND
+        value: db
       # sync: false means set these manually in the Render dashboard —
       # they're real credentials, not something to generate or commit.
       - key: S3_BUCKET

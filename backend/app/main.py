@@ -67,6 +67,7 @@ from app.routes.demand import router as demand_router
 from app.routes.deviations import router as deviations_router
 from app.routes.public_updates import router as public_updates_router
 from app.routes.trips import router as trips_router
+from app.routes.uploads import router as uploads_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -232,10 +233,13 @@ app.include_router(demand_router)
 app.include_router(deviations_router)
 app.include_router(public_updates_router)
 app.include_router(trips_router)
+app.include_router(uploads_router)
 
-# Serve uploaded verification/onboarding documents (dev-only local disk
-# storage — will move to object storage e.g. S3/GCS behind Postgres+Redis
-# when this goes to a real server).
+# Serves uploaded verification/onboarding documents when app/storage.py is
+# in local-disk mode (dev, or the self-hosted docker-compose stack's
+# persistent volume). The "db" and "s3" backends don't use this at all —
+# "db"-stored files are served by uploads_router above instead, and "s3"
+# files are fetched directly from the bucket's own public URL.
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 

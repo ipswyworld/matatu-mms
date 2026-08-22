@@ -351,7 +351,7 @@ async def upload_sacco_document(
         raise HTTPException(status_code=404, detail="Sacco not found")
 
     contents = await file.read()
-    doc_url = await save_upload("saccos", sacco_id, file.filename or "document", contents, prefix=f"{doc_type}_")
+    doc_url = await save_upload("saccos", sacco_id, file.filename or "document", contents, db=db, prefix=f"{doc_type}_")
 
     setattr(sacco, field_name, doc_url)
     stage_audit_log(

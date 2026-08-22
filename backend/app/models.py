@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, String, Integer, Float, Numeric, Date, ForeignKey, DateTime, Boolean, Text
+from sqlalchemy import Column, String, Integer, Float, Numeric, Date, ForeignKey, DateTime, Boolean, Text, LargeBinary
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -712,3 +712,22 @@ class WebhookLog(Base):
     error_message = Column(Text, nullable=True)
     attempt = Column(Integer, default=1)
     timestamp = Column(DateTime(timezone=True), nullable=False)
+
+
+class UploadedFile(Base):
+    """DB-backed fallback for uploaded files (app/storage.py's "db" backend)
+    — used on Render, where the backend's own disk isn't persistent and no
+    payment method is on file for S3-compatible object storage. Postgres
+    already persists reliably there for free, so this trades "files live in
+    a real object store" for "files live as bytes in the same DB that's
+    already durable" — fine at this project's current upload volume, not a
+    forever architecture at real scale.
+    `key` is the same "{category}/{entity_id}/{stored_name}" path used by
+    the local-disk and S3 backends, so switching STORAGE_BACKEND later
+    doesn't change any URL shape callers depend on."""
+    __tablename__ = "uploaded_files"
+
+    key = Column(String, primary_key=True)
+    content_type = Column(String, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)

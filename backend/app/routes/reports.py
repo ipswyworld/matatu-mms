@@ -84,7 +84,7 @@ async def create_report(
     photo_path = None
     if photo is not None and photo.filename:
         contents = await photo.read()
-        photo_path = await save_upload("passenger_reports", report_id, photo.filename, contents)
+        photo_path = await save_upload("passenger_reports", report_id, photo.filename, contents, db=db)
 
     new_report = PassengerReport(
         id=report_id,

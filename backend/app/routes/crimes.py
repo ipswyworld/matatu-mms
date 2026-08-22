@@ -64,7 +64,7 @@ async def create_crime(
     reg_number_normalized = reg_number.upper().strip()
 
     contents = await photo.read()
-    photo_path = await save_upload("crime_records", crime_id, photo.filename, contents)
+    photo_path = await save_upload("crime_records", crime_id, photo.filename, contents, db=db)
 
     new_crime = CrimeRecord(
         id=crime_id,

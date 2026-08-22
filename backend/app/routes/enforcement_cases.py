@@ -307,7 +307,7 @@ async def create_case(
     photo_paths = []
     for photo in valid_photos:
         contents = await photo.read()
-        photo_paths.append(await save_upload("enforcement_cases", case_id, photo.filename, contents))
+        photo_paths.append(await save_upload("enforcement_cases", case_id, photo.filename, contents, db=db))
 
     zone_id = current_user.assigned_zone_id if current_user.role == "ARRESTING_OFFICER" else None
 

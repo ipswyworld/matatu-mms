@@ -109,6 +109,16 @@ S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY")
 # rather than narrowing it.
 S3_PUBLIC_URL_BASE = os.getenv("S3_PUBLIC_URL_BASE")
 
+# Explicit override for which backend app/storage.py uses — "local", "s3",
+# or "db" (store file bytes as a row in Postgres, alongside everything
+# else). Sensible default when unset: S3 if configured above, otherwise
+# local. "db" needs no external account/payment method at all since it
+# rides on the same Postgres this app already has — the practical choice
+# for a free-tier Render deploy where nobody's added billing to an object
+# storage provider yet. Not a forever architecture at real upload volume,
+# but genuinely fine at this project's current scale.
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "").strip().lower()
+
 # The one place an outbound message needs an absolute, clickable URL rather
 # than a relative path — the reset-password links above are only ever
 # logged (no real provider configured), so a relative path was fine; the
