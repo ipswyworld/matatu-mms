@@ -112,6 +112,32 @@ services:
       start_period: 15s
     networks: [internal]
 
+  # Ops console (ADMIN_DASHBOARD_AUDIT §4.3 Option B) — the former /system
+  # page as its own Next.js app/process, so a crash or bad deploy in the
+  # main staff app (frontend, above) can't take this down with it the way
+  # sharing one process did before. Reached only through nginx's :3002
+  # server block (Option A's network restriction), same as before — Option
+  # A and B aren't actually alternatives here, A is the network front door
+  # and B is what it now proxies to instead of the staff app's /system.
+  matatu-mms-ops:
+    build: ./matatu-mms-ops
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+      OPS_SESSION_SECRET: ${OPS_SESSION_SECRET:?Set OPS_SESSION_SECRET in .env — openssl rand -hex 32}
+      GRAFANA_EMBED_URL: /grafana/
+      STAFF_APP_URL: ${PUBLIC_ORIGIN:-https://localhost}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks: [internal]
+
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -123,8 +149,8 @@ services:
       # which defaults its own `allow`/`deny` to localhost-only too).
       # 127.0.0.1-only here: reachable via SSH tunnel/VPN into the host
       # for now. This is ADMIN_DASHBOARD_AUDIT_AND_RECOMMENDATIONS.md §4.3
-      # Option A: reuse the existing /system page + RBAC gate, add network
-      # separation via nginx rather than a new app.
+      # Option A (network isolation) fronting Option B (process isolation,
+      # matatu-mms-ops below) — not two alternatives, one build on the other.
       - "127.0.0.1:3002:3002"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -135,6 +161,7 @@ services:
     depends_on:
       - backend
       - frontend
+      - matatu-mms-ops
     networks: [internal]
 
   nginx-exporter:
