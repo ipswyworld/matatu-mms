@@ -57,6 +57,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_system_health",
         "manage_system_config",
         "manage_crew",
+        "view_crew",
         "manage_fare_stages",
     ],
     "ADMIN": [
@@ -88,17 +89,24 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "manage_officer_assignments",
         "view_audit_logs",
         "manage_crew",
+        "view_crew",
         "manage_fare_stages",
     ],
     "DIRECTOR_MOBILITY": [
         "view_dashboard",
         "view_operator_verification",
         "decide_operator_verification_stage1",
+        # Read-only — /saccos/verify's crew-roster panel needs this to see
+        # who's assigned to each Sacco's fleet during verification. Actually
+        # managing crew (issuing/revoking credentials) stays manage_crew-only,
+        # which this role deliberately doesn't have.
+        "view_crew",
     ],
     "CHIEF_OFFICER": [
         "view_dashboard",
         "view_operator_verification",
         "decide_operator_verification_stage2",
+        "view_crew",
     ],
     "ENFORCEMENT": [
         "view_dashboard",
@@ -163,6 +171,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "remove_matatu",
         "view_users",
         "manage_crew",
+        "view_crew",
         "manage_fare_stages",
         "view_reports",
         "view_enforcement_cases",

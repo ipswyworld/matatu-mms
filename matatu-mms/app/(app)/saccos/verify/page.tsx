@@ -19,7 +19,10 @@ export default async function SaccoVerifyPage() {
     getSaccos(),
     getRoutes(),
     getMatatus(),
-    getCrewAssignments(),
+    // The crew roster below is supplementary context for verification, not
+    // this page's core job — a permission gap for some role (or a future
+    // one) shouldn't take down Sacco listing/routing/verification with it.
+    getCrewAssignments().catch(() => []),
     canManageShadowRegistry ? getComplianceFunnel() : Promise.resolve(null),
   ]);
   // Shadow-registry rows (UNREGISTERED/INVITED) have no docs/verification

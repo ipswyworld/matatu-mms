@@ -36,7 +36,7 @@ def _to_response(assignment: CrewAssignment) -> CrewAssignmentResponse:
 @router.get("", response_model=List[CrewAssignmentResponse])
 async def list_crew(
     active_only: bool = Query(True),
-    current_user: User = Depends(requires_permission("manage_crew")),
+    current_user: User = Depends(requires_permission("view_crew")),
     db: AsyncSession = Depends(get_db),
 ):
     query = (
