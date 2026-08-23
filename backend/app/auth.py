@@ -114,8 +114,8 @@ class PermissionChecker:
         self.action = action
 
     def __call__(self, current_user: User = Depends(get_current_user)):
-        from app.rbac import can
-        if not can(current_user.role, self.action):
+        from app.rbac import has_permission
+        if not has_permission(current_user, self.action):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You do not have permission to perform this action: {self.action}"

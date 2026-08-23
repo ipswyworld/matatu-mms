@@ -51,6 +51,27 @@ export type Action =
   | "view_system_health"
   | "manage_system_config";
 
+// Every permission string the backend actually enforces (backend/app/rbac.py's
+// ROLE_MATRIX) — a superset of the `Action` union above, which only covers
+// what this frontend needs for nav/page gating. This is the checklist source
+// for EditUserModal's "grant individual extra permissions" UI: it has to
+// match what routes/users.py's ALL_ACTIONS validates against, or a grant
+// picked here would 400 on save. Kept in sync by hand — there's no single
+// source of truth shared across languages, same as the Action union itself.
+export const ALL_BACKEND_PERMISSIONS: string[] = [
+  "add_matatu", "approve_license_renewal", "book_ticket", "cancel_own_booking",
+  "decide_enforcement_case", "decide_operator_verification_stage1", "decide_operator_verification_stage2",
+  "dispute_fine", "edit_matatu_status", "file_enforcement_case", "issue_fine", "log_activity",
+  "manage_admins", "manage_crew", "manage_crew_seats", "manage_fare_stages", "manage_officer_assignments",
+  "manage_routes", "manage_sacco_documents", "manage_system_config", "manage_trips", "manage_users",
+  "pay_fine", "record_crime", "remove_matatu", "review_case_dispute", "review_report",
+  "submit_license_renewal", "submit_report", "update_booking_status", "update_fine_status",
+  "update_telemetry", "verify_saccos", "view_activity", "view_audit_logs", "view_crew",
+  "view_dashboard", "view_enforcement_cases", "view_fines", "view_matatu_bookings", "view_matatus",
+  "view_operator_verification", "view_own_bookings", "view_reports", "view_routes",
+  "view_system_health", "view_users",
+].sort();
+
 // Roles allowed to hold system-wide administrative power. Kept in sync with
 // the backend's ADMIN_TIER_ROLES (app/rbac.py) — anything gated by that set
 // server-side should be gated by this set client-side too.

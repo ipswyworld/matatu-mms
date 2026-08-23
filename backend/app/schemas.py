@@ -197,6 +197,10 @@ class UserResponse(UserBase):
     terms_signature: Optional[str] = None
     is_active: Optional[bool] = True
     favorite_sacco_id: Optional[str] = None
+    # Raw JSON string (same pass-through convention as the Sacco doc-JSON
+    # fields elsewhere in this file) — the frontend parses it. Empty/null
+    # means "just the role's own permissions."
+    extra_permissions: Optional[str] = None
 
 class UserUpdate(BaseModelCamel):
     name: Optional[str] = None
@@ -205,6 +209,10 @@ class UserUpdate(BaseModelCamel):
     sacco_id: Optional[str] = None
     new_password: Optional[str] = None
     is_active: Optional[bool] = None
+    # Individual permission grants on top of the role — Super Admin only
+    # (routes/users.py). Omit the field entirely to leave unchanged; pass
+    # an explicit list (including []) to replace it.
+    extra_permissions: Optional[List[str]] = None
 
 class FavoriteSaccoRequest(BaseModelCamel):
     sacco_id: Optional[str] = None  # null clears the favorite

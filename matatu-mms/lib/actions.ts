@@ -1134,7 +1134,7 @@ export async function addUserAction(_prevState: { error?: string } | undefined, 
 
 export async function updateUserAction(
   userId: string,
-  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean }
+  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean; extraPermissions?: string[] }
 ): Promise<{ error?: string }> {
   try {
     await apiWrite(`/api/users/${userId}`, "PATCH", input);

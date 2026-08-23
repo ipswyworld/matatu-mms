@@ -5,12 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+import json
+
 from app.database import get_db
 from app.models import User, Sacco
 from app.schemas import UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
-from app.rbac import ADMIN_TIER_ROLES, can
+from app.rbac import ADMIN_TIER_ROLES, can, ALL_ACTIONS
 from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/users", tags=["Users Management"])
@@ -161,6 +163,19 @@ async def update_user(
         user.reset_token = None
         user.reset_token_expires_at = None
         new_values["passwordReset"] = True
+
+    if payload.extra_permissions is not None:
+        # Only a Super Admin grants individual extra permissions — an Admin
+        # doing this would be an end-run around the ADMIN_TIER_ROLES-editing
+        # restriction above (grant yourself manage_admins one action at a
+        # time instead of just assigning yourself the SUPERADMIN role).
+        if not can(current_user.role, "manage_admins"):
+            raise HTTPException(status_code=403, detail="Only a Super Admin can grant individual extra permissions")
+        invalid = [a for a in payload.extra_permissions if a not in ALL_ACTIONS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Unknown permission(s): {', '.join(invalid)}")
+        user.extra_permissions = json.dumps(payload.extra_permissions) if payload.extra_permissions else None
+        new_values["extraPermissions"] = payload.extra_permissions
 
     if payload.is_active is not None:
         if payload.is_active is False:

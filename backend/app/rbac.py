@@ -209,3 +209,30 @@ ROLE_MATRIX: Dict[str, List[str]] = {
 
 def can(role: str, action: str) -> bool:
     return action in ROLE_MATRIX.get(role, [])
+
+# Every action that appears anywhere in ROLE_MATRIX — the valid set for a
+# user's individual extra_permissions grant (routes/users.py validates
+# against this so a typo'd action string doesn't silently do nothing) and
+# for the frontend's grant-permissions checklist UI.
+ALL_ACTIONS: List[str] = sorted({action for actions in ROLE_MATRIX.values() for action in actions})
+
+
+def user_permissions(user) -> set:
+    """A user's actual permission set: their role's bundle, plus any
+    individual extra grants (User.extra_permissions, a JSON list of action
+    strings — see models.py). Falls back to role-only if the column is
+    unset/unparseable, which covers every account that's never had extra
+    permissions granted."""
+    import json
+    perms = set(ROLE_MATRIX.get(user.role, []))
+    raw = getattr(user, "extra_permissions", None)
+    if raw:
+        try:
+            perms |= set(json.loads(raw))
+        except (ValueError, TypeError):
+            pass
+    return perms
+
+
+def has_permission(user, action: str) -> bool:
+    return action in user_permissions(user)

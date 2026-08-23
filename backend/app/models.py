@@ -145,6 +145,15 @@ class User(Base):
     mfa_enabled = Column(Boolean, default=False, nullable=False)
     mfa_backup_codes = Column(Text, nullable=True)
 
+    # Individual permission grants layered on top of the role's own bundle
+    # (app/rbac.py's ROLE_MATRIX) — e.g. giving one specific Viewer
+    # `manage_crew` without promoting their whole account to Admin. JSON
+    # list of action strings; empty/null means "just the role's own
+    # permissions," the default for every account. Only a Super Admin can
+    # set this (routes/users.py), since it's otherwise a privilege-
+    # escalation path around the ADMIN_TIER_ROLES-editing restriction.
+    extra_permissions = Column(Text, nullable=True)
+
     # Passenger's preferred operator (roadmap: "passenger side they can
     # pick a favorite sacco/operator they prefer") — self-service only, set
     # via PATCH /api/users/me/favorite-sacco, never by an admin/operator

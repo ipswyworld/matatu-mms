@@ -27,6 +27,11 @@ export interface User {
   assignedZoneId?: string | null;
   commanderTitle?: string | null;
   isActive?: boolean;
+  // Raw JSON string of individual extra permission grants on top of the
+  // role's own bundle (backend/app/rbac.py's ROLE_MATRIX) — Super Admin
+  // only, see EditUserModal. Null/undefined means "just the role's own
+  // permissions," true for almost every account.
+  extraPermissions?: string | null;
 }
 
 export interface Zone {
