@@ -1,10 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { updateUserAction } from "@/lib/actions";
+import { updateUserAction, getUserActivityAction } from "@/lib/actions";
 import { ROLE_LABELS, ADMIN_TIER_ROLES, STAFF_ROLES, can, MATRIX, ALL_BACKEND_PERMISSIONS } from "@/lib/rbac";
-import { Role, Sacco, User } from "@/lib/types";
+import { Role, Sacco, User, UserActivity } from "@/lib/types";
 import PasswordInput from "./PasswordInput";
+
+const LOGIN_EVENT_LABELS: Record<string, string> = {
+  LOGIN_SUCCESS: "Signed in",
+  LOGIN_FAILED: "Failed sign-in",
+  LOGOUT: "Signed out",
+  REGISTER: "Account created",
+};
+
+const LOGIN_EVENT_STYLES: Record<string, string> = {
+  LOGIN_SUCCESS: "bg-county-green/10 text-county-green",
+  LOGIN_FAILED: "bg-county-red/10 text-county-red",
+  LOGOUT: "bg-black/5 text-black/60",
+  REGISTER: "bg-blue-500/10 text-blue-700",
+};
 
 function parseExtraPermissions(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -30,6 +44,10 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [tab, setTab] = useState<"details" | "activity">("details");
+  const [activity, setActivity] = useState<UserActivity | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   // Only permissions the selected role doesn't already grant are worth
   // offering here — checking one the role already has would be a no-op.
@@ -48,6 +66,22 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
 
   function toggleAdditionalRole(r: string) {
     setAdditionalRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
+  }
+
+  // Fetched on demand (not on modal open) — most Edit clicks are for the
+  // Details tab, so there's no reason to pay for this query every time.
+  async function openActivityTab() {
+    setTab("activity");
+    if (activity || activityLoading) return;
+    setActivityLoading(true);
+    setActivityError(null);
+    const result = await getUserActivityAction(user.id);
+    setActivityLoading(false);
+    if ("error" in result) {
+      setActivityError(result.error);
+    } else {
+      setActivity(result);
+    }
   }
 
   async function handleSave() {
@@ -82,7 +116,7 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
           especially on lower rows or with a trackpad) without changing
           how it looks inline with the rest of the row. */}
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={() => { setTab("details"); setIsOpen(true); }}
         className="text-xs font-bold text-county-green hover:underline px-2 py-1.5 -mx-2 -my-1.5"
       >
         Edit
@@ -114,6 +148,28 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
               </button>
             </div>
 
+            <div className="flex gap-1 px-6 pt-3 border-b border-black/5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setTab("details")}
+                className={`text-xs font-bold px-3 py-2 -mb-px border-b-2 ${
+                  tab === "details" ? "border-county-green text-county-green" : "border-transparent text-black/40 hover:text-black/70"
+                }`}
+              >
+                Details
+              </button>
+              <button
+                type="button"
+                onClick={openActivityTab}
+                className={`text-xs font-bold px-3 py-2 -mb-px border-b-2 ${
+                  tab === "activity" ? "border-county-green text-county-green" : "border-transparent text-black/40 hover:text-black/70"
+                }`}
+              >
+                Activity
+              </button>
+            </div>
+
+            {tab === "details" ? (
             <div className="px-6 space-y-3.5 overflow-y-auto flex-1 py-3">
               {error && (
                 <div className="bg-county-red/10 border border-county-red/30 text-county-red text-xs p-3 rounded-lg font-semibold">
@@ -219,14 +275,70 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
                 />
               </div>
             </div>
+            ) : (
+            <div className="px-6 space-y-4 overflow-y-auto flex-1 py-3">
+              {activityLoading && <p className="text-xs text-black/40 text-center py-6">Loading activity…</p>}
+              {activityError && (
+                <div className="bg-county-red/10 border border-county-red/30 text-county-red text-xs p-3 rounded-lg font-semibold">
+                  {activityError}
+                </div>
+              )}
+              {activity && (
+                <>
+                  <div>
+                    <label className="label">Login History</label>
+                    {activity.loginEvents.length === 0 ? (
+                      <p className="text-xs text-black/40 italic mt-1">No login activity recorded yet.</p>
+                    ) : (
+                      <div className="mt-1.5 space-y-1.5 max-h-56 overflow-y-auto">
+                        {activity.loginEvents.map((ev) => (
+                          <div key={ev.id} className="flex items-start justify-between gap-2 border border-black/5 rounded-lg px-2.5 py-2">
+                            <div className="min-w-0">
+                              <span className={`badge text-[10px] font-bold ${LOGIN_EVENT_STYLES[ev.eventType] || "bg-black/5 text-black/60"}`}>
+                                {LOGIN_EVENT_LABELS[ev.eventType] || ev.eventType}
+                              </span>
+                              {ev.reason && <span className="block text-[10px] text-black/40 mt-0.5">{ev.reason.replace(/_/g, " ")}</span>}
+                              {ev.ipAddress && <span className="block text-[10px] text-black/30 mt-0.5 font-mono">{ev.ipAddress}</span>}
+                            </div>
+                            <span className="text-[10px] text-black/40 shrink-0 whitespace-nowrap">{new Date(ev.createdAt).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-black/5">
+                    <label className="label">Audit Trail (actions this account performed)</label>
+                    {activity.auditLogs.length === 0 ? (
+                      <p className="text-xs text-black/40 italic mt-1">No recorded actions yet.</p>
+                    ) : (
+                      <div className="mt-1.5 space-y-1.5 max-h-56 overflow-y-auto">
+                        {activity.auditLogs.map((log) => (
+                          <div key={log.id} className="flex items-start justify-between gap-2 border border-black/5 rounded-lg px-2.5 py-2">
+                            <div className="min-w-0">
+                              <span className="badge text-[10px] font-bold bg-black/5 text-black/60">{log.action}</span>
+                              <span className="block text-[10px] text-black/40 mt-0.5 font-mono truncate">{log.resourceType}/{log.resourceId}</span>
+                            </div>
+                            <span className="text-[10px] text-black/40 shrink-0 whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            )}
 
             <div className="p-6 pt-2 flex gap-3 border-t border-black/5 shrink-0">
               <button type="button" onClick={() => setIsOpen(false)} className="btn-secondary flex-1">
                 Close
               </button>
-              <button type="button" onClick={handleSave} disabled={pending} className="btn-primary flex-1">
-                {pending ? "Saving..." : "Save Changes"}
-              </button>
+              {tab === "details" && (
+                <button type="button" onClick={handleSave} disabled={pending} className="btn-primary flex-1">
+                  {pending ? "Saving..." : "Save Changes"}
+                </button>
+              )}
             </div>
           </div>
         </div>

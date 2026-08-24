@@ -367,6 +367,23 @@ export interface AuditLog {
   timestamp: string;
 }
 
+// LOGIN_SUCCESS | LOGIN_FAILED | LOGOUT | REGISTER — see backend/app/models.py's LoginEvent.
+export interface LoginEvent {
+  id: number;
+  userId?: string | null;
+  email?: string | null;
+  eventType: string;
+  reason?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+}
+
+export interface UserActivity {
+  loginEvents: LoginEvent[];
+  auditLogs: AuditLog[];
+}
+
 export interface Seat {
   id: number;
   label: string;

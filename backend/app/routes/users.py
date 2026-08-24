@@ -8,8 +8,8 @@ from sqlalchemy.future import select
 import json
 
 from app.database import get_db
-from app.models import User, Sacco
-from app.schemas import UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest
+from app.models import User, Sacco, LoginEvent, AuditLog
+from app.schemas import UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest, UserActivityResponse
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
 from app.rbac import ADMIN_TIER_ROLES, has_permission, ALL_ACTIONS, ALL_ROLES
@@ -210,6 +210,37 @@ async def update_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+@router.get("/{user_id}/activity", response_model=UserActivityResponse)
+async def get_user_activity(
+    user_id: str,
+    current_user: User = Depends(requires_permission("view_users")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-user Activity tab (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md Part
+    B.2): this account's login history (LoginEvent, added alongside the
+    auth.py instrumentation) plus its own AuditLog rows — what has this
+    person actually done, composed on one screen. Same admin-tier guard as
+    revoke_user_sessions below: viewing another Admin/Super Admin's
+    activity is exactly as sensitive as revoking their sessions."""
+    target = (await db.execute(select(User).where(User.id == user_id))).scalars().first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role in ADMIN_TIER_ROLES and not has_permission(current_user, "manage_admins"):
+        raise HTTPException(status_code=403, detail="Only a Super Admin can view another Admin's activity")
+
+    login_events = (
+        await db.execute(
+            select(LoginEvent).where(LoginEvent.user_id == user_id).order_by(LoginEvent.created_at.desc()).limit(50)
+        )
+    ).scalars().all()
+    audit_logs = (
+        await db.execute(
+            select(AuditLog).where(AuditLog.user_id == user_id).order_by(AuditLog.timestamp.desc()).limit(50)
+        )
+    ).scalars().all()
+    return UserActivityResponse(login_events=login_events, audit_logs=audit_logs)
+
 
 @router.post("/{user_id}/revoke-sessions", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_user_sessions(

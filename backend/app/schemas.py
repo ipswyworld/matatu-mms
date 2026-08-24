@@ -559,6 +559,26 @@ class AuditLogResponse(BaseModelCamel):
     user_id: str
     timestamp: datetime.datetime
 
+class LoginEventResponse(BaseModelCamel):
+    id: int
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    event_type: str
+    reason: Optional[str] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime.datetime
+
+class UserActivityResponse(BaseModelCamel):
+    """Per-user Activity tab (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md Part
+    B.2) — login history (once captured, see LoginEvent) plus this
+    account's own AuditLog rows, composed on one screen since that's the
+    one audience/one question this pairing actually answers. Deliberately
+    not a generic cross-source feed — see that doc's "what not to build."
+    """
+    login_events: List[LoginEventResponse]
+    audit_logs: List[AuditLogResponse]
+
 # --- Zones & Offence Catalog ---
 class ZoneResponse(BaseModelCamel):
     id: str

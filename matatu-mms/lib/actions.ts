@@ -1168,6 +1168,14 @@ export async function revokeUserSessionsAction(userId: string): Promise<{ error?
   return {};
 }
 
+export async function getUserActivityAction(userId: string): Promise<import("./types").UserActivity | { error: string }> {
+  try {
+    return await apiWrite<import("./types").UserActivity>(`/api/users/${userId}/activity`, "GET");
+  } catch (err: any) {
+    return { error: err.message || "Could not load this account's activity." };
+  }
+}
+
 export async function forgotPasswordAction(
   _prevState: { message?: string; error?: string } | undefined,
   formData: FormData
