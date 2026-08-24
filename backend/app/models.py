@@ -154,6 +154,16 @@ class User(Base):
     # escalation path around the ADMIN_TIER_ROLES-editing restriction.
     extra_permissions = Column(Text, nullable=True)
 
+    # Additional predefined roles (app/rbac.py's ROLE_MATRIX keys) layered on
+    # top of the account's primary `role` — e.g. an ARRESTING_OFFICER who
+    # should also get ENFORCEMENT_COMMANDER's permission bundle without
+    # their account *type* changing. Not custom role creation: only role
+    # names that already exist in ROLE_MATRIX can be granted here. JSON list
+    # of role-name strings; empty/null means "just the primary role," the
+    # default for every account. Only a Super Admin can set this
+    # (routes/users.py), same privilege-escalation guard as extra_permissions.
+    additional_roles = Column(Text, nullable=True)
+
     # Passenger's preferred operator (roadmap: "passenger side they can
     # pick a favorite sacco/operator they prefer") — self-service only, set
     # via PATCH /api/users/me/favorite-sacco, never by an admin/operator

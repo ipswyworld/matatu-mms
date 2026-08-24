@@ -32,6 +32,11 @@ export interface User {
   // only, see EditUserModal. Null/undefined means "just the role's own
   // permissions," true for almost every account.
   extraPermissions?: string | null;
+  // Raw JSON string of additional predefined roles layered on top of
+  // `role` (backend/app/rbac.py's ROLE_MATRIX keys) — Super Admin only,
+  // see EditUserModal. Not custom role creation: only existing role names
+  // can be granted. Null/undefined means "just the primary role."
+  additionalRoles?: string | null;
 }
 
 export interface Zone {
@@ -317,6 +322,12 @@ export interface SessionData {
   // /mfa/setup until this flips to false (see backend's "enforce, don't
   // just offer" design, SESSION_SECURITY_STATUS.md).
   mfaSetupRequired?: boolean;
+  // Additional predefined roles beyond `role` (see User.additionalRoles) —
+  // decoded to a real array here (unlike the raw-JSON-string convention on
+  // User) since the session cookie is what nav/dashboard/middleware read
+  // directly. Absent/empty means "just the primary role," true for almost
+  // every account.
+  additionalRoles?: Role[];
 }
 
 export interface AbacPolicy {

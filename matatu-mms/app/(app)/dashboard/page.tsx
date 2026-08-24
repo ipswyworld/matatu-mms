@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX, TrendingUp } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
-import { can } from "@/lib/rbac";
+import { canAny, ADMIN_TIER_ROLES } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 
 export const metadata: Metadata = { title: "Overview" };
@@ -42,13 +42,23 @@ function averageDays(msValues: number[]): string {
 export default async function DashboardPage() {
   const session = readSession()!;
   const isSacco = session.role === "SACCO_OPERATOR";
+  // Full effective role set (primary + any additional predefined roles a
+  // Super Admin has granted, see EditUserModal). An admin-tier role in that
+  // set — whether primary or additional — bumps a user out of the narrower
+  // Director/Chief-Officer or Viewer templates below into the full
+  // dashboard, since admin-tier is a strict superset of either. This is a
+  // deliberate interim heuristic, not the end state: a real permission-
+  // driven dashboard (sections gated individually, not "admin-tier gets
+  // everything") is real, separate, larger work left for later.
+  const roles = [session.role, ...(session.additionalRoles ?? [])];
+  const hasAdminTier = roles.some((r) => ADMIN_TIER_ROLES.includes(r));
 
   // --- Director of Mobility / Chief Officer: a work-queue dashboard, not
   // a briefing — their whole job on this system is "decide the next
   // application," so the queue itself (oldest first, with SLA aging) is
   // the primary surface, not a supporting panel. Built on WorkQueueList
   // per ADMIN_DASHBOARD_AUDIT §5.1/§6.1. ---
-  if (session.role === "DIRECTOR_MOBILITY" || session.role === "CHIEF_OFFICER") {
+  if (!hasAdminTier && (session.role === "DIRECTOR_MOBILITY" || session.role === "CHIEF_OFFICER")) {
     const saccos = await getSaccos();
     const isDirector = session.role === "DIRECTOR_MOBILITY";
     const stageField = isDirector ? "directorMobilityStatus" : "chiefOfficerStatus";
@@ -133,7 +143,7 @@ export default async function DashboardPage() {
   // is a briefing, not a work list. Was previously routed through the
   // operational admin dashboard below, which showed "Awaiting your
   // approval" cards a Viewer has no permission to act on. ---
-  if (session.role === "VIEWER") {
+  if (!hasAdminTier && session.role === "VIEWER") {
     const [viewerMatatus, viewerFines, viewerSaccos, viewerRoutes] = await Promise.all([
       getMatatus(),
       getFines(),
@@ -218,8 +228,8 @@ export default async function DashboardPage() {
     getActivity(),
     getSaccos(),
     getRoutes(),
-    can(session.role, "manage_users") ? getAuditLogs(12) : Promise.resolve([]),
-    can(session.role, "view_reports") ? getReports() : Promise.resolve([]),
+    canAny(roles, "manage_users") ? getAuditLogs(12) : Promise.resolve([]),
+    canAny(roles, "view_reports") ? getReports() : Promise.resolve([]),
     getMyBookings(),
     getFleetTelemetry(),
   ]);
@@ -374,7 +384,7 @@ export default async function DashboardPage() {
           auditLogs={auditLogs}
           reports={reports.slice(0, 4)}
           activity={allActivity.slice().sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 6)}
-          isVisible={can(session.role, "manage_users")}
+          isVisible={canAny(roles, "manage_users")}
         />
       </div>
 

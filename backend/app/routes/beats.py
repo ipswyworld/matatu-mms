@@ -31,10 +31,9 @@ from app.schemas import BeatCreate, BeatResponse, BeatAssignmentCreate, BeatAssi
 from app.auth import requires_permission
 from app.audit import stage_audit_log
 from app.events import dispatcher
+from app.rbac import ENFORCEMENT_ROLES
 
 router = APIRouter(prefix="/api/beats", tags=["Enforcement Beats"])
-
-ENFORCEMENT_ROLES = ("ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER", "ENFORCEMENT")
 
 
 def _beat_to_response(beat: Beat) -> BeatResponse:

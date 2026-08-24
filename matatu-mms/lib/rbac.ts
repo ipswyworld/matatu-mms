@@ -265,6 +265,26 @@ export function can(role: Role, action: Action): boolean {
   return MATRIX[role]?.includes(action) ?? false;
 }
 
+// Multi-role equivalent of can() — true if ANY of the user's roles (primary
+// + additional, see SessionData.additionalRoles) grants the action.
+export function canAny(roles: Role[], action: Action): boolean {
+  return roles.some((r) => can(r, action));
+}
+
+// Shared parser for the two JSON-string-array-of-role-names fields on User
+// (additionalRoles) and, generically, extraPermissions — same shape, same
+// tolerance for null/malformed input. Kept here rather than duplicated in
+// EditUserModal/lib/actions.
+export function parseJsonStringList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export const ROLE_LABELS: Record<Role, string> = {
   SUPERADMIN: "Super Administrator",
   ADMIN: "System Administrator",

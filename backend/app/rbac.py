@@ -216,15 +216,47 @@ def can(role: str, action: str) -> bool:
 # for the frontend's grant-permissions checklist UI.
 ALL_ACTIONS: List[str] = sorted({action for actions in ROLE_MATRIX.values() for action in actions})
 
+# Every role name ROLE_MATRIX knows about — the valid set for a user's
+# additional_roles grant (routes/users.py validates against this the same
+# way ALL_ACTIONS validates extra_permissions). Not a "create a role" list —
+# additional_roles can only combine roles that already exist here.
+ALL_ROLES: set = set(ROLE_MATRIX.keys())
+
+# Field-enforcement roles that mobile/beat-facing endpoints gate on — was
+# previously defined independently (and inconsistently) in routes/beats.py
+# and routes/telemetry.py; one shared constant here avoids the two drifting.
+ENFORCEMENT_ROLES = {"ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"}
+
+
+def effective_roles(user) -> set:
+    """A user's full role set: their primary account-type role
+    (User.role) plus any additional predefined roles layered on top
+    (User.additional_roles, a JSON list of ROLE_MATRIX-key strings — see
+    models.py). This is about capability bundles, not account identity:
+    scope/ownership checks (abac.py, SACCO_OPERATOR/CREW/PASSENGER-style
+    filters) deliberately keep reading user.role directly, not this."""
+    import json
+    roles = {user.role}
+    raw = getattr(user, "additional_roles", None)
+    if raw:
+        try:
+            roles |= set(json.loads(raw))
+        except (ValueError, TypeError):
+            pass
+    return roles
+
 
 def user_permissions(user) -> set:
-    """A user's actual permission set: their role's bundle, plus any
-    individual extra grants (User.extra_permissions, a JSON list of action
-    strings — see models.py). Falls back to role-only if the column is
-    unset/unparseable, which covers every account that's never had extra
-    permissions granted."""
+    """A user's actual permission set: the union of every role they hold
+    (primary + additional, see effective_roles) plus any individual extra
+    grants (User.extra_permissions, a JSON list of action strings — see
+    models.py). Falls back to the primary role's bundle alone if neither
+    column is set/parseable, which covers every account that's never had
+    either granted."""
     import json
-    perms = set(ROLE_MATRIX.get(user.role, []))
+    perms: set = set()
+    for role in effective_roles(user):
+        perms |= set(ROLE_MATRIX.get(role, []))
     raw = getattr(user, "extra_permissions", None)
     if raw:
         try:

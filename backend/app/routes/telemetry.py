@@ -13,11 +13,10 @@ from app.config import ALGORITHM, SECRET_KEY
 from app.database import get_db, AsyncSessionLocal
 from app.models import Matatu, User, VehiclePosition, OfficerPosition
 from app.realtime import ChannelBroadcaster, get_redis, publish
+from app.rbac import ENFORCEMENT_ROLES
 
 logger = logging.getLogger("app.routes.telemetry")
 router = APIRouter(prefix="/api/telemetry", tags=["Live Telemetry & GPS Tracking"])
-
-ENFORCEMENT_ROLES = ("ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER")
 
 # A vehicle is only considered "live" while its crew's GPS websocket is
 # actively streaming. Position state now lives in Redis (key TTL = staleness

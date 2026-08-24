@@ -12,7 +12,7 @@ from app.models import User, Sacco
 from app.schemas import UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
-from app.rbac import ADMIN_TIER_ROLES, can, ALL_ACTIONS
+from app.rbac import ADMIN_TIER_ROLES, has_permission, ALL_ACTIONS, ALL_ROLES
 from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/users", tags=["Users Management"])
@@ -59,7 +59,7 @@ async def create_user(
     db: AsyncSession = Depends(get_db)
 ):
     target_role = payload.role.upper().strip()
-    if target_role in ADMIN_TIER_ROLES and not can(current_user.role, "manage_admins"):
+    if target_role in ADMIN_TIER_ROLES and not has_permission(current_user, "manage_admins"):
         raise HTTPException(status_code=403, detail="Only a Super Admin can create an Admin or Super Admin account")
 
     # Verify email uniqueness
@@ -124,7 +124,7 @@ async def update_user(
     # tier) is exactly the privilege-escalation path this role split exists
     # to close.
     target_becomes_admin_tier = user.role in ADMIN_TIER_ROLES or (payload.role and payload.role.upper().strip() in ADMIN_TIER_ROLES)
-    if target_becomes_admin_tier and not can(current_user.role, "manage_admins"):
+    if target_becomes_admin_tier and not has_permission(current_user, "manage_admins"):
         raise HTTPException(status_code=403, detail="Only a Super Admin can edit an Admin or Super Admin account")
 
     old_values = {"name": user.name, "email": user.email, "role": user.role, "saccoId": user.sacco_id}
@@ -169,13 +169,26 @@ async def update_user(
         # doing this would be an end-run around the ADMIN_TIER_ROLES-editing
         # restriction above (grant yourself manage_admins one action at a
         # time instead of just assigning yourself the SUPERADMIN role).
-        if not can(current_user.role, "manage_admins"):
+        if not has_permission(current_user, "manage_admins"):
             raise HTTPException(status_code=403, detail="Only a Super Admin can grant individual extra permissions")
         invalid = [a for a in payload.extra_permissions if a not in ALL_ACTIONS]
         if invalid:
             raise HTTPException(status_code=400, detail=f"Unknown permission(s): {', '.join(invalid)}")
         user.extra_permissions = json.dumps(payload.extra_permissions) if payload.extra_permissions else None
         new_values["extraPermissions"] = payload.extra_permissions
+
+    if payload.additional_roles is not None:
+        invalid_roles = [r for r in payload.additional_roles if r not in ALL_ROLES]
+        if invalid_roles:
+            raise HTTPException(status_code=400, detail=f"Unknown role(s): {', '.join(invalid_roles)}")
+        # Granting an admin-tier role here is exactly as sensitive as
+        # granting manage_admins via extra_permissions above — same guard,
+        # so an Admin can't hand themselves SUPERADMIN's bundle by adding it
+        # as an "additional role" instead of changing their primary role.
+        if set(payload.additional_roles) & ADMIN_TIER_ROLES and not has_permission(current_user, "manage_admins"):
+            raise HTTPException(status_code=403, detail="Only a Super Admin can grant an admin-tier additional role")
+        user.additional_roles = json.dumps(payload.additional_roles) if payload.additional_roles else None
+        new_values["additionalRoles"] = payload.additional_roles
 
     if payload.is_active is not None:
         if payload.is_active is False:
@@ -211,7 +224,7 @@ async def revoke_user_sessions(
     target = (await db.execute(select(User).where(User.id == user_id))).scalars().first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    if target.role in ADMIN_TIER_ROLES and not can(current_user.role, "manage_admins"):
+    if target.role in ADMIN_TIER_ROLES and not has_permission(current_user, "manage_admins"):
         raise HTTPException(status_code=403, detail="Only a Super Admin can revoke another Admin's sessions")
     await revoke_all_sessions(user_id)
     stage_audit_log(

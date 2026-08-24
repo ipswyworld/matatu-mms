@@ -31,7 +31,7 @@ function homeForRole(role: string): string {
  * lib/session.ts's readSession() trusts that requests reaching a page have
  * already passed through here.
  */
-async function readVerifiedSession(request: NextRequest): Promise<{ role: string; mfaSetupRequired: boolean } | null> {
+async function readVerifiedSession(request: NextRequest): Promise<{ role: string; additionalRoles: string[]; mfaSetupRequired: boolean } | null> {
   const raw = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!raw) return null;
   const payloadBase64 = await verifyAndExtractPayload(raw);
@@ -41,7 +41,8 @@ async function readVerifiedSession(request: NextRequest): Promise<{ role: string
     const parsed = JSON.parse(json);
     const role = parsed.role as string;
     if (!role) return null;
-    return { role, mfaSetupRequired: !!parsed.mfaSetupRequired };
+    const additionalRoles = Array.isArray(parsed.additionalRoles) ? (parsed.additionalRoles as string[]) : [];
+    return { role, additionalRoles, mfaSetupRequired: !!parsed.mfaSetupRequired };
   } catch {
     return null;
   }
@@ -73,42 +74,49 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const { role } = session;
+  const { role, additionalRoles } = session;
+  // Every gate below checks the full effective role set (primary + any
+  // additional predefined roles a Super Admin has granted), not just the
+  // primary role, so e.g. an additional ADMIN role actually unlocks /users.
+  const roles = [role, ...additionalRoles];
+  const hasAdminTier = roles.some((r) => ADMIN_TIER_ROLES.includes(r));
 
   // MFA is opt-in, not enforced — /mfa/setup stays reachable for anyone who
   // wants to turn it on voluntarily, but no role is confined there.
 
   // Director of Mobility / Chief Officer: confined to the Operator
   // Verification hub (and their dashboard) — they don't need the full
-  // admin console to do their two-stage approval job.
-  if ((role === "DIRECTOR_MOBILITY" || role === "CHIEF_OFFICER") && !pathname.startsWith("/saccos/verify") && !pathname.startsWith("/dashboard")) {
+  // admin console to do their two-stage approval job. An admin-tier
+  // additional role lifts this confinement (see homeForRole/dashboard's
+  // matching "admin-tier wins" rule).
+  if (!hasAdminTier && (role === "DIRECTOR_MOBILITY" || role === "CHIEF_OFFICER") && !pathname.startsWith("/saccos/verify") && !pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/saccos/verify", request.url));
   }
 
   // Admin-tier-only system management pages
-  if (pathname.startsWith("/users") && !ADMIN_TIER_ROLES.includes(role)) {
+  if (pathname.startsWith("/users") && !hasAdminTier) {
     return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
-  if (pathname.startsWith("/audit-logs") && !ADMIN_TIER_ROLES.includes(role)) {
+  if (pathname.startsWith("/audit-logs") && !hasAdminTier) {
     return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
-  if (pathname.startsWith("/saccos/verify") && ![...ADMIN_TIER_ROLES, "DIRECTOR_MOBILITY", "CHIEF_OFFICER"].includes(role)) {
+  if (pathname.startsWith("/saccos/verify") && !hasAdminTier && !roles.includes("DIRECTOR_MOBILITY") && !roles.includes("CHIEF_OFFICER")) {
     return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
   // Super Admin-only console: system health, config, admin-account management
-  if (pathname.startsWith("/system") && role !== "SUPERADMIN") {
+  if (pathname.startsWith("/system") && !roles.includes("SUPERADMIN")) {
     return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
 
   // Enforcement-family roles land and stay on their own Overview — /dashboard
   // is the Admin/Viewer landing page and isn't in their sidebar at all, which
   // was the original bug (login dropped them on a page with no way back to it).
-  if (ENFORCEMENT_ROLES.includes(role) && pathname.startsWith("/dashboard")) {
+  if (!hasAdminTier && ENFORCEMENT_ROLES.includes(role) && pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/enforcement", request.url));
   }
 
   // Filing a scene report is an Arresting Officer (or Commander/Admin) action
-  if (pathname.startsWith("/enforcement/scene") && !["ADMIN", "ENFORCEMENT_COMMANDER", "ARRESTING_OFFICER"].includes(role)) {
+  if (pathname.startsWith("/enforcement/scene") && !roles.some((r) => ["ADMIN", "ENFORCEMENT_COMMANDER", "ARRESTING_OFFICER"].includes(r))) {
     return NextResponse.redirect(new URL("/enforcement", request.url));
   }
 

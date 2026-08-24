@@ -22,7 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Role } from "@/lib/types";
-import { can } from "@/lib/rbac";
+import { Action, canAny } from "@/lib/rbac";
 import { useLanguage } from "./LanguageProvider";
 import { logoutAction } from "@/lib/actions";
 
@@ -50,10 +50,12 @@ const SIDEBAR_COLLAPSED_KEY = "nccg_sidebar_collapsed";
 
 export default function Sidebar({
   role,
+  additionalRoles = [],
   mobileOpen = false,
   onClose,
 }: {
   role: Role;
+  additionalRoles?: Role[];
   mobileOpen?: boolean;
   onClose?: () => void;
 }) {
@@ -83,63 +85,76 @@ export default function Sidebar({
   // This is the staff app (county government back-office) — Passenger,
   // Crew, and Sacco Operator roles sign in through the separate public app
   // and never reach this Sidebar.
-  const getNavItems = () => {
-    if (role === "ENFORCEMENT") {
-      return [
-        { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" as const },
-        { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" as const },
-        { href: "/activity", label: "My Activity Log", action: "view_activity" as const },
-      ];
-    }
-    if (role === "ARRESTING_OFFICER") {
-      return [
-        { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" as const },
-        { href: "/enforcement/scene", label: "Report Offence", action: "file_enforcement_case" as const },
-        { href: "/enforcement/cases", label: "My Cases", action: "view_enforcement_cases" as const },
-        { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" as const },
-        { href: "/activity", label: "My Activity Log", action: "view_activity" as const },
-      ];
-    }
-    if (role === "RELEASING_OFFICER") {
-      return [
-        { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" as const },
-        { href: "/enforcement/cases", label: "Case Queue", action: "view_enforcement_cases" as const },
-        { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" as const },
-        { href: "/activity", label: "My Activity Log", action: "view_activity" as const },
-      ];
-    }
-    if (role === "ENFORCEMENT_COMMANDER") {
-      return [
-        { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" as const },
-        { href: "/enforcement/cases", label: "Case Queue", action: "view_enforcement_cases" as const },
-        { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" as const },
-        { href: "/enforcement/scene", label: "Report Offence", action: "file_enforcement_case" as const },
-        { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" as const },
-        { href: "/activity", label: "My Activity Log", action: "view_activity" as const },
-      ];
-    }
-    if (role === "DIRECTOR_MOBILITY" || role === "CHIEF_OFFICER") {
-      return [
-        { href: "/dashboard", label: t("nav.overview"), action: "view_dashboard" as const },
-        { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "view_operator_verification" as const },
-      ];
-    }
-    // ADMIN / SUPERADMIN / VIEWER
-    return [
-      { href: "/dashboard", label: t("nav.overview"), action: "view_dashboard" as const },
-      { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "verify_saccos" as const },
-      { href: "/matatus", label: t("nav.fleetRegistry"), action: "view_matatus" as const },
-      { href: "/enforcement", label: t("nav.enforcement"), action: "view_enforcement" as const },
-      { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" as const },
-      { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers" as const },
-      { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue" as const },
-      { href: "/routes", label: t("nav.routes"), action: "view_routes" as const },
-      { href: "/users", label: t("nav.users"), action: "view_users" as const },
-      { href: "/system", label: "System", action: "view_system_health" as const },
-    ];
+  type NavItem = { href: string; label: string; action: Action };
+
+  const DEFAULT_STAFF_ITEMS: NavItem[] = [
+    { href: "/dashboard", label: t("nav.overview"), action: "view_dashboard" },
+    { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "verify_saccos" },
+    { href: "/matatus", label: t("nav.fleetRegistry"), action: "view_matatus" },
+    { href: "/enforcement", label: t("nav.enforcement"), action: "view_enforcement" },
+    { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" },
+    { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers" },
+    { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue" },
+    { href: "/routes", label: t("nav.routes"), action: "view_routes" },
+    { href: "/users", label: t("nav.users"), action: "view_users" },
+    { href: "/system", label: "System", action: "view_system_health" },
+  ];
+
+  // Per-role nav lists, keyed as data instead of an if/else chain so a
+  // user's effective nav can be the UNION of their primary role's list and
+  // any additional roles' lists (e.g. an Enforcement Commander who's also
+  // been granted an additional ADMIN role sees both sets, deduped by href).
+  // A role with no entry here (ADMIN/SUPERADMIN/VIEWER, and any additional
+  // role that doesn't need its own narrower list) falls back to the shared
+  // full staff list.
+  const NAV_ITEMS_BY_ROLE: Partial<Record<Role, NavItem[]>> = {
+    ENFORCEMENT: [
+      { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" },
+      { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" },
+      { href: "/activity", label: "My Activity Log", action: "view_activity" },
+    ],
+    ARRESTING_OFFICER: [
+      { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" },
+      { href: "/enforcement/scene", label: "Report Offence", action: "file_enforcement_case" },
+      { href: "/enforcement/cases", label: "My Cases", action: "view_enforcement_cases" },
+      { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" },
+      { href: "/activity", label: "My Activity Log", action: "view_activity" },
+    ],
+    RELEASING_OFFICER: [
+      { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" },
+      { href: "/enforcement/cases", label: "Case Queue", action: "view_enforcement_cases" },
+      { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" },
+      { href: "/activity", label: "My Activity Log", action: "view_activity" },
+    ],
+    ENFORCEMENT_COMMANDER: [
+      { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" },
+      { href: "/enforcement/cases", label: "Case Queue", action: "view_enforcement_cases" },
+      { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" },
+      { href: "/enforcement/scene", label: "Report Offence", action: "file_enforcement_case" },
+      { href: "/matatus", label: "Fleet Lookup", action: "view_matatus" },
+      { href: "/activity", label: "My Activity Log", action: "view_activity" },
+    ],
+    DIRECTOR_MOBILITY: [
+      { href: "/dashboard", label: t("nav.overview"), action: "view_dashboard" },
+      { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "view_operator_verification" },
+    ],
+    CHIEF_OFFICER: [
+      { href: "/dashboard", label: t("nav.overview"), action: "view_dashboard" },
+      { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "view_operator_verification" },
+    ],
   };
 
-  const navItems = getNavItems().filter((item) => can(role, item.action));
+  const effectiveRoles: Role[] = [role, ...additionalRoles];
+  const seenHrefs = new Set<string>();
+  const unionItems = effectiveRoles
+    .flatMap((r) => NAV_ITEMS_BY_ROLE[r] ?? DEFAULT_STAFF_ITEMS)
+    .filter((item) => {
+      if (seenHrefs.has(item.href)) return false;
+      seenHrefs.add(item.href);
+      return true;
+    });
+
+  const navItems = unionItems.filter((item) => canAny(effectiveRoles, item.action));
   // The icon-only collapsed state is a desktop affordance — the mobile drawer
   // always shows full labels regardless of the persisted desktop preference.
   const effectiveCollapsed = collapsed && !mobileOpen;

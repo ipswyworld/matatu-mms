@@ -30,7 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AppShell role={session.role} name={session.name} token={session.token} actionNeeded={actionNeeded}>
+    <AppShell role={session.role} additionalRoles={session.additionalRoles} name={session.name} token={session.token} actionNeeded={actionNeeded}>
       {children}
     </AppShell>
   );

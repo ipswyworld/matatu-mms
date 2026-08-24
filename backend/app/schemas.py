@@ -201,6 +201,10 @@ class UserResponse(UserBase):
     # fields elsewhere in this file) — the frontend parses it. Empty/null
     # means "just the role's own permissions."
     extra_permissions: Optional[str] = None
+    # Raw JSON string of additional predefined role names layered on top of
+    # `role` (app/rbac.py's ROLE_MATRIX keys) — same pass-through convention
+    # as extra_permissions above. Empty/null means "just the primary role."
+    additional_roles: Optional[str] = None
 
 class UserUpdate(BaseModelCamel):
     name: Optional[str] = None
@@ -213,6 +217,10 @@ class UserUpdate(BaseModelCamel):
     # (routes/users.py). Omit the field entirely to leave unchanged; pass
     # an explicit list (including []) to replace it.
     extra_permissions: Optional[List[str]] = None
+    # Additional predefined roles on top of the primary role — Super Admin
+    # only (routes/users.py), same omit/replace semantics as
+    # extra_permissions. Each entry must be a key in rbac.ROLE_MATRIX.
+    additional_roles: Optional[List[str]] = None
 
 class FavoriteSaccoRequest(BaseModelCamel):
     sacco_id: Optional[str] = None  # null clears the favorite

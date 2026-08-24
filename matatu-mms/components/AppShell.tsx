@@ -13,12 +13,14 @@ interface ActionNeeded {
 
 export default function AppShell({
   role,
+  additionalRoles,
   name,
   token,
   actionNeeded,
   children,
 }: {
   role: Role;
+  additionalRoles?: Role[];
   name: string;
   token?: string;
   actionNeeded?: ActionNeeded;
@@ -28,7 +30,7 @@ export default function AppShell({
 
   return (
     <div className="flex">
-      <Sidebar role={role} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <Sidebar role={role} additionalRoles={additionalRoles} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
       <div className="flex-1 min-w-0">
         <Header
           name={name}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { updateUserAction } from "@/lib/actions";
-import { ROLE_LABELS, ADMIN_TIER_ROLES, can, MATRIX, ALL_BACKEND_PERMISSIONS } from "@/lib/rbac";
+import { ROLE_LABELS, ADMIN_TIER_ROLES, STAFF_ROLES, can, MATRIX, ALL_BACKEND_PERMISSIONS } from "@/lib/rbac";
 import { Role, Sacco, User } from "@/lib/types";
 import PasswordInput from "./PasswordInput";
 
@@ -26,6 +26,7 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
   const [saccoId, setSaccoId] = useState(user.saccoId || "");
   const [newPassword, setNewPassword] = useState("");
   const [extraPermissions, setExtraPermissions] = useState<string[]>(() => parseExtraPermissions(user.extraPermissions));
+  const [additionalRoles, setAdditionalRoles] = useState<string[]>(() => parseExtraPermissions(user.additionalRoles));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -35,8 +36,18 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
   const rolePermissions = new Set<string>(MATRIX[role] ?? []);
   const grantablePermissions = ALL_BACKEND_PERMISSIONS.filter((p) => !rolePermissions.has(p));
 
+  // Additional predefined roles this account can hold on top of the
+  // primary role above — not custom role creation, just combining roles
+  // that already exist in STAFF_ROLES. The currently-selected primary role
+  // is excluded (granting it again as "additional" would be a no-op).
+  const grantableRoles = STAFF_ROLES.filter((r) => r !== role);
+
   function togglePermission(action: string) {
     setExtraPermissions((prev) => (prev.includes(action) ? prev.filter((a) => a !== action) : [...prev, action]));
+  }
+
+  function toggleAdditionalRole(r: string) {
+    setAdditionalRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
   }
 
   async function handleSave() {
@@ -52,7 +63,7 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
       // Only Super Admins can grant these (enforced server-side too) — an
       // Admin never sends this field at all, rather than sending an empty
       // array that would silently wipe a Super-Admin-granted list.
-      ...(canAssignAdminTier ? { extraPermissions } : {}),
+      ...(canAssignAdminTier ? { extraPermissions, additionalRoles } : {}),
     });
     setPending(false);
     if (result.error) {
@@ -163,6 +174,34 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
                             className="h-3.5 w-3.5 rounded border-black/20 text-county-green focus:ring-county-green/40"
                           />
                           {action}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {canAssignAdminTier && (
+                <div className="pt-2 border-t border-black/5">
+                  <label className="label">Additional Roles (beyond the role above)</label>
+                  <p className="text-[11px] text-black/50 -mt-1 mb-2">
+                    Give this account another predefined role's whole permission bundle without changing their
+                    primary role — e.g. a Senior Enforcement Officer who should also see the Admin dashboard.
+                    Super Admin only.
+                  </p>
+                  {grantableRoles.length === 0 ? (
+                    <p className="text-xs text-black/40 italic">No other roles to grant.</p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto border border-black/10 rounded-lg p-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                      {grantableRoles.map((r) => (
+                        <label key={r} className="flex items-center gap-1.5 text-xs font-semibold text-county-black cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={additionalRoles.includes(r)}
+                            onChange={() => toggleAdditionalRole(r)}
+                            className="h-3.5 w-3.5 rounded border-black/20 text-county-green focus:ring-county-green/40"
+                          />
+                          {ROLE_LABELS[r]}
                         </label>
                       ))}
                     </div>

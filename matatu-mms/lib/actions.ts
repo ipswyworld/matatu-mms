@@ -8,6 +8,7 @@ import {
 } from "./session";
 import { getReports } from "./data";
 import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
+import { parseJsonStringList } from "./rbac";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -130,6 +131,7 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
         saccoId: data.user.saccoId,
         token: data.accessToken,
         mfaSetupRequired: !!data.mfaSetupRequired,
+        additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
       },
       rememberMe
     );
@@ -186,6 +188,7 @@ export async function verifyMfaAction(_prevState: { error?: string } | undefined
       saccoId: data.user.saccoId,
       token: data.accessToken,
       mfaSetupRequired: !!data.mfaSetupRequired,
+      additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
     });
 
     redirectHome(userRole);
@@ -1134,7 +1137,7 @@ export async function addUserAction(_prevState: { error?: string } | undefined, 
 
 export async function updateUserAction(
   userId: string,
-  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean; extraPermissions?: string[] }
+  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean; extraPermissions?: string[]; additionalRoles?: string[] }
 ): Promise<{ error?: string }> {
   try {
     await apiWrite(`/api/users/${userId}`, "PATCH", input);
