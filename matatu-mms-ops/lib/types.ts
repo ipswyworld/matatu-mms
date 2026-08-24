@@ -76,3 +76,35 @@ export interface FeatureFlag {
   updatedBy: string | null;
   updatedAt: string;
 }
+
+export interface JobSummary {
+  jobId: string;
+  function: string;
+  status: string; // "queued" | "deferred" | "in_progress" | "complete" | "not_found"
+  enqueueTime: string;
+  jobTry: number | null;
+  startTime: string | null;
+  finishTime: string | null;
+  success: boolean | null;
+  resultPreview: string | null;
+}
+
+export interface PrivilegedLogin {
+  id: number;
+  userId: string;
+  userName: string;
+  ipAddress: string | null;
+  createdAt: string;
+  isNewIp: boolean;
+}
+
+export interface FailedLoginBurst {
+  email: string;
+  count: number;
+  lastAttemptAt: string;
+}
+
+export interface LoginOverview {
+  recentPrivilegedLogins: PrivilegedLogin[];
+  failedLoginBursts: FailedLoginBurst[];
+}

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { SystemHealth, AuditLog, StaffUser, FeatureFlag } from "./types";
+import { SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview } from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 const AUDIT_LOG_PAGE_SIZE = 50;
@@ -51,4 +51,12 @@ export async function getStaffUsers(): Promise<StaffUser[]> {
 
 export async function getFeatureFlags(): Promise<FeatureFlag[]> {
   return apiFetch<FeatureFlag[]>("/api/feature-flags");
+}
+
+export async function getJobQueue(): Promise<JobSummary[]> {
+  return apiFetch<JobSummary[]>("/api/jobs/queue");
+}
+
+export async function getLoginOverview(): Promise<LoginOverview> {
+  return apiFetch<LoginOverview>("/api/users/activity/overview");
 }

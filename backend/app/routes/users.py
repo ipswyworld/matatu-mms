@@ -1,3 +1,4 @@
+import datetime
 import random
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,13 +10,94 @@ import json
 
 from app.database import get_db
 from app.models import User, Sacco, LoginEvent, AuditLog
-from app.schemas import UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest, UserActivityResponse
+from app.schemas import (
+    UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest, UserActivityResponse,
+    LoginOverviewResponse, PrivilegedLoginResponse, FailedLoginBurstResponse,
+)
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
 from app.rbac import ADMIN_TIER_ROLES, has_permission, ALL_ACTIONS, ALL_ROLES
 from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/users", tags=["Users Management"])
+
+FAILED_LOGIN_BURST_WINDOW_MINUTES = 15
+FAILED_LOGIN_BURST_THRESHOLD = 3
+
+
+@router.get("/activity/overview", response_model=LoginOverviewResponse)
+async def get_login_overview(
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cross-account "who's logged in"/anomaly view for the ops console
+    (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.3/B.2). Gated on
+    manage_system_config (SUPERADMIN-only) rather than view_users — this is
+    security-monitoring data about privileged accounts, a different
+    sensitivity than the ordinary staff roster."""
+    # Every LOGIN_SUCCESS for an admin-tier account, oldest first, so the
+    # "first time we've seen this IP for this user" check below only has to
+    # look backward through what it's already iterated.
+    privileged_ids_result = await db.execute(select(User.id, User.name).where(User.role.in_(ADMIN_TIER_ROLES)))
+    privileged = {row.id: row.name for row in privileged_ids_result.all()}
+
+    if not privileged:
+        recent_privileged_logins: List[PrivilegedLoginResponse] = []
+    else:
+        events_result = await db.execute(
+            select(LoginEvent)
+            .where(LoginEvent.event_type == "LOGIN_SUCCESS", LoginEvent.user_id.in_(privileged.keys()))
+            .order_by(LoginEvent.created_at.asc())
+        )
+        events = events_result.scalars().all()
+
+        seen_ips: dict = {}  # user_id -> set of ips already observed
+        annotated = []
+        for ev in events:
+            user_ips = seen_ips.setdefault(ev.user_id, set())
+            is_new_ip = bool(ev.ip_address) and ev.ip_address not in user_ips
+            if ev.ip_address:
+                user_ips.add(ev.ip_address)
+            annotated.append((ev, is_new_ip))
+
+        # Most recent first for display, capped to a reasonable feed length.
+        recent_privileged_logins = [
+            PrivilegedLoginResponse(
+                id=ev.id, user_id=ev.user_id, user_name=privileged.get(ev.user_id, ev.user_id),
+                ip_address=ev.ip_address, created_at=ev.created_at, is_new_ip=is_new_ip,
+            )
+            for ev, is_new_ip in reversed(annotated[-50:])
+        ]
+
+    # Failed-login bursts: several failures against the same email within a
+    # short window — a real, cheap signal for credential-stuffing/guessing,
+    # independent of whether that email belongs to a real (or privileged)
+    # account.
+    window_start = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=FAILED_LOGIN_BURST_WINDOW_MINUTES)
+    failed_result = await db.execute(
+        select(LoginEvent)
+        .where(LoginEvent.event_type == "LOGIN_FAILED", LoginEvent.created_at >= window_start)
+        .order_by(LoginEvent.created_at.desc())
+    )
+    failed_events = failed_result.scalars().all()
+
+    by_email: dict = {}
+    for ev in failed_events:
+        if not ev.email:
+            continue
+        bucket = by_email.setdefault(ev.email, {"count": 0, "last": ev.created_at})
+        bucket["count"] += 1
+        if ev.created_at > bucket["last"]:
+            bucket["last"] = ev.created_at
+
+    failed_login_bursts = [
+        FailedLoginBurstResponse(email=email, count=b["count"], last_attempt_at=b["last"])
+        for email, b in by_email.items()
+        if b["count"] >= FAILED_LOGIN_BURST_THRESHOLD
+    ]
+    failed_login_bursts.sort(key=lambda b: b.count, reverse=True)
+
+    return LoginOverviewResponse(recent_privileged_logins=recent_privileged_logins, failed_login_bursts=failed_login_bursts)
 
 
 @router.patch("/me/favorite-sacco", response_model=UserResponse)

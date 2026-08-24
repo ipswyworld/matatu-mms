@@ -594,6 +594,22 @@ class FeatureFlagUpdate(BaseModelCamel):
     description: Optional[str] = None
     enabled: Optional[bool] = None
 
+class JobSummaryResponse(BaseModelCamel):
+    """One ARQ job (app/routes/jobs.py) — queued, in-progress, or complete
+    (success or failure). start_time/finish_time/success/result_preview are
+    only populated once a job has actually run."""
+    job_id: str
+    function: str
+    status: str  # "queued" | "deferred" | "in_progress" | "complete" | "not_found"
+    enqueue_time: datetime.datetime
+    # None for a job that hasn't been picked up by the worker yet — arq
+    # only sets job_try once a worker actually starts a run.
+    job_try: Optional[int] = None
+    start_time: Optional[datetime.datetime] = None
+    finish_time: Optional[datetime.datetime] = None
+    success: Optional[bool] = None
+    result_preview: Optional[str] = None
+
 class UserActivityResponse(BaseModelCamel):
     """Per-user Activity tab (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md Part
     B.2) — login history (once captured, see LoginEvent) plus this
@@ -603,6 +619,31 @@ class UserActivityResponse(BaseModelCamel):
     """
     login_events: List[LoginEventResponse]
     audit_logs: List[AuditLogResponse]
+
+class PrivilegedLoginResponse(BaseModelCamel):
+    id: int
+    user_id: str
+    user_name: str
+    ip_address: Optional[str] = None
+    created_at: datetime.datetime
+    # True if this is the first time this IP has been seen for this user
+    # across their whole LOGIN_SUCCESS history — a real, if simple, signal:
+    # "this privileged account is signing in from somewhere new."
+    is_new_ip: bool
+
+class FailedLoginBurstResponse(BaseModelCamel):
+    email: str
+    count: int
+    last_attempt_at: datetime.datetime
+
+class LoginOverviewResponse(BaseModelCamel):
+    """Cross-account "who's logged in"/anomaly view for the ops console
+    (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.3/B.2) — Tier-1 read-only.
+    Two real signals, not a fabricated risk score: a privileged account
+    logging in from an IP it's never used before, and an email with
+    several failed attempts in a short window."""
+    recent_privileged_logins: List[PrivilegedLoginResponse]
+    failed_login_bursts: List[FailedLoginBurstResponse]
 
 # --- Zones & Offence Catalog ---
 class ZoneResponse(BaseModelCamel):

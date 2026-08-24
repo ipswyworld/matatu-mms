@@ -69,6 +69,7 @@ from app.routes.public_updates import router as public_updates_router
 from app.routes.trips import router as trips_router
 from app.routes.uploads import router as uploads_router
 from app.routes.feature_flags import router as feature_flags_router
+from app.routes.jobs import router as jobs_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -236,6 +237,7 @@ app.include_router(public_updates_router)
 app.include_router(trips_router)
 app.include_router(uploads_router)
 app.include_router(feature_flags_router)
+app.include_router(jobs_router)
 
 # Serves uploaded verification/onboarding documents when app/storage.py is
 # in local-disk mode (dev, or the self-hosted docker-compose stack's

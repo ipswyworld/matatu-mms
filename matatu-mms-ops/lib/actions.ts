@@ -167,3 +167,13 @@ export async function deleteFeatureFlagAction(key: string): Promise<{ error?: st
   revalidatePath("/");
   return {};
 }
+
+export async function retryJobAction(jobId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/jobs/queue/${encodeURIComponent(jobId)}/retry`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not retry this job." };
+  }
+  revalidatePath("/");
+  return {};
+}
