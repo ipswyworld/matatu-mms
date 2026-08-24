@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { Settings, CheckCircle2, XCircle, LogOut } from "lucide-react";
-import { getSystemHealth } from "@/lib/data";
+import { getSystemHealth, getAuditLogsPage, getStaffUsers } from "@/lib/data";
+import { getRenderServiceMatrix } from "@/lib/render";
 import { readSession } from "@/lib/session";
 import { logoutAction } from "@/lib/actions";
+import ServiceHealthMatrix from "@/components/ServiceHealthMatrix";
+import AuditLogViewer from "@/components/AuditLogViewer";
 
 export const metadata: Metadata = { title: "System | Ops Console" };
 
@@ -11,10 +14,6 @@ export const metadata: Metadata = { title: "System | Ops Console" };
 // frame-src allowlist entry is needed beyond 'self'. Override for local dev
 // without nginx in front (e.g. a Grafana container's own host port).
 const GRAFANA_EMBED_URL = process.env.GRAFANA_EMBED_URL || "/grafana/";
-
-// The staff app's own URL, for the one link out this console still needs
-// (audit trail lives in the main app's DB-backed UI, not duplicated here).
-const STAFF_APP_URL = process.env.STAFF_APP_URL || "http://localhost:3000";
 
 function StatusBadge({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; badLabel: string }) {
   const Icon = ok ? CheckCircle2 : XCircle;
@@ -39,7 +38,12 @@ function formatUptime(seconds: number): string {
 
 export default async function OpsConsolePage() {
   const session = readSession();
-  const health = await getSystemHealth();
+  const [health, renderServices, auditPage, staffUsers] = await Promise.all([
+    getSystemHealth(),
+    getRenderServiceMatrix(),
+    getAuditLogsPage(),
+    getStaffUsers(),
+  ]);
 
   return (
     <div className="min-h-screen">
@@ -122,6 +126,8 @@ export default async function OpsConsolePage() {
           </div>
         </div>
 
+        <ServiceHealthMatrix services={renderServices} />
+
         {/* Config row */}
         <div className="card p-5 space-y-4">
           <div>
@@ -189,19 +195,7 @@ export default async function OpsConsolePage() {
           />
         </div>
 
-        {/* Links out */}
-        <div className="card p-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="font-bold text-sm text-county-black">Audit Trail</h3>
-            <p className="text-xs text-black/50 mt-0.5">Every create/update recorded across the system, with before/after values — lives in the staff app.</p>
-          </div>
-          <a
-            href={`${STAFF_APP_URL}/audit-logs`}
-            className="rounded-lg px-4 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors"
-          >
-            Open Audit Trail →
-          </a>
-        </div>
+        <AuditLogViewer initialLogs={auditPage.logs} initialCursor={auditPage.nextCursor} users={staffUsers} />
       </main>
     </div>
   );

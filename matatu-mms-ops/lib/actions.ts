@@ -94,3 +94,11 @@ export async function logoutAction() {
   clearSessionCookie();
   redirect("/login");
 }
+
+// "Load more" for AuditLogViewer (a client component, so it can't call
+// lib/data.ts's server-only getAuditLogsPage directly) — thin re-export as
+// a Server Action.
+export async function loadMoreAuditLogsAction(beforeId: number) {
+  const { getAuditLogsPage } = await import("./data");
+  return getAuditLogsPage(beforeId);
+}
