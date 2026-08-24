@@ -63,6 +63,16 @@ export default function Sidebar({
   const { t } = useLanguage();
   const active = "/" + (pathname?.split("/")[1] || "");
   const [collapsed, setCollapsed] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  function toggleSection(section: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  }
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
@@ -85,19 +95,23 @@ export default function Sidebar({
   // This is the staff app (county government back-office) — Passenger,
   // Crew, and Sacco Operator roles sign in through the separate public app
   // and never reach this Sidebar.
-  type NavItem = { href: string; label: string; action: Action };
+  // Section groups the long full-staff list into collapsible headers
+  // (SYSTEM_AUDIT.md §6's "sidebar too long" flag) — undefined for the
+  // narrower per-role lists below, which stay flat since they're already
+  // short (2-6 items) and don't need sectioning.
+  type NavItem = { href: string; label: string; action: Action; section?: string };
 
   const DEFAULT_STAFF_ITEMS: NavItem[] = [
     { href: "/dashboard", label: t("nav.overview"), action: "view_dashboard" },
-    { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "verify_saccos" },
-    { href: "/matatus", label: t("nav.fleetRegistry"), action: "view_matatus" },
-    { href: "/enforcement", label: t("nav.enforcement"), action: "view_enforcement" },
-    { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" },
-    { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers" },
-    { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue" },
-    { href: "/routes", label: t("nav.routes"), action: "view_routes" },
-    { href: "/users", label: t("nav.users"), action: "view_users" },
-    { href: "/system", label: "System", action: "view_system_health" },
+    { href: "/saccos/verify", label: t("nav.operatorVerification"), action: "verify_saccos", section: "Fleet" },
+    { href: "/matatus", label: t("nav.fleetRegistry"), action: "view_matatus", section: "Fleet" },
+    { href: "/routes", label: t("nav.routes"), action: "view_routes", section: "Fleet" },
+    { href: "/enforcement", label: t("nav.enforcement"), action: "view_enforcement", section: "Enforcement" },
+    { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute", section: "Enforcement" },
+    { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue", section: "Revenue" },
+    { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers", section: "Revenue" },
+    { href: "/users", label: t("nav.users"), action: "view_users", section: "Administration" },
+    { href: "/system", label: "System", action: "view_system_health", section: "Administration" },
   ];
 
   // Per-role nav lists, keyed as data instead of an if/else chain so a
@@ -209,36 +223,70 @@ export default function Sidebar({
         </button>
 
       <nav className="flex-1 p-3 space-y-1 relative z-10 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = active === item.href || (item.href === "/revenue" && active === "/fines");
-          const Icon = NAV_ICONS[item.href];
+        {(() => {
+          const sections: string[] = [];
+          for (const item of navItems) {
+            if (item.section && !sections.includes(item.section)) sections.push(item.section);
+          }
+
+          function renderItem(item: NavItem) {
+            const isActive = active === item.href || (item.href === "/revenue" && active === "/fines");
+            const Icon = NAV_ICONS[item.href];
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={effectiveCollapsed ? item.label : undefined}
+                className={`group flex items-center rounded-lg text-sm font-semibold transition-all duration-150 relative ${
+                  effectiveCollapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-3.5 py-2.5"
+                } ${
+                  isActive
+                    ? "bg-county-cream text-county-green-deep shadow-sm"
+                    : "text-white/75 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                {isActive && !effectiveCollapsed && <span className="absolute -left-3 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-county-yellow" />}
+                {effectiveCollapsed ? (
+                  <span className={`h-8 w-8 rounded-lg flex items-center justify-center ${isActive ? "bg-county-green-deep/10" : "bg-white/10"}`}>
+                    {Icon ? <Icon size={16} strokeWidth={2} /> : item.label.trim().charAt(0).toUpperCase()}
+                  </span>
+                ) : (
+                  <>
+                    {Icon && <Icon size={17} strokeWidth={2} className="shrink-0" />}
+                    <span className={isActive ? "font-extrabold" : ""}>{item.label}</span>
+                  </>
+                )}
+              </Link>
+            );
+          }
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={effectiveCollapsed ? item.label : undefined}
-              className={`group flex items-center rounded-lg text-sm font-semibold transition-all duration-150 relative ${
-                effectiveCollapsed ? "justify-center px-0 py-2.5" : "gap-2.5 px-3.5 py-2.5"
-              } ${
-                isActive
-                  ? "bg-county-cream text-county-green-deep shadow-sm"
-                  : "text-white/75 hover:bg-white/[0.06] hover:text-white"
-              }`}
-            >
-              {isActive && !effectiveCollapsed && <span className="absolute -left-3 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r bg-county-yellow" />}
-              {effectiveCollapsed ? (
-                <span className={`h-8 w-8 rounded-lg flex items-center justify-center ${isActive ? "bg-county-green-deep/10" : "bg-white/10"}`}>
-                  {Icon ? <Icon size={16} strokeWidth={2} /> : item.label.trim().charAt(0).toUpperCase()}
-                </span>
-              ) : (
-                <>
-                  {Icon && <Icon size={17} strokeWidth={2} className="shrink-0" />}
-                  <span className={isActive ? "font-extrabold" : ""}>{item.label}</span>
-                </>
-              )}
-            </Link>
+            <>
+              {navItems.filter((item) => !item.section).map(renderItem)}
+              {sections.map((section) => {
+                const items = navItems.filter((item) => item.section === section);
+                const isCollapsed = collapsedSections.has(section) && !effectiveCollapsed;
+                return (
+                  <div key={section} className="pt-1">
+                    {!effectiveCollapsed && (
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(section)}
+                        className="w-full flex items-center justify-between px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40 hover:text-white/60"
+                      >
+                        {section}
+                        <svg width="8" height="8" viewBox="0 0 10 10" fill="none" className={`transition-transform ${isCollapsed ? "-rotate-90" : ""}`}>
+                          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    )}
+                    {!isCollapsed && items.map(renderItem)}
+                  </div>
+                );
+              })}
+            </>
           );
-        })}
+        })()}
       </nav>
 
       <div className="relative z-10 p-4 border-t border-white/10 bg-black/20 space-y-3">

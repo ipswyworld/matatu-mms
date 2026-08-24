@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { Settings, CheckCircle2, XCircle, LogOut } from "lucide-react";
-import { getSystemHealth, getAuditLogsPage, getStaffUsers } from "@/lib/data";
+import { getSystemHealth, getAuditLogsPage, getStaffUsers, getFeatureFlags } from "@/lib/data";
 import { getRenderServiceMatrix } from "@/lib/render";
 import { readSession } from "@/lib/session";
 import { logoutAction } from "@/lib/actions";
 import ServiceHealthMatrix from "@/components/ServiceHealthMatrix";
 import AuditLogViewer from "@/components/AuditLogViewer";
+import FeatureFlagsPanel from "@/components/FeatureFlagsPanel";
+import AlertingSummary from "@/components/AlertingSummary";
 
 export const metadata: Metadata = { title: "System | Ops Console" };
 
@@ -38,11 +40,12 @@ function formatUptime(seconds: number): string {
 
 export default async function OpsConsolePage() {
   const session = readSession();
-  const [health, renderServices, auditPage, staffUsers] = await Promise.all([
+  const [health, renderServices, auditPage, staffUsers, featureFlags] = await Promise.all([
     getSystemHealth(),
     getRenderServiceMatrix(),
     getAuditLogsPage(),
     getStaffUsers(),
+    getFeatureFlags(),
   ]);
 
   return (
@@ -127,6 +130,11 @@ export default async function OpsConsolePage() {
         </div>
 
         <ServiceHealthMatrix services={renderServices} />
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <FeatureFlagsPanel flags={featureFlags} />
+          <AlertingSummary />
+        </div>
 
         {/* Config row */}
         <div className="card p-5 space-y-4">

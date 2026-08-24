@@ -1,4 +1,4 @@
-import { RenderServiceStatus } from "./types";
+import { RenderServiceStatus, RenderIpAllowEntry } from "./types";
 
 // A dedicated Render API key for this console, not the interactive CLI
 // session token a developer already has locally — this one is meant to
@@ -12,8 +12,15 @@ const RENDER_API_BASE = "https://api.render.com/v1";
 interface RawRenderService {
   id: string;
   name: string;
-  serviceDetails?: { url?: string };
+  serviceDetails?: { url?: string; ipAllowList?: RenderIpAllowEntry[] };
 }
+
+// View-only, deliberately: Render's write shape for ipAllowList (which
+// field a PATCH /v1/services/{id} body actually needs) isn't confirmed
+// against a live key from this codebase, and a malformed write to a
+// security-critical access control is exactly the kind of mistake not
+// worth risking blind. Render's own dashboard is the edit path until this
+// has been verified end-to-end with a real RENDER_API_KEY.
 
 interface RawRenderDeploy {
   status?: string;
@@ -66,11 +73,12 @@ export async function getRenderServiceMatrix(): Promise<RenderServiceStatus[] | 
           commitId: deploy?.commit?.id ?? null,
           commitMessage: deploy?.commit?.message ?? null,
           deployedAt: deploy?.finishedAt ?? deploy?.createdAt ?? null,
+          ipAllowList: svc.serviceDetails?.ipAllowList ?? [],
         };
       } catch {
         // One service's deploy history failing to load shouldn't blank out
         // the whole matrix — show it with unknown deploy info instead.
-        return { id: svc.id, name: svc.name, url: svc.serviceDetails?.url ?? null, deployStatus: null, commitId: null, commitMessage: null, deployedAt: null };
+        return { id: svc.id, name: svc.name, url: svc.serviceDetails?.url ?? null, deployStatus: null, commitId: null, commitMessage: null, deployedAt: null, ipAllowList: svc.serviceDetails?.ipAllowList ?? [] };
       }
     })
   );

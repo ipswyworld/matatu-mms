@@ -49,7 +49,8 @@ export default function ServiceHealthMatrix({ services }: { services: RenderServ
                 <th className="pb-2 pr-3">Service</th>
                 <th className="pb-2 pr-3">Status</th>
                 <th className="pb-2 pr-3">Commit</th>
-                <th className="pb-2">Deployed</th>
+                <th className="pb-2 pr-3">Deployed</th>
+                <th className="pb-2">IP Access</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5">
@@ -75,13 +76,27 @@ export default function ServiceHealthMatrix({ services }: { services: RenderServ
                       <span className="text-black/30 text-xs">—</span>
                     )}
                   </td>
-                  <td className="py-2 text-[11px] text-black/50 whitespace-nowrap">
+                  <td className="py-2 pr-3 text-[11px] text-black/50 whitespace-nowrap">
                     {s.deployedAt ? new Date(s.deployedAt).toLocaleString() : "—"}
+                  </td>
+                  <td className="py-2">
+                    {s.ipAllowList.some((e) => e.cidrBlock === "0.0.0.0/0") ? (
+                      <span className="badge text-[10px] font-bold bg-amber-500/10 text-amber-700">OPEN TO ALL</span>
+                    ) : s.ipAllowList.length > 0 ? (
+                      <span className="badge text-[10px] font-bold bg-county-green/10 text-county-green" title={s.ipAllowList.map((e) => `${e.cidrBlock} (${e.description})`).join(", ")}>
+                        {s.ipAllowList.length} RESTRICTED
+                      </span>
+                    ) : (
+                      <span className="text-black/30 text-xs">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <p className="text-[10px] text-black/35 mt-3">
+            View-only — edit IP allow lists directly in Render&apos;s dashboard per service.
+          </p>
         </div>
       )}
     </div>

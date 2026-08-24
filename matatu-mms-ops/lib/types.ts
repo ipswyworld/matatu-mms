@@ -34,6 +34,11 @@ export interface SystemHealth {
 // One row of the Service Health Matrix (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md
 // A.3's "service/software catalog") — deliberately derived live from the
 // Render API rather than a hand-maintained list, so it can't drift.
+export interface RenderIpAllowEntry {
+  cidrBlock: string;
+  description: string;
+}
+
 export interface RenderServiceStatus {
   id: string;
   name: string;
@@ -42,6 +47,10 @@ export interface RenderServiceStatus {
   commitId: string | null;
   commitMessage: string | null;
   deployedAt: string | null;
+  // View-only here (see lib/render.ts's comment on why this console
+  // doesn't write to it) — "everywhere" (0.0.0.0/0) is worth surfacing
+  // plainly since it means this service has no IP restriction at all.
+  ipAllowList: RenderIpAllowEntry[];
 }
 
 export interface AuditLog {
@@ -58,4 +67,12 @@ export interface AuditLog {
 export interface StaffUser {
   id: string;
   name: string;
+}
+
+export interface FeatureFlag {
+  key: string;
+  description: string | null;
+  enabled: boolean;
+  updatedBy: string | null;
+  updatedAt: string;
 }

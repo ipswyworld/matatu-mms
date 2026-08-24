@@ -601,6 +601,25 @@ class LoginEvent(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, index=True)
 
 
+class FeatureFlag(Base):
+    """Ops console Tier-1 config CRUD (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md
+    A.2/A.4) — this is the first real use case for a flag system in this
+    codebase, so nothing yet branches on a flag's value. The store, CRUD,
+    RBAC gate, and audit trail are the actual deliverable; a call site
+    checking is_feature_enabled() is a separate, later change per flag.
+    Recoverable-by-toggle, unlike Tier 2/3 data — no soft-delete needed."""
+    __tablename__ = "feature_flags"
+
+    # Slug-style key (e.g. "impersonation_enabled"), not a surrogate id —
+    # this is what code call sites reference, so it needs to be stable and
+    # human-chosen, not autoincrement.
+    key = Column(String, primary_key=True)
+    description = Column(String, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=False)
+    updated_by = Column(String, ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class Zone(Base):
     __tablename__ = "zones"
 

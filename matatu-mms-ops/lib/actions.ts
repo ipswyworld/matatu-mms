@@ -1,10 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import {
-  setSessionCookie, clearSessionCookie,
+  setSessionCookie, clearSessionCookie, readSession,
   setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
 } from "./session";
+import { FeatureFlag } from "./types";
 
 // Same backend as the staff app — this console doesn't have its own user
 // accounts, it authenticates against the same SUPERADMIN accounts and
@@ -12,6 +14,29 @@ import {
 // just hidden in the UI) since the backend itself has no concept of "this
 // request came from the ops console."
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+
+async function apiWrite<T = any>(path: string, method: string, body?: any): Promise<T> {
+  const session = readSession();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
+
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) redirect("/login");
+    const text = await res.text();
+    let msg = "Action failed";
+    try { msg = JSON.parse(text).detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  if (res.status === 204) return undefined as unknown as T;
+  return res.json() as Promise<T>;
+}
 
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") || "").trim();
@@ -101,4 +126,44 @@ export async function logoutAction() {
 export async function loadMoreAuditLogsAction(beforeId: number) {
   const { getAuditLogsPage } = await import("./data");
   return getAuditLogsPage(beforeId);
+}
+
+// Tier-1 config CRUD (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.2) — the
+// guardrail pattern built here (RBAC via the backend's manage_system_config
+// permission, every write audit-logged server-side, confirm-before-delete
+// in the UI) is meant to be reused for the next Tier-1 CRUD surface, not
+// re-invented per feature.
+export async function createFeatureFlagAction(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const key = String(formData.get("key") || "").trim();
+  const description = String(formData.get("description") || "").trim();
+  try {
+    await apiWrite<FeatureFlag>("/api/feature-flags", "POST", { key, description: description || undefined, enabled: false });
+  } catch (err: any) {
+    return { error: err.message || "Could not create flag." };
+  }
+  revalidatePath("/");
+  return {};
+}
+
+export async function toggleFeatureFlagAction(key: string, enabled: boolean): Promise<{ error?: string }> {
+  try {
+    await apiWrite<FeatureFlag>(`/api/feature-flags/${encodeURIComponent(key)}`, "PATCH", { enabled });
+  } catch (err: any) {
+    return { error: err.message || "Could not update flag." };
+  }
+  revalidatePath("/");
+  return {};
+}
+
+export async function deleteFeatureFlagAction(key: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/feature-flags/${encodeURIComponent(key)}`, "DELETE");
+  } catch (err: any) {
+    return { error: err.message || "Could not delete flag." };
+  }
+  revalidatePath("/");
+  return {};
 }

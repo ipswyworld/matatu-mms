@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX, TrendingUp } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry } from "@/lib/data";
+import { getFines, getMatatus, getActivity, getRoutes, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry, getTimeseries } from "@/lib/data";
 import { canAny, ADMIN_TIER_ROLES } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 
@@ -222,7 +222,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const [allMatatus, allFines, allActivity, saccos, routes, auditLogs, reports, bookings, telemetry] = await Promise.all([
+  const [allMatatus, allFines, allActivity, saccos, routes, auditLogs, reports, bookings, telemetry, finesTrend] = await Promise.all([
     getMatatus(),
     getFines(),
     getActivity(),
@@ -232,7 +232,9 @@ export default async function DashboardPage() {
     canAny(roles, "view_reports") ? getReports() : Promise.resolve([]),
     getMyBookings(),
     getFleetTelemetry(),
+    getTimeseries("fines", 14, "day"),
   ]);
+  const finesSparkline = finesTrend.points.map((p) => p.value);
 
   const matatus = isSacco ? allMatatus.filter((m) => m.saccoId === session.saccoId) : allMatatus;
   const matatuIds = new Set(matatus.map((m) => m.id));
@@ -261,6 +263,33 @@ export default async function DashboardPage() {
   const unregisteredCount = saccos.filter((s) => s.status === "UNREGISTERED").length;
   const invitedCount = saccos.filter((s) => s.status === "INVITED").length;
 
+  // Hero work-queue (ADMIN_DASHBOARD_AUDIT §6's progressive-disclosure
+  // recommendation) — the same pendingSaccos/pendingRenewals counted by
+  // the "Awaiting your approval" KPI below, surfaced as an actual
+  // actionable list before the KPI grid instead of only as one number.
+  // Sacco Operators don't approve anything here (isSacco already hides
+  // that KPI), so no queue for them either.
+  const approvalQueueItems: WorkQueueItem[] = !isSacco
+    ? [
+        ...pendingSaccos
+          .slice()
+          .sort((a, b) => new Date(a.applicationSubmittedAt || 0).getTime() - new Date(b.applicationSubmittedAt || 0).getTime())
+          .map((s) => ({
+            id: s.id,
+            label: s.name,
+            detail: s.saccoType === "NEW" ? "New Application" : "Existing Operator",
+            ageLabel: ageLabel(s.applicationSubmittedAt),
+            href: "/saccos/verify",
+          })),
+        ...pendingRenewals.map((s) => ({
+          id: `renewal-${s.id}`,
+          label: s.name,
+          detail: "License Renewal",
+          href: "/saccos/verify",
+        })),
+      ]
+    : [];
+
   return (
     <div className="space-y-4 md:space-y-6">
       <PageBanner
@@ -270,6 +299,18 @@ export default async function DashboardPage() {
         subtitle={`Welcome back, ${session.name}. This view updates itself in real time as bookings, fines, and approvals happen across ${isSacco ? "your fleet" : "Nairobi's matatu sector"}.`}
         action={session.token && <DashboardLiveRefresh token={session.token} />}
       />
+
+      {!isSacco && (
+        <WorkQueueList
+          title="Operator Applications Awaiting Decision"
+          subtitle="New applications and renewals awaiting county approval — oldest first."
+          items={approvalQueueItems}
+          viewAllHref="/saccos/verify"
+          viewAllLabel="Full verification hub"
+          emptyLabel="Nothing waiting on approval right now."
+          maxVisible={5}
+        />
+      )}
 
       {/* Key metrics — bigger, more decisive scale than generic StatCards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -298,6 +339,7 @@ export default async function DashboardPage() {
           accent="red"
           href="/revenue"
           icon={Banknote}
+          sparkline={finesSparkline}
         />
         {!isSacco && (
           <KpiCard

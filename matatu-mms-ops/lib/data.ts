@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { SystemHealth, AuditLog, StaffUser } from "./types";
+import { SystemHealth, AuditLog, StaffUser, FeatureFlag } from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 const AUDIT_LOG_PAGE_SIZE = 50;
@@ -47,4 +47,8 @@ export async function getAuditLogsPage(beforeId?: number): Promise<{ logs: Audit
 export async function getStaffUsers(): Promise<StaffUser[]> {
   const users = await apiFetch<Array<{ id: string; name: string }>>("/api/users");
   return users.map((u) => ({ id: u.id, name: u.name }));
+}
+
+export async function getFeatureFlags(): Promise<FeatureFlag[]> {
+  return apiFetch<FeatureFlag[]>("/api/feature-flags");
 }

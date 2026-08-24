@@ -569,6 +569,31 @@ class LoginEventResponse(BaseModelCamel):
     user_agent: Optional[str] = None
     created_at: datetime.datetime
 
+FEATURE_FLAG_KEY_PATTERN = r"^[a-z][a-z0-9_]{2,63}$"
+
+class FeatureFlagResponse(BaseModelCamel):
+    key: str
+    description: Optional[str] = None
+    enabled: bool
+    updated_by: Optional[str] = None
+    updated_at: datetime.datetime
+
+class FeatureFlagCreate(BaseModelCamel):
+    key: str
+    description: Optional[str] = None
+    enabled: bool = False
+
+    @field_validator("key")
+    @classmethod
+    def _validate_key(cls, v: str) -> str:
+        if not re.match(FEATURE_FLAG_KEY_PATTERN, v):
+            raise ValueError("Key must be lowercase snake_case, 3-64 chars, starting with a letter (e.g. impersonation_enabled)")
+        return v
+
+class FeatureFlagUpdate(BaseModelCamel):
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+
 class UserActivityResponse(BaseModelCamel):
     """Per-user Activity tab (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md Part
     B.2) — login history (once captured, see LoginEvent) plus this
