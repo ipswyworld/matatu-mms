@@ -65,25 +65,32 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
 
   return (
     <>
+      {/* px-2 py-1.5 -mx-2 -my-1.5 expands the actual clickable area well
+          past the 12px "Edit" glyphs themselves (previously a bare
+          zero-padding text link — an easy miss in a dense table,
+          especially on lower rows or with a trackpad) without changing
+          how it looks inline with the rest of the row. */}
       <button
         onClick={() => setIsOpen(true)}
-        className="text-xs font-bold text-county-green hover:underline"
+        className="text-xs font-bold text-county-green hover:underline px-2 py-1.5 -mx-2 -my-1.5"
       >
         Edit
       </button>
 
       {isOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-          {/* max-h + overflow-y-auto is load-bearing, not cosmetic — with the
-              Extra Permissions checklist (up to ~46 checkboxes for a
-              low-permission role like Director of Mobility) this card is
-              often taller than the viewport. Without a scroll container of
-              its own, Save Changes silently renders below the fold: it
-              still works if you scroll the page, but nothing on this fixed
-              overlay scrolls, so it reads as "the form doesn't fit" and
-              "I can't save" for exactly that reason. */}
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b pb-3 sticky -top-6 -mt-6 pt-6 bg-white z-10">
+          {/* Plain flex-column, not sticky-positioned children — a prior
+              version pinned the header/footer via `sticky` + negative
+              margins to cancel the parent's padding, which on this
+              combination of Tailwind classes could render as a full-width
+              white layer sitting ON TOP of the fields below it (Full
+              Name/Email/Role all became unclickable, even though nothing
+              looked wrong visually). shrink-0 header/footer + a flex-1
+              scrollable middle achieves the same "buttons stay reachable
+              while the long permissions list scrolls" result without any
+              stacking-context risk. */}
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl relative my-8 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b p-6 pb-3 shrink-0">
               <div>
                 <h3 className="font-extrabold text-base text-county-black">Edit User</h3>
                 <p className="text-xs text-black/50">Update account details, role, or reset the password directly.</p>
@@ -96,18 +103,18 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
               </button>
             </div>
 
-            {error && (
-              <div className="bg-county-red/10 border border-county-red/30 text-county-red text-xs p-3 rounded-lg font-semibold">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="bg-county-green/10 border border-county-green/30 text-county-green text-xs p-3 rounded-lg font-semibold">
-                {success}
-              </div>
-            )}
+            <div className="px-6 space-y-3.5 overflow-y-auto flex-1 py-3">
+              {error && (
+                <div className="bg-county-red/10 border border-county-red/30 text-county-red text-xs p-3 rounded-lg font-semibold">
+                  {error}
+                </div>
+              )}
+              {success && (
+                <div className="bg-county-green/10 border border-county-green/30 text-county-green text-xs p-3 rounded-lg font-semibold">
+                  {success}
+                </div>
+              )}
 
-            <div className="space-y-3.5">
               <div>
                 <label className="label">Full Name</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} className="input" />
@@ -174,7 +181,7 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
               </div>
             </div>
 
-            <div className="pt-2 flex gap-3 sticky -bottom-6 -mb-6 pb-6 bg-white">
+            <div className="p-6 pt-2 flex gap-3 border-t border-black/5 shrink-0">
               <button type="button" onClick={() => setIsOpen(false)} className="btn-secondary flex-1">
                 Close
               </button>
