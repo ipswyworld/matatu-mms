@@ -328,6 +328,11 @@ export interface SessionData {
   // directly. Absent/empty means "just the primary role," true for almost
   // every account.
   additionalRoles?: Role[];
+  // Set only while a Super Admin is impersonating this account (ops
+  // console's "login as" — OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.3/A.5
+  // #5). Drives the persistent ImpersonationBanner; absent for every normal
+  // session.
+  impersonatedBy?: { id: string; name: string };
 }
 
 export interface AbacPolicy {

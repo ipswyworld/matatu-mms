@@ -11,7 +11,12 @@ const SESSION_COOKIE_NAME = "mms_session";
 // mms_mfa_pending cookie, not mms_session) — /mfa/setup is deliberately NOT
 // here since it requires a real (if MFA-incomplete) session; see the gate
 // below.
-const PUBLIC_PATHS = ["/login", "/faq", "/terms", "/contact", "/forgot-password", "/reset-password", "/mfa/verify"];
+// /impersonate/consume is reachable pre-session for the same reason
+// /mfa/verify is — it's the landing point for a ticket-based handoff (from
+// the ops console's "Impersonate" action) that establishes the session
+// itself; there's no cookie to check yet when the browser first arrives.
+// /impersonate/error is where that handler redirects on failure.
+const PUBLIC_PATHS = ["/login", "/faq", "/terms", "/contact", "/forgot-password", "/reset-password", "/mfa/verify", "/impersonate/consume", "/impersonate/error"];
 
 const ENFORCEMENT_ROLES = ["ENFORCEMENT", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"];
 const ADMIN_TIER_ROLES = ["ADMIN", "SUPERADMIN"];

@@ -8,7 +8,7 @@ import {
 } from "./session";
 import { getReports } from "./data";
 import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
-import { parseJsonStringList } from "./rbac";
+import { parseJsonStringList, homeForRole } from "./rbac";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -52,26 +52,13 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   return res.json() as Promise<T>;
 }
 
-// Single source of truth for "where does a freshly-authenticated user land",
-// shared by loginAction and verifyMfaAction (the second-step completion of
-// the same login) so the two never drift.
+// Single source of truth for "where does a freshly-authenticated user land"
+// is lib/rbac.ts's homeForRole (shared with the impersonate-consume Route
+// Handler, which can't import from this "use server" file for a plain sync
+// helper — every export here must be async). This just wraps it with the
+// throw-based redirect() that Server Actions use.
 function redirectHome(role: Role): never {
-  if (role === "PASSENGER") {
-    redirect("/passenger-portal");
-  } else if (role === "CREW") {
-    redirect("/crew-portal");
-  } else if (role === "SACCO_OPERATOR") {
-    redirect("/sacco-portal");
-  } else if (
-    role === "ENFORCEMENT" ||
-    role === "ARRESTING_OFFICER" ||
-    role === "RELEASING_OFFICER" ||
-    role === "ENFORCEMENT_COMMANDER"
-  ) {
-    redirect("/enforcement");
-  } else {
-    redirect("/dashboard");
-  }
+  redirect(homeForRole(role));
 }
 
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
@@ -192,6 +179,45 @@ export async function verifyMfaAction(_prevState: { error?: string } | undefined
     });
 
     redirectHome(userRole);
+  } catch (err: any) {
+    if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
+    return { error: "Could not reach the authentication server. Please check your connection and try again." };
+  }
+}
+
+// --- Impersonation ("login as") — the ops console mints a short-lived
+// ticket and redirects here (see OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md
+// A.3/A.5 #5). The consume half lives in app/impersonate/consume/route.ts as
+// a Route Handler, not a Server Action called from a page's render: Next.js
+// only allows mutating cookies from a Server Action or Route Handler, never
+// from a Server Component during render, and this exchange must set the real
+// session cookie. Never the actual bearer token crosses the redirect from
+// the ops console, only the single-use ticket. ----------------------------
+
+export async function stopImpersonationAction(): Promise<{ error?: string }> {
+  const session = readSession();
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/impersonate/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let msg = "Could not end impersonation.";
+      try { msg = (await res.json()).detail || msg; } catch {}
+      return { error: msg };
+    }
+    const data = await res.json();
+    const role = data.user.role as Role;
+    await setSessionCookie({
+      userId: data.user.id,
+      name: data.user.name,
+      role,
+      saccoId: data.user.saccoId,
+      token: data.accessToken,
+      additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
+    });
+    redirect("/users");
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
     return { error: "Could not reach the authentication server. Please check your connection and try again." };

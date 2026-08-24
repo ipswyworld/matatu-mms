@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { Users as UsersIcon } from "lucide-react";
+import Link from "next/link";
+import { Users as UsersIcon, ScrollText } from "lucide-react";
 import { getSaccos, getUsers } from "@/lib/data";
 import { readSession } from "@/lib/session";
-import { STAFF_ROLES } from "@/lib/rbac";
+import { STAFF_ROLES, can } from "@/lib/rbac";
 import NewUserForm from "./NewUserForm";
 import PageBanner from "@/components/PageBanner";
 import UsersTable from "@/components/UsersTable";
@@ -32,6 +33,20 @@ export default async function UsersPage() {
         eyebrow="Nairobi City County · Administration"
         title="Users & Roles"
         subtitle={`${staffUsers.length} county staff account${staffUsers.length !== 1 ? "s" : ""} · ${publicUsers.length} public account${publicUsers.length !== 1 ? "s" : ""} (Operators, Crew, Passengers).`}
+        // Deliberately not restored to primary nav (SYSTEM_AUDIT.md flagged
+        // the old global table as "removed as noise") — the per-user
+        // Activity tab (Edit User → Activity) is where each role would
+        // already be looking for the relevant slice. This is the
+        // power-user/compliance escape hatch to the full flat table,
+        // reachable exactly where someone thinking about audit already is.
+        action={
+          can(session.role, "view_audit_logs") ? (
+            <Link href="/audit-logs" className="flex items-center gap-1.5 text-xs font-bold text-white/80 hover:text-white">
+              <ScrollText size={14} strokeWidth={2} />
+              Full audit trail →
+            </Link>
+          ) : undefined
+        }
       />
 
       <UsersTabs

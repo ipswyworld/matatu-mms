@@ -45,8 +45,8 @@ export async function getAuditLogsPage(beforeId?: number): Promise<{ logs: Audit
 // uses (join client-side against the user list, since that's already a
 // single cheap fetch this account has permission for).
 export async function getStaffUsers(): Promise<StaffUser[]> {
-  const users = await apiFetch<Array<{ id: string; name: string }>>("/api/users");
-  return users.map((u) => ({ id: u.id, name: u.name }));
+  const users = await apiFetch<Array<{ id: string; name: string; role: string; isActive?: boolean }>>("/api/users");
+  return users.map((u) => ({ id: u.id, name: u.name, role: u.role, isActive: u.isActive !== false }));
 }
 
 export async function getFeatureFlags(): Promise<FeatureFlag[]> {

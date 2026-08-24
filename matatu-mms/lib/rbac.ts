@@ -1,5 +1,26 @@
 import { Role } from "./types";
 
+// Single source of truth for "where does this role land by default" — used
+// by lib/actions.ts's Server Actions (loginAction, verifyMfaAction) and by
+// app/impersonate/consume/route.ts's Route Handler. Lives here rather than
+// in actions.ts because that file has "use server" at the top, which
+// requires every exported function to be async; this one is a plain,
+// synchronous lookup shared across both contexts.
+export function homeForRole(role: Role): string {
+  if (role === "PASSENGER") return "/passenger-portal";
+  if (role === "CREW") return "/crew-portal";
+  if (role === "SACCO_OPERATOR") return "/sacco-portal";
+  if (
+    role === "ENFORCEMENT" ||
+    role === "ARRESTING_OFFICER" ||
+    role === "RELEASING_OFFICER" ||
+    role === "ENFORCEMENT_COMMANDER"
+  ) {
+    return "/enforcement";
+  }
+  return "/dashboard";
+}
+
 /**
  * Central RBAC permission matrix for the NCCG Matatu Management System.
  */

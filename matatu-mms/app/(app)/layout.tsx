@@ -4,6 +4,7 @@ import { readSession } from "@/lib/session";
 import { getSaccos } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import AppShell from "@/components/AppShell";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
 
 // Everything under this layout requires a login — keep it out of search results.
 export const metadata: Metadata = {
@@ -30,8 +31,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <AppShell role={session.role} additionalRoles={session.additionalRoles} name={session.name} token={session.token} actionNeeded={actionNeeded}>
-      {children}
-    </AppShell>
+    <>
+      {session.impersonatedBy && (
+        <ImpersonationBanner targetName={session.name} impersonatorName={session.impersonatedBy.name} />
+      )}
+      <AppShell role={session.role} additionalRoles={session.additionalRoles} name={session.name} token={session.token} actionNeeded={actionNeeded}>
+        {children}
+      </AppShell>
+    </>
   );
 }

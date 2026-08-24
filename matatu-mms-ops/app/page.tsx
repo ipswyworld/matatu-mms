@@ -10,6 +10,8 @@ import FeatureFlagsPanel from "@/components/FeatureFlagsPanel";
 import AlertingSummary from "@/components/AlertingSummary";
 import JobQueuePanel from "@/components/JobQueuePanel";
 import PrivilegedActivityPanel from "@/components/PrivilegedActivityPanel";
+import ImpersonationPanel from "@/components/ImpersonationPanel";
+import OperatorOnboardingLauncher from "@/components/OperatorOnboardingLauncher";
 
 export const metadata: Metadata = { title: "System | Ops Console" };
 
@@ -143,6 +145,10 @@ export default async function OpsConsolePage() {
         <JobQueuePanel jobs={jobs} />
 
         <PrivilegedActivityPanel overview={loginOverview} />
+
+        <ImpersonationPanel staff={staffUsers} />
+
+        <OperatorOnboardingLauncher />
 
         {/* Config row */}
         <div className="card p-5 space-y-4">

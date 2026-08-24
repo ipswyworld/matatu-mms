@@ -67,6 +67,8 @@ export interface AuditLog {
 export interface StaffUser {
   id: string;
   name: string;
+  role: string;
+  isActive: boolean;
 }
 
 export interface FeatureFlag {

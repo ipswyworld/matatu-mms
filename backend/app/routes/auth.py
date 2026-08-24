@@ -17,13 +17,15 @@ from app.schemas import (
     PhoneForgotPasswordRequest, PhoneResetPasswordRequest,
     MfaRequiredResponse, MfaEnrollResponse, MfaConfirmRequest, MfaConfirmResponse,
     MfaDisableRequest, MfaVerifyRequest,
+    ImpersonateStartResponse, ImpersonateConsumeRequest, ImpersonateSessionResponse,
 )
-from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme
+from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme, requires_permission
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
 from app.rate_limit import limiter
 from app.sms import send_sms
 from app.rbac import ADMIN_TIER_ROLES
 from app.audit import stage_audit_log
+from app.realtime import get_redis
 from app import mfa as mfa_lib
 import jwt as pyjwt_lib
 
@@ -627,6 +629,124 @@ async def revoke_my_sessions(response: Response, current_user: User = Depends(ge
     await revoke_all_sessions(current_user.id)
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return {"message": "All sessions revoked. You've been signed out everywhere, including this device."}
+
+# --- Impersonation ("login as") for support (OPS_CONSOLE_AND_USER_ACTIVITY_
+# SPEC.md A.3/A.5 #5) — the ops console and the staff app are separate
+# origins/ports, so a cookie set by one isn't visible to the other. The
+# handoff is a short-lived, single-use, opaque ticket (never the actual
+# bearer token) passed via redirect: the ops console mints a ticket here,
+# redirects the browser to the staff app's /impersonate/consume route,
+# which exchanges the ticket for a real session server-side. Restricted to
+# non-admin-tier targets — impersonation is support tooling for helping a
+# regular user, not a way to reach another Admin/Super Admin's account.
+IMPERSONATION_TICKET_TTL_SECONDS = 60
+
+# /impersonate/consume and /impersonate/stop are registered BEFORE
+# /impersonate/{user_id} below deliberately — FastAPI/Starlette matches
+# path operations in registration order, so a static path must come first
+# or a request to /impersonate/consume would match {user_id}="consume" and
+# hit the wrong handler (with the wrong auth requirement) instead.
+
+
+@router.post("/impersonate/consume", response_model=ImpersonateSessionResponse)
+@limiter.limit("10/minute")
+async def consume_impersonation_ticket(request: Request, payload: ImpersonateConsumeRequest, db: AsyncSession = Depends(get_db)):
+    """The ticket itself is the credential here (short-lived, single-use,
+    only ever transmitted server-to-server or over a same-request redirect)
+    — no separate auth dependency needed, same trust model as a password-
+    reset token."""
+    redis = await get_redis()
+    key = f"impersonation:ticket:{payload.ticket}"
+    raw = await redis.get(key)
+    if not raw:
+        raise HTTPException(status_code=401, detail="This impersonation link has expired. Start again from the ops console.")
+    await redis.delete(key)  # single-use
+    data = json.loads(raw)
+
+    target = (await db.execute(select(User).where(User.id == data["targetId"]))).scalars().first()
+    if not target or target.is_active is False:
+        raise HTTPException(status_code=400, detail="This account is no longer available to impersonate.")
+
+    token_data = {
+        "userId": target.id, "name": target.name, "role": target.role, "saccoId": target.sacco_id,
+        "impersonatorId": data["impersonatorId"], "impersonatorName": data["impersonatorName"],
+    }
+    access_token = create_access_token(data=token_data)
+
+    stage_audit_log(
+        db, resource_type="user", resource_id=target.id, action="IMPERSONATION_START",
+        user_id=data["impersonatorId"], new_values={"targetName": target.name, "targetId": target.id},
+    )
+    await db.commit()
+
+    return ImpersonateSessionResponse(
+        access_token=access_token, user=UserResponse.model_validate(target),
+        impersonator_id=data["impersonatorId"], impersonator_name=data["impersonatorName"],
+    )
+
+
+@router.post("/impersonate/stop", response_model=ImpersonateSessionResponse)
+async def stop_impersonation(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    """current_user resolves to the impersonated TARGET (that's whose
+    userId the presented token carries) — get_current_user already proved
+    the token is validly signed and unexpired. impersonatorId/Name travel
+    as extra claims on that same token, decoded again here (get_current_user
+    doesn't surface non-standard claims) purely to read them — same
+    header-then-cookie precedence as get_current_user itself."""
+    raw_token = bearer_token or request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        payload = pyjwt_lib.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    impersonator_id = payload.get("impersonatorId")
+    if not impersonator_id:
+        raise HTTPException(status_code=400, detail="You are not currently impersonating anyone.")
+
+    impersonator = (await db.execute(select(User).where(User.id == impersonator_id))).scalars().first()
+    if not impersonator or impersonator.is_active is False:
+        raise HTTPException(status_code=400, detail="Your own account is no longer available.")
+
+    stage_audit_log(
+        db, resource_type="user", resource_id=current_user.id, action="IMPERSONATION_END",
+        user_id=impersonator_id, new_values={"targetName": current_user.name, "targetId": current_user.id},
+    )
+    await db.commit()
+
+    token_data = {"userId": impersonator.id, "name": impersonator.name, "role": impersonator.role, "saccoId": impersonator.sacco_id}
+    access_token = create_access_token(data=token_data)
+    return ImpersonateSessionResponse(access_token=access_token, user=UserResponse.model_validate(impersonator))
+
+
+@router.post("/impersonate/{user_id}", response_model=ImpersonateStartResponse)
+async def start_impersonation(
+    user_id: str,
+    current_user: User = Depends(requires_permission("manage_admins")),
+    db: AsyncSession = Depends(get_db),
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot impersonate your own account.")
+    target = (await db.execute(select(User).where(User.id == user_id))).scalars().first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role in ADMIN_TIER_ROLES:
+        raise HTTPException(status_code=403, detail="Admin and Super Admin accounts cannot be impersonated.")
+    if target.is_active is False:
+        raise HTTPException(status_code=400, detail="Cannot impersonate a deactivated account.")
+
+    ticket = secrets.token_urlsafe(24)
+    redis = await get_redis()
+    await redis.set(
+        f"impersonation:ticket:{ticket}",
+        json.dumps({"targetId": target.id, "impersonatorId": current_user.id, "impersonatorName": current_user.name}),
+        ex=IMPERSONATION_TICKET_TTL_SECONDS,
+    )
+    return ImpersonateStartResponse(ticket=ticket)
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):

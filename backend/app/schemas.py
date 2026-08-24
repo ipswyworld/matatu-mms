@@ -636,6 +636,21 @@ class FailedLoginBurstResponse(BaseModelCamel):
     count: int
     last_attempt_at: datetime.datetime
 
+class ImpersonateStartResponse(BaseModelCamel):
+    ticket: str
+
+class ImpersonateConsumeRequest(BaseModelCamel):
+    ticket: str
+
+class ImpersonateSessionResponse(BaseModelCamel):
+    """Returned by both /impersonate/consume (starting) and /impersonate/stop
+    (ending) — impersonator_id/impersonator_name are only populated on the
+    former, since after /stop the caller is back to being themselves."""
+    access_token: str
+    user: UserResponse
+    impersonator_id: Optional[str] = None
+    impersonator_name: Optional[str] = None
+
 class LoginOverviewResponse(BaseModelCamel):
     """Cross-account "who's logged in"/anomaly view for the ops console
     (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.3/B.2) — Tier-1 read-only.

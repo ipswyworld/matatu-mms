@@ -177,3 +177,33 @@ export async function retryJobAction(jobId: string): Promise<{ error?: string }>
   revalidatePath("/");
   return {};
 }
+
+// Ops console and staff app are separate origins — a cookie set here isn't
+// visible there. This mints a short-lived, single-use ticket and redirects
+// the browser to the staff app, which exchanges it for a real session
+// server-side (see /impersonate/consume there). Never the actual bearer
+// token itself crosses this redirect.
+const STAFF_APP_URL = process.env.STAFF_APP_URL || "http://localhost:3000";
+
+// Returns the URL rather than calling redirect() itself: next/navigation's
+// redirect() throws a special error that Next's client runtime is meant to
+// turn into a real top-level navigation, but that only reliably happens for
+// actions invoked via a <form action={...}> submission. This action is
+// invoked from a plain button's onClick (via startTransition, see
+// ImpersonationPanel.tsx) so it can show inline confirm/cancel state first —
+// and in that shape, a redirect() to a cross-origin URL was observed to be
+// swallowed by the action's own internal fetch (which follows redirects as
+// part of resolving the request) instead of navigating the browser tab,
+// leaving the button stuck on "Starting…" forever. Handing the URL back and
+// letting the client do `window.location.href = url` sidesteps that
+// entirely — it's a real browser navigation no matter how it was triggered.
+export async function startImpersonationAction(userId: string): Promise<{ url?: string; error?: string }> {
+  let ticket: string;
+  try {
+    const result = await apiWrite<{ ticket: string }>(`/api/auth/impersonate/${encodeURIComponent(userId)}`, "POST");
+    ticket = result.ticket;
+  } catch (err: any) {
+    return { error: err.message || "Could not start impersonation." };
+  }
+  return { url: `${STAFF_APP_URL}/impersonate/consume?ticket=${encodeURIComponent(ticket)}` };
+}
