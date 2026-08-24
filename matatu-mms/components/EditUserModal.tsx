@@ -73,9 +73,17 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
-            <div className="flex justify-between items-center border-b pb-3">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+          {/* max-h + overflow-y-auto is load-bearing, not cosmetic — with the
+              Extra Permissions checklist (up to ~46 checkboxes for a
+              low-permission role like Director of Mobility) this card is
+              often taller than the viewport. Without a scroll container of
+              its own, Save Changes silently renders below the fold: it
+              still works if you scroll the page, but nothing on this fixed
+              overlay scrolls, so it reads as "the form doesn't fit" and
+              "I can't save" for exactly that reason. */}
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative my-8 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-3 sticky -top-6 -mt-6 pt-6 bg-white z-10">
               <div>
                 <h3 className="font-extrabold text-base text-county-black">Edit User</h3>
                 <p className="text-xs text-black/50">Update account details, role, or reset the password directly.</p>
@@ -166,7 +174,7 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
               </div>
             </div>
 
-            <div className="pt-2 flex gap-3">
+            <div className="pt-2 flex gap-3 sticky -bottom-6 -mb-6 pb-6 bg-white">
               <button type="button" onClick={() => setIsOpen(false)} className="btn-secondary flex-1">
                 Close
               </button>
