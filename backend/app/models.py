@@ -570,6 +570,37 @@ class AuditLog(Base):
     user_id = Column(String, nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False)
 
+
+class LoginEvent(Base):
+    """Append-only auth trail (SYSTEM_AUDIT.md §2.1's named gap — auth.py
+    previously wrote nothing on login/logout/failed-login at all). A
+    dedicated table rather than folding into AuditLog: ip_address/
+    user_agent need to be individually queryable for the per-user Activity
+    tab and the ops console's cross-account "who's logged in"/anomaly view
+    (new-IP-on-privileged-account, failed-login bursts), which AuditLog's
+    old_values/new_values JSON blob isn't a good fit for. Deliberately NOT
+    a per-token/jti session list — that's the separately-scoped redesign
+    SESSION_SECURITY_STATUS.md already deferred; this is just "when did
+    this happen and from where."
+    """
+    __tablename__ = "login_events"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # Nullable — a failed attempt against an email with no matching account
+    # has no user to attach to, but the attempt itself is still worth
+    # recording (failed-login-burst detection needs it even without a user).
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    email = Column(String, nullable=True)
+    # LOGIN_SUCCESS, LOGIN_FAILED, LOGOUT, REGISTER
+    event_type = Column(String, nullable=False)
+    # e.g. "invalid_credentials", "account_inactive", "invalid_mfa_code" —
+    # only set for LOGIN_FAILED, null otherwise.
+    reason = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+
 class Zone(Base):
     __tablename__ = "zones"
 

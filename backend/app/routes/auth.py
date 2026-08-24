@@ -2,6 +2,7 @@ import datetime
 import logging
 import re
 import secrets
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,18 +11,19 @@ import base64
 import json
 
 from app.database import get_db
-from app.models import User
+from app.models import User, LoginEvent
 from app.schemas import (
     UserLogin, Token, UserResponse, UserCreate, ForgotPasswordRequest, ResetPasswordRequest,
     PhoneForgotPasswordRequest, PhoneResetPasswordRequest,
     MfaRequiredResponse, MfaEnrollResponse, MfaConfirmRequest, MfaConfirmResponse,
     MfaDisableRequest, MfaVerifyRequest,
 )
-from app.auth import verify_password, create_access_token, get_current_user, get_password_hash
+from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
 from app.rate_limit import limiter
 from app.sms import send_sms
 from app.rbac import ADMIN_TIER_ROLES
+from app.audit import stage_audit_log
 from app import mfa as mfa_lib
 import jwt as pyjwt_lib
 
@@ -41,9 +43,75 @@ def _as_aware_utc(dt: datetime.datetime) -> datetime.datetime:
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-def _issue_token_response(response: Response, user: User, remember_me: bool, mfa_setup_required: bool = False) -> Token:
+
+async def _record_login_event(
+    db: AsyncSession,
+    request: Request,
+    *,
+    event_type: str,
+    user_id: Optional[str] = None,
+    email: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> None:
+    """Append-only auth trail (SYSTEM_AUDIT.md §2.1 — auth.py previously
+    wrote nothing on any auth event). Records both a LoginEvent row (for
+    ip/user-agent-queryable views — the per-user Activity tab and the ops
+    console's cross-account "who's logged in"/anomaly view) and a matching
+    AuditLog entry via stage_audit_log (same mechanism every other mutation
+    in this codebase uses, so auth events show up in the existing audit
+    trail too). Manages its own commit: unlike most stage_audit_log call
+    sites, several of these call sites (a bare invalid-credentials 401, a
+    stateless /logout) have no other mutation in the same request to
+    piggyback a commit onto."""
+    db.add(
+        LoginEvent(
+            user_id=user_id,
+            email=email,
+            event_type=event_type,
+            reason=reason,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+    )
+    stage_audit_log(
+        db,
+        resource_type="auth",
+        resource_id=user_id or email or "unknown",
+        action=event_type,
+        user_id=user_id,
+        new_values={"reason": reason} if reason else None,
+    )
+    await db.commit()
+
+
+async def _get_optional_current_user(request: Request, db: AsyncSession) -> Optional[User]:
+    """Best-effort caller identification for endpoints that must keep
+    working even with a missing/expired/invalid token (chiefly /logout —
+    signing out with a stale token is a normal, harmless case, not an
+    error). Never raises; returns None on anything short of a fully valid,
+    unrevoked token."""
+    jwt_token = await oauth2_scheme(request)
+    if not jwt_token:
+        jwt_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not jwt_token:
+        return None
+    try:
+        payload = pyjwt_lib.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("userId")
+        if not user_id:
+            return None
+    except Exception:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalars().first()
+
+async def _issue_token_response(
+    db: AsyncSession, request: Request, response: Response, user: User, remember_me: bool, mfa_setup_required: bool = False
+) -> Token:
     """Shared by the normal login path and /verify-mfa — the part that
     actually mints a session, run only once MFA (if required) is satisfied."""
+    await _record_login_event(db, request, event_type="LOGIN_SUCCESS", user_id=user.id, email=user.email)
     token_data = {
         "userId": user.id,
         "name": user.name,
@@ -85,6 +153,10 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     user = result.scalars().first()
 
     if not user or not await verify_password(credentials.password, user.password):
+        await _record_login_event(
+            db, request, event_type="LOGIN_FAILED", user_id=user.id if user else None,
+            email=credentials.email, reason="invalid_credentials",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -92,6 +164,10 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
         )
 
     if user.is_active is False:
+        await _record_login_event(
+            db, request, event_type="LOGIN_FAILED", user_id=user.id,
+            email=user.email, reason="account_inactive",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account has been deactivated. Contact your administrator.",
@@ -102,6 +178,10 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     # there's no way to sign in by hitting this endpoint directly. 403, not
     # 401: the credentials are right, the account just isn't cleared yet.
     if user.is_minor and not user.guardian_approved:
+        await _record_login_event(
+            db, request, event_type="LOGIN_FAILED", user_id=user.id,
+            email=user.email, reason="guardian_pending",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account is awaiting guardian approval. Ask your guardian to check their SMS for the approval link.",
@@ -125,7 +205,7 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     # haven't set MFA up on), but mfa_setup_required tells the frontend to
     # force a stop at /mfa/setup before anywhere else.
     mfa_setup_required = user.role in ADMIN_TIER_ROLES and not user.mfa_enabled
-    return _issue_token_response(response, user, credentials.remember_me, mfa_setup_required)
+    return await _issue_token_response(db, request, response, user, credentials.remember_me, mfa_setup_required)
 
 
 @router.post("/verify-mfa", response_model=Token)
@@ -157,12 +237,16 @@ async def verify_mfa(request: Request, response: Response, payload: MfaVerifyReq
                 matched_index = i
                 break
         if matched_index is None:
+            await _record_login_event(
+                db, request, event_type="LOGIN_FAILED", user_id=user.id,
+                email=user.email, reason="invalid_mfa_code",
+            )
             raise HTTPException(status_code=401, detail="Invalid code.")
         del codes[matched_index]
         user.mfa_backup_codes = json.dumps(codes)
         await db.commit()
 
-    return _issue_token_response(response, user, remember_me=bool(pending.get("rememberMe")))
+    return await _issue_token_response(db, request, response, user, remember_me=bool(pending.get("rememberMe")))
 
 
 @router.post("/mfa/enroll", response_model=MfaEnrollResponse)
@@ -385,10 +469,13 @@ async def register(request: Request, credentials: UserCreate, response: Response
         )
         logger.warning("Guardian approval requested for minor %s. Link: %s", user.id, approval_link)
         await send_sms(guardian_phone, message)
+        await _record_login_event(db, request, event_type="REGISTER", user_id=user.id, email=user.email, reason="guardian_pending")
         return {
             "pendingGuardianApproval": True,
             "message": "Account created. A guardian approval request has been sent by SMS — you can sign in once your guardian approves.",
         }
+
+    await _record_login_event(db, request, event_type="REGISTER", user_id=user.id, email=user.email)
 
     token_data = {
         "userId": user.id,
@@ -519,7 +606,14 @@ async def reset_password_phone(request: Request, payload: PhoneResetPasswordRequ
     return {"message": "Password updated. You can now sign in with your new password."}
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    # Best-effort identification: logout must still succeed even with a
+    # missing/expired/invalid token (a stale-token logout is a normal,
+    # harmless case), so the LOGOUT event is only recorded when the caller
+    # can actually be identified — never blocks the cookie clear below.
+    user = await _get_optional_current_user(request, db)
+    if user:
+        await _record_login_event(db, request, event_type="LOGOUT", user_id=user.id, email=user.email)
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return {"message": "Logged out successfully"}
 
