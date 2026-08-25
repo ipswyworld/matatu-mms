@@ -149,7 +149,13 @@ async def _issue_token_response(
 
 
 @router.post("/login", response_model=None)
-@limiter.limit("10/minute")
+# Keyed per-IP (app/rate_limit.py), and many genuine Kenyan mobile users
+# share one public IP behind carrier-grade NAT — a limit tight enough to
+# stop a scripted brute force but still generous enough that one cell
+# tower's worth of real people signing in around the same time doesn't
+# lock each other out. 30/minute per IP is still ~0.5 req/s, nowhere near
+# what a real login form can produce by hand.
+@limiter.limit("30/minute")
 async def login(request: Request, response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalars().first()
@@ -211,7 +217,7 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
 
 
 @router.post("/verify-mfa", response_model=Token)
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 async def verify_mfa(request: Request, response: Response, payload: MfaVerifyRequest, db: AsyncSession = Depends(get_db)):
     try:
         pending = pyjwt_lib.decode(payload.mfa_token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -321,7 +327,7 @@ SELF_REGISTRATION_ALLOWED_ROLES = {"PASSENGER"}
 GUARDIAN_APPROVAL_TOKEN_TTL_MINUTES = 60 * 24 * 7  # a week — a guardian may not see the text right away
 
 @router.post("/register", response_model=None)
-@limiter.limit("5/minute")
+@limiter.limit("15/minute")
 async def register(request: Request, credentials: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
     # Only Passengers self-register here. Crew accounts are issued by the
     # operator when they onboard a vehicle (see saccos.py's crew-assignment
@@ -511,7 +517,7 @@ async def register(request: Request, credentials: UserCreate, response: Response
     )
 
 @router.post("/forgot-password")
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     # Always returns the same generic message regardless of whether the email
     # exists, so this endpoint can't be used to enumerate registered accounts.
@@ -534,7 +540,7 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: 
     return {"message": "If that email is registered, a password reset link has been sent."}
 
 @router.post("/reset-password")
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 async def reset_password(request: Request, payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(payload.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -559,7 +565,7 @@ async def reset_password(request: Request, payload: ResetPasswordRequest, db: As
     return {"message": "Password updated. You can now sign in with your new password."}
 
 @router.post("/forgot-password-phone")
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def forgot_password_phone(request: Request, payload: PhoneForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
     Phone-based counterpart to /forgot-password — a short numeric OTP sent
@@ -581,7 +587,7 @@ async def forgot_password_phone(request: Request, payload: PhoneForgotPasswordRe
     return {"message": "If that phone number is registered, a reset code has been sent."}
 
 @router.post("/reset-password-phone")
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 async def reset_password_phone(request: Request, payload: PhoneResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(payload.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
