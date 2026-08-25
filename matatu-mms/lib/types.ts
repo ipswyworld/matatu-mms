@@ -252,6 +252,20 @@ export interface Route {
   vehicleCount?: number;
 }
 
+export interface RouteGeometryPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface RouteGeometry {
+  id: string;
+  code: string;
+  name: string;
+  corridor: string | null;
+  color: string;
+  points: RouteGeometryPoint[];
+}
+
 export type CrewRole = "DRIVER" | "CONDUCTOR";
 
 // Real login-linked crew, distinct from Matatu.driverName/conductorName

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, RouteGeometry, Sacco, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -75,6 +75,10 @@ export async function getRoutes(): Promise<Route[]> {
 export async function getRouteById(id: string): Promise<Route | undefined> {
   const routes = await getRoutes();
   return routes.find((r) => r.id === id);
+}
+
+export async function getRouteNetwork(): Promise<RouteGeometry[]> {
+  return apiFetch<RouteGeometry[]>("/api/routes/network");
 }
 
 export async function getMatatus(): Promise<Matatu[]> {

@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage, Beat, RouteDetour
 from app.auth import get_password_hash
-from app.brn_data import STAGE_COORDS, ROUTES as BRN_ROUTES
+from app.brn_data import STAGE_COORDS, GEOCODED_STAGE_COORDS, ROUTES as BRN_ROUTES
 import datetime
 import re
 
@@ -53,7 +53,7 @@ async def seed_brn_data(db: AsyncSession):
         stage_id = _slug(name)
         if stage_id in stage_ids:
             return stage_id
-        coords = STAGE_COORDS.get(name)
+        coords = STAGE_COORDS.get(name) or GEOCODED_STAGE_COORDS.get(name)
         db.add(Stage(
             id=stage_id,
             name=name,
@@ -245,6 +245,32 @@ async def seed_data(db: AsyncSession):
     ]
     for r in routes:
         db.add(r)
+
+    # These 4 pre-BRN legacy routes predate the digitized BRN stage/sequence
+    # data (seed_brn_data(), called separately) and otherwise have zero
+    # RouteStage rows — meaning no real geometry to draw on the network map
+    # (components/dashboard/RouteNetworkMap.tsx). Kencom is the same
+    # real, well-known CBD terminus already used elsewhere (GisMap.tsx's
+    # NAIROBI_STAGES); pairing it with each route's actual named
+    # destination (already a real, geocoded Stage from the BRN data) gives
+    # every legacy route a genuine two-point line instead of a fabricated
+    # one.
+    legacy_route_destinations = {
+        "route-1": "stage-rongai-tassia-supermarket-magadi-rd",
+        "route-2": "stage-kasarani",
+        "route-3": "stage-kawangware",
+        "route-4": "stage-umoja",
+    }
+    existing_route_stage_route_ids = set(
+        (await db.execute(select(RouteStage.route_id).where(RouteStage.route_id.in_(legacy_route_destinations.keys())))).scalars().all()
+    )
+    for route_id, dest_stage_id in legacy_route_destinations.items():
+        if route_id in existing_route_stage_route_ids:
+            continue
+        db.add(RouteStage(route_id=route_id, stage_id="stage-kencom", sequence=0, direction="OUTBOUND"))
+        db.add(RouteStage(route_id=route_id, stage_id=dest_stage_id, sequence=1, direction="OUTBOUND"))
+        db.add(RouteStage(route_id=route_id, stage_id=dest_stage_id, sequence=0, direction="RETURN"))
+        db.add(RouteStage(route_id=route_id, stage_id="stage-kencom", sequence=1, direction="RETURN"))
 
 
     # Seed Offence Catalog — fine amounts are fixed by county officials and

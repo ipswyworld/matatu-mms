@@ -355,6 +355,22 @@ class RouteStageResponse(BaseModelCamel):
     name: str
     sequence: int
 
+class RouteGeometryPoint(BaseModelCamel):
+    lat: float
+    lng: float
+
+class RouteGeometryResponse(BaseModelCamel):
+    """One route's drawable line for the network map (components/dashboard/
+    RouteNetworkMap.tsx) — its geocoded OUTBOUND stage sequence, in order.
+    `color` is assigned server-side so every client renders the same route
+    in the same color without duplicating the palette logic."""
+    id: str
+    code: str
+    name: str
+    corridor: Optional[str] = None
+    color: str
+    points: List[RouteGeometryPoint]
+
 # --- Trip Schemas ---
 class TripActivateRequest(BaseModelCamel):
     matatu_id: str
