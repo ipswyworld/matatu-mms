@@ -275,6 +275,11 @@ export interface SessionData {
   role: Role;
   saccoId?: string;
   token?: string;
+  // Set at login, read back by refreshSessionAction() so a background
+  // token refresh re-applies the same cookie maxAge the user originally
+  // got instead of silently defaulting to the short 8-hour lifetime every
+  // time it refreshes.
+  rememberMe?: boolean;
 }
 
 export interface AbacPolicy {

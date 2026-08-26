@@ -347,6 +347,11 @@ export interface SessionData {
   // #5). Drives the persistent ImpersonationBanner; absent for every normal
   // session.
   impersonatedBy?: { id: string; name: string };
+  // Set at login, read back by refreshSessionAction() so a background
+  // token refresh re-applies the same cookie maxAge the user originally
+  // got (setSessionCookie's second argument) instead of silently
+  // defaulting to the short 8-hour lifetime every time it refreshes.
+  rememberMe?: boolean;
 }
 
 export interface AbacPolicy {

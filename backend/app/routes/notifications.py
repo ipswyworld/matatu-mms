@@ -54,6 +54,12 @@ async def personal_notifications_ws(websocket: WebSocket, token: str = ""):
     """Each user connects to their own feed — nothing broadcast here is ever visible to another user."""
     user_id = _decode_user_id(token)
     if not user_id:
+        # A custom close code only travels over a real close frame, which
+        # requires the handshake to have completed — closing before accept()
+        # collapses to a generic HTTP 403 and silently drops the intended
+        # 4401 signal (verified directly: an invalid token here previously
+        # surfaced as a bare 403 at the wire level, not code 4401).
+        await websocket.accept()
         await websocket.close(code=4401)
         return
 

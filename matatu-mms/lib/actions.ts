@@ -52,6 +52,46 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   return res.json() as Promise<T>;
 }
 
+// The access token embedded in the session cookie expires after 60
+// minutes (backend's ACCESS_TOKEN_EXPIRE_MINUTES), but the cookie itself
+// lasts 8 hours (30 days with "remember me" — those tokens already get a
+// matching long expiry up front and never hit this path). Without this,
+// every fetch and every open WebSocket (NotificationBell) would silently
+// start failing an hour into any normal session while the UI still looks
+// logged in. Called proactively by NotificationBell before its token
+// would expire, and safe to call after it already has (the backend
+// tolerates a recently-expired token here, not just a valid one).
+export async function refreshSessionAction(): Promise<{ accessToken?: string; error?: string }> {
+  const session = readSession();
+  if (!session?.token) return { error: "No session to refresh." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let msg = "Could not refresh session.";
+      try {
+        msg = (await res.json()).detail || msg;
+      } catch {}
+      return { error: msg };
+    }
+    const data = await res.json();
+    // Same session, fresh token — every other field carries over untouched
+    // (including impersonatedBy, so a support session mid-impersonation
+    // doesn't get silently dropped by a background refresh). Re-applying
+    // session.rememberMe as the maxAge argument matters: without it, a
+    // remember-me user's 30-day cookie would quietly shrink to the default
+    // 8 hours on the very first background refresh.
+    await setSessionCookie({ ...session, token: data.accessToken }, session.rememberMe);
+    return { accessToken: data.accessToken };
+  } catch {
+    return { error: "Could not reach the authentication server." };
+  }
+}
+
 // Single source of truth for "where does a freshly-authenticated user land"
 // is lib/rbac.ts's homeForRole (shared with the impersonate-consume Route
 // Handler, which can't import from this "use server" file for a plain sync
@@ -119,6 +159,7 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
         token: data.accessToken,
         mfaSetupRequired: !!data.mfaSetupRequired,
         additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
+        rememberMe,
       },
       rememberMe
     );
@@ -168,15 +209,26 @@ export async function verifyMfaAction(_prevState: { error?: string } | undefined
     clearMfaPendingCookie();
 
     const userRole = data.user.role as Role;
-    await setSessionCookie({
-      userId: data.user.id,
-      name: data.user.name,
-      role: userRole,
-      saccoId: data.user.saccoId,
-      token: data.accessToken,
-      mfaSetupRequired: !!data.mfaSetupRequired,
-      additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
-    });
+    // rememberMe was chosen on the *previous* step (the login form, before
+    // MFA kicked in) — this page has no other way to know it, so the
+    // backend echoes it back on the token response (Token.remember_me)
+    // rather than the frontend silently defaulting to the short cookie
+    // lifetime for every MFA-enabled account regardless of what was
+    // actually chosen.
+    const rememberMe = !!data.rememberMe;
+    await setSessionCookie(
+      {
+        userId: data.user.id,
+        name: data.user.name,
+        role: userRole,
+        saccoId: data.user.saccoId,
+        token: data.accessToken,
+        mfaSetupRequired: !!data.mfaSetupRequired,
+        additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
+        rememberMe,
+      },
+      rememberMe
+    );
 
     redirectHome(userRole);
   } catch (err: any) {

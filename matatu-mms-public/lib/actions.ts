@@ -48,6 +48,43 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   return res.json() as Promise<T>;
 }
 
+// The access token embedded in the session cookie expires after 60
+// minutes (backend's ACCESS_TOKEN_EXPIRE_MINUTES), but the cookie itself
+// lasts 8 hours (30 days with "remember me" — those tokens already get a
+// matching long expiry up front and never hit this path). Without this,
+// every fetch and every open WebSocket (NotificationBell) would silently
+// start failing an hour into any normal session while the UI still looks
+// logged in. Called proactively by NotificationBell before its token
+// would expire, and safe to call after it already has (the backend
+// tolerates a recently-expired token here, not just a valid one).
+export async function refreshSessionAction(): Promise<{ accessToken?: string; error?: string }> {
+  const session = readSession();
+  if (!session?.token) return { error: "No session to refresh." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let msg = "Could not refresh session.";
+      try {
+        msg = (await res.json()).detail || msg;
+      } catch {}
+      return { error: msg };
+    }
+    const data = await res.json();
+    // Re-applying session.rememberMe as the maxAge argument matters:
+    // without it, a remember-me user's 30-day cookie would quietly shrink
+    // to the default 8 hours on the very first background refresh.
+    await setSessionCookie({ ...session, token: data.accessToken }, session.rememberMe);
+    return { accessToken: data.accessToken };
+  } catch {
+    return { error: "Could not reach the authentication server." };
+  }
+}
+
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
@@ -94,6 +131,7 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
         role: userRole,
         saccoId: data.user.saccoId,
         token: data.accessToken,
+        rememberMe,
       },
       rememberMe
     );

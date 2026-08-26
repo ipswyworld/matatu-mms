@@ -187,6 +187,11 @@ async def staff_telemetry_ws(websocket: WebSocket, token: str = "", db: AsyncSes
         user = result.scalars().first()
 
     if not user or user.role in ("PASSENGER", "CREW", "SACCO_OPERATOR"):
+        # accept() first — a custom close code only travels over a real
+        # close frame, which requires the handshake to have completed.
+        # Closing before accept() collapses to a generic HTTP 403 and
+        # silently drops the intended 4401 signal.
+        await websocket.accept()
         await websocket.close(code=4401)
         return
 
@@ -229,17 +234,24 @@ async def crew_telemetry_ws(websocket: WebSocket, matatu_id: str, token: str = "
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalars().first()
 
+    # Every rejection below accepts first — a custom close code only travels
+    # over a real close frame, which requires the handshake to have
+    # completed. Closing before accept() collapses to a generic HTTP 403
+    # and silently drops the intended 4401/4403/4404 signal.
     if not user or user.role not in ("CREW", "ADMIN"):
+        await websocket.accept()
         await websocket.close(code=4401)
         return
 
     matatu_result = await db.execute(select(Matatu).where(Matatu.id == matatu_id))
     matatu = matatu_result.scalars().first()
     if not matatu:
+        await websocket.accept()
         await websocket.close(code=4404)
         return
     if user.role == "CREW" and user.sacco_id != matatu.sacco_id:
         logger.warning(f"Crew {user.id} attempted to stream telemetry for a matatu outside their Sacco.")
+        await websocket.accept()
         await websocket.close(code=4403)
         return
 
@@ -277,11 +289,16 @@ async def officer_telemetry_ws(websocket: WebSocket, officer_id: str, token: str
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalars().first()
 
+    # accept() first in both rejections — a custom close code only travels
+    # over a real close frame, which requires the handshake to have
+    # completed (see the identical comment on crew_telemetry_ws above).
     if not user or user.role not in (*ENFORCEMENT_ROLES, "ADMIN"):
+        await websocket.accept()
         await websocket.close(code=4401)
         return
     if user.role != "ADMIN" and user.id != officer_id:
         logger.warning(f"User {user.id} attempted to stream telemetry for officer {officer_id}.")
+        await websocket.accept()
         await websocket.close(code=4403)
         return
 

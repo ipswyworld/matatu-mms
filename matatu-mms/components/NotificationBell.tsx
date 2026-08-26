@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { refreshSessionAction } from "@/lib/actions";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
+
+// Well under the backend's 60-minute access-token expiry (ACCESS_TOKEN_EXPIRE_MINUTES)
+// — refreshing proactively means the WS should rarely if ever hit the 4401
+// path below during normal use, not just recover from it after the fact.
+const TOKEN_REFRESH_INTERVAL_MS = 45 * 60 * 1000;
 
 interface Notification {
   id: string;
@@ -27,8 +33,19 @@ interface ActionNeeded {
  * is a separate, pinned entry computed at page load (pending operator
  * approvals) rather than a live WS push, but lives in the same dropdown so
  * there's one place to check instead of a persistent banner on the dashboard.
+ *
+ * Token lifecycle: the access token embedded in the session cookie expires
+ * after 60 minutes, but the cookie itself lasts 8 hours (30 days with
+ * "remember me"). Without proactively refreshing, this socket — and every
+ * other authenticated call in the app — would silently start failing an
+ * hour into any normal session while the UI still looks logged in. This
+ * component refreshes the token on a timer well before it expires, and
+ * falls back to an immediate refresh-and-reconnect if the socket is ever
+ * actually rejected for an expired one (code 4401), rather than retrying
+ * the same known-bad token forever.
  */
-export default function NotificationBell({ token, actionNeeded }: { token: string; actionNeeded?: ActionNeeded }) {
+export default function NotificationBell({ token: initialToken, actionNeeded }: { token: string; actionNeeded?: ActionNeeded }) {
+  const [token, setToken] = useState(initialToken);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [toast, setToast] = useState<Notification | null>(null);
   const [open, setOpen] = useState(false);
@@ -37,8 +54,25 @@ export default function NotificationBell({ token, actionNeeded }: { token: strin
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
 
+  // Proactive refresh, independent of whether the socket is even connected
+  // right now — every other authenticated fetch in the app benefits from
+  // the cookie staying fresh too, not just this WebSocket.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const result = await refreshSessionAction();
+      if (result.accessToken) setToken(result.accessToken);
+    }, TOKEN_REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+
+    const scheduleReconnect = () => {
+      const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 15000);
+      reconnectAttemptRef.current += 1;
+      reconnectTimeoutRef.current = setTimeout(connect, delay);
+    };
 
     const connect = () => {
       if (cancelled || !token) return;
@@ -68,11 +102,30 @@ export default function NotificationBell({ token, actionNeeded }: { token: strin
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (cancelled) return;
-        const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 15000);
-        reconnectAttemptRef.current += 1;
-        reconnectTimeoutRef.current = setTimeout(connect, delay);
+        // The backend now actually delivers this code (it used to collapse
+        // into a generic HTTP 403 pre-handshake — fixed in
+        // routes/notifications.py) — an expired/invalid token gets one
+        // immediate refresh-and-reconnect instead of retrying the same
+        // dead token on a blind backoff loop forever.
+        if (event.code === 4401) {
+          refreshSessionAction().then((result) => {
+            if (cancelled) return;
+            if (result.accessToken) {
+              reconnectAttemptRef.current = 0;
+              setToken(result.accessToken);
+            } else {
+              // Refresh itself failed (session genuinely too old/revoked)
+              // — nothing left to do client-side; fall back to backoff so
+              // this doesn't spin tightly, though it'll keep failing until
+              // the user actually re-logs in.
+              scheduleReconnect();
+            }
+          });
+          return;
+        }
+        scheduleReconnect();
       };
 
       ws.onerror = () => ws.close();

@@ -228,6 +228,9 @@ class UserUpdate(BaseModelCamel):
 class FavoriteSaccoRequest(BaseModelCamel):
     sacco_id: Optional[str] = None  # null clears the favorite
 
+class RefreshTokenResponse(BaseModelCamel):
+    access_token: str
+
 class UserLogin(BaseModel):
     # Named "email" for wire-compatibility with every existing frontend
     # login form (staff, public, ops console all POST {email, password}) —
@@ -337,6 +340,13 @@ class Token(BaseModelCamel):
     # "enforce, don't just offer" path from SESSION_SECURITY_STATUS.md
     # without locking anyone out of an account they haven't set MFA up on.
     mfa_setup_required: bool = False
+    # Echoed back so a second-step client (the MFA verify page, which has
+    # no other way to know what was chosen on the *first* step's login
+    # form) can apply the same session-cookie maxAge the backend already
+    # used for this token's own expiry — otherwise a remember-me user who
+    # has MFA enabled gets a 30-day JWT wrapped in an 8-hour cookie, which
+    # silently defeats "remember me" the moment the cookie expires first.
+    remember_me: bool = False
 
 class MfaRequiredResponse(BaseModelCamel):
     """Returned instead of Token when the account has MFA enabled — no

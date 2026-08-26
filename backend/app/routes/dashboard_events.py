@@ -74,6 +74,11 @@ async def dashboard_live_updates_ws(websocket: WebSocket, token: str = ""):
     on receiving it — this socket carries no data itself.
     """
     if not _token_is_valid(token):
+        # A custom close code can only travel over a real close frame, which
+        # requires the handshake to have completed — closing before accept()
+        # collapses to a generic HTTP 403 and silently drops the intended
+        # 4401 signal. Accept first so the code actually reaches the client.
+        await websocket.accept()
         await websocket.close(code=4401)
         return
 

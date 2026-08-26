@@ -19,6 +19,7 @@ from app.schemas import (
     MfaRequiredResponse, MfaEnrollResponse, MfaConfirmRequest, MfaConfirmResponse,
     MfaDisableRequest, MfaVerifyRequest,
     ImpersonateStartResponse, ImpersonateConsumeRequest, ImpersonateSessionResponse,
+    RefreshTokenResponse,
 )
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme, requires_permission
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
@@ -146,6 +147,7 @@ async def _issue_token_response(
         token_type="bearer",
         user=UserResponse.model_validate(user),
         mfa_setup_required=mfa_setup_required,
+        remember_me=remember_me,
     )
 
 
@@ -238,6 +240,76 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     # force a stop at /mfa/setup before anywhere else.
     mfa_setup_required = user.role in ADMIN_TIER_ROLES and not user.mfa_enabled
     return await _issue_token_response(db, request, response, user, credentials.remember_me, mfa_setup_required)
+
+
+# The real gap this closes: ACCESS_TOKEN_EXPIRE_MINUTES is 60, but the
+# session cookie itself lasts 8 hours (30 days with "remember me" — those
+# tokens already get a matching long expiry up front and never need this
+# path in practice). With no refresh mechanism at all, every session
+# without "remember me" checked would silently die an hour in — every
+# authenticated fetch and every open WebSocket (notifications, live
+# telemetry) starts failing with no visible error, while the UI still
+# looks logged in for seven more hours. This lets a client (see
+# NotificationBell.tsx, which calls this proactively before its token
+# would expire) trade a token that's expired-or-about-to for a fresh one,
+# without forcing a full re-login.
+@router.post("/refresh", response_model=RefreshTokenResponse)
+@limiter.limit("30/minute")
+async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
+    auth_header = request.headers.get("Authorization", "")
+    raw_token = auth_header.removeprefix("Bearer ").strip() if auth_header else None
+    if not raw_token:
+        raw_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="No session to refresh.")
+
+    try:
+        # verify_exp=False is the entire point here — this must still work
+        # for a token that expired minutes ago, or a client that only
+        # refreshes right as it's about to expire would already be too
+        # late. The signature is still fully verified; only the expiry
+        # check is skipped, and the bounded-age check below stands in for
+        # it (a token can't be refreshed forever just because it's
+        # correctly signed).
+        payload = pyjwt_lib.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+    except Exception:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    user_id = payload.get("userId")
+    issued_at = payload.get("iat")
+    # No "userId" claim excludes MFA-pending tokens (they carry
+    # "mfaPendingUserId" instead) — refreshing one of those would let an
+    # incomplete, password-only login skip the second factor entirely.
+    if not user_id or issued_at is None:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    # Bounded to the same 8 hours a non-remember-me session cookie is
+    # already good for (lib/session.ts's DEFAULT_MAX_AGE) — refreshing
+    # never extends a session further than a fresh login would have
+    # lasted anyway; past that, a real re-login is required.
+    issued_dt = datetime.datetime.utcfromtimestamp(issued_at)
+    if datetime.datetime.utcnow() - issued_dt > datetime.timedelta(hours=8):
+        raise HTTPException(status_code=401, detail="This session is too old to refresh. Please sign in again.")
+
+    from app.session_revocation import is_token_revoked
+    if await is_token_revoked(user_id, float(issued_at)):
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user or user.is_active is False:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    token_data = {"userId": user.id, "name": user.name, "role": user.role, "saccoId": user.sacco_id}
+    # Preserve impersonation claims across refresh — otherwise a support
+    # session mid-impersonation would silently snap back to the operator's
+    # own account the moment the token happened to refresh.
+    if payload.get("impersonatorId"):
+        token_data["impersonatorId"] = payload["impersonatorId"]
+        token_data["impersonatorName"] = payload["impersonatorName"]
+
+    new_token = create_access_token(data=token_data)
+    return RefreshTokenResponse(access_token=new_token)
 
 
 @router.post("/verify-mfa", response_model=Token)
