@@ -31,7 +31,7 @@ const dictionary = {
   // Sign-in form
   "login.signIn": { en: "Sign in", sw: "Ingia" },
   "login.signingIn": { en: "Signing in...", sw: "Inaingia..." },
-  "login.email": { en: "Email", sw: "Barua pepe" },
+  "login.email": { en: "Phone, email, or crew number", sw: "Simu, barua pepe, au namba ya wafanyakazi" },
   "login.password": { en: "Password", sw: "Nenosiri" },
   "login.forgotPassword": { en: "Forgot password?", sw: "Umesahau nenosiri?" },
   "login.rememberMe": { en: "Keep me signed in for 30 days", sw: "Nibaki nimeingia kwa siku 30" },

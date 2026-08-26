@@ -221,6 +221,8 @@ export interface CrewAssignment {
   unassignedAt: string | null;
   userName: string;
   userEmail: string;
+  userPhone: string | null;
+  crewNumber: string | null;
   matatuRegNumber: string;
 }
 

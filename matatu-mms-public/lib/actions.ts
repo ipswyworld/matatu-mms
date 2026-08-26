@@ -70,7 +70,7 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
       // password. Distinguish by status so the message actually matches
       // what happened.
       if (res.status === 401) {
-        return { error: "Invalid email or password." };
+        return { error: "Invalid login details or password." };
       }
       if (res.status === 429) {
         return { error: "Too many sign-in attempts. Please wait a minute and try again." };
@@ -1264,7 +1264,13 @@ export async function resetPasswordWithOtpAction(
 
 type CrewIssueState = {
   error?: string;
-  success?: { crewName: string; crewEmail: string; generatedPassword: string; matatuRegNumber: string };
+  success?: {
+    crewName: string;
+    crewPhone: string;
+    crewNumber: string;
+    generatedPassword: string;
+    matatuRegNumber: string;
+  };
 };
 
 // Doesn't redirect (unlike onboardSaccoVehicleAction) — the generated
@@ -1281,21 +1287,25 @@ export async function issueCrewCredentialsAction(
   const matatuId = String(formData.get("matatuId") || "");
   const crewRole = String(formData.get("crewRole") || "DRIVER");
 
-  if (!name || !email || !matatuId) {
-    return { error: "Name, email, and vehicle are required." };
+  // Phone is now the crew member's real login — required. Email stays
+  // optional (a placeholder is synthesized server-side if omitted, see
+  // backend/app/routes/crew.py's issue_crew_credentials).
+  if (!name || !phone || !matatuId) {
+    return { error: "Name, phone number, and vehicle are required." };
   }
 
   try {
-    const data = await apiWrite<{ assignment: { userName: string; userEmail: string; matatuRegNumber: string }; generatedPassword: string }>(
-      "/api/crew",
-      "POST",
-      { name, email, phone: phone || undefined, licenseNumber: licenseNumber || undefined, matatuId, crewRole }
-    );
+    const data = await apiWrite<{
+      assignment: { userName: string; userPhone: string; crewNumber: string; matatuRegNumber: string };
+      generatedPassword: string;
+      crewNumber: string;
+    }>("/api/crew", "POST", { name, email: email || undefined, phone, licenseNumber: licenseNumber || undefined, matatuId, crewRole });
     revalidatePath("/sacco-portal");
     return {
       success: {
         crewName: data.assignment.userName,
-        crewEmail: data.assignment.userEmail,
+        crewPhone: data.assignment.userPhone,
+        crewNumber: data.crewNumber,
         generatedPassword: data.generatedPassword,
         matatuRegNumber: data.assignment.matatuRegNumber,
       },

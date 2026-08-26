@@ -248,7 +248,8 @@ export default async function SaccoPortalPage() {
             <thead className="bg-black/5 text-black/60 uppercase text-[10px]">
               <tr>
                 <th className="p-2.5">Name</th>
-                <th className="p-2.5">Login Email</th>
+                <th className="p-2.5">Crew No.</th>
+                <th className="p-2.5">Phone</th>
                 <th className="p-2.5">Role</th>
                 <th className="p-2.5">Vehicle</th>
                 <th className="p-2.5">Assigned</th>
@@ -259,7 +260,8 @@ export default async function SaccoPortalPage() {
               {saccoCrew.map((c) => (
                 <tr key={c.id} className="hover:bg-black/[0.02]">
                   <td className="p-2.5 font-semibold">{c.userName}</td>
-                  <td className="p-2.5 font-mono text-black/60">{c.userEmail}</td>
+                  <td className="p-2.5 font-mono text-black/60">{c.crewNumber ?? "—"}</td>
+                  <td className="p-2.5 font-mono text-black/60">{c.userPhone ?? "—"}</td>
                   <td className="p-2.5">
                     <span className="badge bg-black/5 text-black/70 font-bold">{c.crewRole}</span>
                   </td>

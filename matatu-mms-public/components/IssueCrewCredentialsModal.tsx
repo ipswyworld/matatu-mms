@@ -56,12 +56,17 @@ export default function IssueCrewCredentialsModal({ matatus }: { matatus: Matatu
                     Login issued for {state.success.crewName} on {state.success.matatuRegNumber}.
                   </p>
                   <p className="text-[11px] text-black/60">
-                    Share these credentials with the crew member now — the password will not be shown again.
+                    Share these credentials with the crew member now — the password will not be shown again. They can
+                    sign in with their phone number, crew number, or password — any of the three works.
                   </p>
                   <div className="bg-white rounded-lg border border-black/10 p-3 space-y-1.5 font-mono text-xs">
                     <div className="flex justify-between gap-2">
-                      <span className="text-black/40">Email</span>
-                      <span className="font-bold">{state.success.crewEmail}</span>
+                      <span className="text-black/40">Crew Number</span>
+                      <span className="font-bold">{state.success.crewNumber}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-black/40">Phone</span>
+                      <span className="font-bold">{state.success.crewPhone}</span>
                     </div>
                     <div className="flex justify-between gap-2 items-center">
                       <span className="text-black/40">Password</span>
@@ -72,7 +77,7 @@ export default function IssueCrewCredentialsModal({ matatus }: { matatus: Matatu
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(
-                        `Email: ${state.success!.crewEmail}\nPassword: ${state.success!.generatedPassword}`
+                        `Crew Number: ${state.success!.crewNumber}\nPhone: ${state.success!.crewPhone}\nPassword: ${state.success!.generatedPassword}`
                       );
                       setCopied(true);
                     }}
@@ -119,21 +124,26 @@ export default function IssueCrewCredentialsModal({ matatus }: { matatus: Matatu
                       <input type="text" name="name" required placeholder="Full name" className="input" />
                     </div>
                     <div>
-                      <label className="label">Phone</label>
-                      <input type="tel" name="phone" placeholder="Phone" className="input" />
+                      <label className="label">Phone (their login)</label>
+                      <input type="tel" name="phone" required placeholder="07XX XXX XXX" className="input" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="label">Login Email</label>
-                      <input type="email" name="email" required placeholder="crew@example.com" className="input" />
+                      <label className="label">Email (optional)</label>
+                      <input type="email" name="email" placeholder="crew@example.com" className="input" />
                     </div>
                     <div>
                       <label className="label">License No.</label>
                       <input type="text" name="licenseNumber" placeholder="License No." className="input font-mono" />
                     </div>
                   </div>
+
+                  <p className="text-[11px] text-black/45 -mt-1">
+                    A crew number (e.g. UMO001) is generated automatically — the driver and conductor on the same
+                    vehicle share one number.
+                  </p>
                 </div>
 
                 <div className="p-5 pt-3 border-t border-black/5 flex gap-3 shrink-0">

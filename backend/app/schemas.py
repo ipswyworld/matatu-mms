@@ -205,6 +205,9 @@ class UserResponse(UserBase):
     # `role` (app/rbac.py's ROLE_MATRIX keys) — same pass-through convention
     # as extra_permissions above. Empty/null means "just the primary role."
     additional_roles: Optional[str] = None
+    # Shared by exactly two accounts (one driver, one conductor) — see
+    # models.py's User.crew_number. Null for every non-CREW account.
+    crew_number: Optional[str] = None
 
 class UserUpdate(BaseModelCamel):
     name: Optional[str] = None
@@ -226,20 +229,37 @@ class FavoriteSaccoRequest(BaseModelCamel):
     sacco_id: Optional[str] = None  # null clears the favorite
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    # Named "email" for wire-compatibility with every existing frontend
+    # login form (staff, public, ops console all POST {email, password}) —
+    # but it's really "identifier" now: login() tries it as an email, then
+    # a phone number, then a crew_number (crew accounts can be reached by
+    # any of the three). Plain str rather than EmailStr since a phone
+    # number or crew number ("UMO001") would fail EmailStr validation
+    # before the request body even reaches the endpoint.
+    email: str
     password: str
     remember_me: bool = False
 
-    _normalize_email = _normalized_email_validator()
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_identifier(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
 # --- Crew Assignment Schemas ---
 class CrewIssueRequest(BaseModelCamel):
     """Operator-issued crew login + vehicle assignment in one call
     (ARCHITECTURE_DECISIONS.md §29.1). No client-supplied password —
-    the server generates one and returns it exactly once."""
+    the server generates one and returns it exactly once.
+
+    Phone-first: phone is the crew member's real login identifier (they may
+    never see or use the email at all), so it's required. Email is now
+    optional — if omitted, a synthetic placeholder is generated the same
+    way passenger phone-first registration does (see routes/auth.py's
+    register()), purely so User.email stays NOT NULL/unique.
+    """
     name: str
-    email: EmailStr
-    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: str
     license_number: Optional[str] = None
     matatu_id: str
     crew_role: str  # DRIVER, CONDUCTOR
@@ -263,11 +283,17 @@ class CrewAssignmentResponse(BaseModelCamel):
     unassigned_at: Optional[datetime.datetime] = None
     user_name: str
     user_email: str
+    user_phone: Optional[str] = None
+    crew_number: Optional[str] = None
     matatu_reg_number: str
 
 class CrewIssueResponse(BaseModelCamel):
     assignment: CrewAssignmentResponse
     generated_password: str
+    # Surfaced at the top level too (not just inside `assignment`) since
+    # it's the thing the operator most needs to hand the crew member,
+    # alongside the password — same reasoning as generated_password.
+    crew_number: str
 
 class CrewAlertRequest(BaseModelCamel):
     message: str

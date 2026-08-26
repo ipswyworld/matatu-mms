@@ -1,4 +1,5 @@
 import datetime
+import re
 import secrets
 from typing import List, Optional
 
@@ -9,7 +10,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models import CrewAssignment, Matatu, User
+from app.models import CrewAssignment, Matatu, Sacco, User
 from app.schemas import CrewIssueRequest, CrewIssueResponse, CrewAssignmentResponse, CrewAlertRequest
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
@@ -29,8 +30,48 @@ def _to_response(assignment: CrewAssignment) -> CrewAssignmentResponse:
         unassigned_at=assignment.unassigned_at,
         user_name=assignment.user.name,
         user_email=assignment.user.email,
+        user_phone=assignment.user.phone,
+        crew_number=assignment.user.crew_number,
         matatu_reg_number=assignment.matatu.reg_number,
     )
+
+
+async def _resolve_crew_number(db: AsyncSession, matatu_id: str, crew_role: str, sacco_id: str) -> str:
+    """One crew_number per (driver, conductor) pair on a vehicle. If the
+    vehicle already has an active crew member of the *other* role with a
+    number, the new person joins it; otherwise a fresh one is minted as
+    <3-letter Sacco prefix><zero-padded sequence>, e.g. "UMO001" — matching
+    the human-readable style Sacco Operators actually asked for.
+    """
+    other_role = "CONDUCTOR" if crew_role == "DRIVER" else "DRIVER"
+    partner_result = await db.execute(
+        select(User)
+        .join(CrewAssignment, CrewAssignment.user_id == User.id)
+        .where(
+            CrewAssignment.matatu_id == matatu_id,
+            CrewAssignment.crew_role == other_role,
+            CrewAssignment.unassigned_at.is_(None),
+            User.crew_number.isnot(None),
+        )
+        .order_by(CrewAssignment.assigned_at.desc())
+    )
+    partner = partner_result.scalars().first()
+    if partner:
+        return partner.crew_number
+
+    sacco = await db.get(Sacco, sacco_id)
+    letters = re.sub(r"[^A-Za-z]", "", sacco.name if sacco else "") or "CRW"
+    prefix = letters[:3].upper()
+
+    existing_result = await db.execute(
+        select(User.crew_number).where(User.crew_number.like(f"{prefix}%"))
+    )
+    max_seq = 0
+    for (number,) in existing_result.all():
+        suffix = number[len(prefix):]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return f"{prefix}{max_seq + 1:03d}"
 
 
 @router.get("", response_model=List[CrewAssignmentResponse])
@@ -65,9 +106,26 @@ async def issue_crew_credentials(
     # own Sacco's vehicles — Admin/Superadmin oversight is unrestricted.
     enforce_own_sacco(current_user, matatu.sacco_id, "You can only assign crew to your own Sacco's vehicles.")
 
-    existing_result = await db.execute(select(User).where(User.email == payload.email))
-    if existing_result.scalars().first():
+    phone = payload.phone.strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="A phone number is required — it's the crew member's login.")
+    existing_phone = await db.execute(select(User).where(User.phone == phone))
+    if existing_phone.scalars().first():
+        raise HTTPException(status_code=400, detail="A user with that phone number already exists")
+
+    # Phone-first: a real email is optional. Missing one gets the same
+    # synthetic, never-emailed-to placeholder passenger self-registration
+    # uses (see routes/auth.py's register()) purely so User.email stays
+    # NOT NULL/unique for every other consumer without a schema change.
+    email = payload.email
+    if not email:
+        digits = re.sub(r"[^0-9]", "", phone)
+        email = f"{digits}@phone.matatu-mms.internal"
+    existing_email = await db.execute(select(User).where(User.email == email))
+    if existing_email.scalars().first():
         raise HTTPException(status_code=400, detail="A user with that email already exists")
+
+    crew_number = await _resolve_crew_number(db, payload.matatu_id, payload.crew_role, matatu.sacco_id)
 
     generated_password = secrets.token_urlsafe(9)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -77,10 +135,12 @@ async def issue_crew_credentials(
     new_user = User(
         id=user_id,
         name=payload.name.strip(),
-        email=payload.email,
+        email=email,
+        phone=phone,
         password=await get_password_hash(generated_password),
         role="CREW",
         sacco_id=matatu.sacco_id,
+        crew_number=crew_number,
     )
     db.add(new_user)
 
@@ -97,7 +157,7 @@ async def issue_crew_credentials(
         db, resource_type="crew_assignment", resource_id=assignment_id, action="CREATE",
         user_id=current_user.id,
         new_values={
-            "crewUserId": user_id, "crewName": new_user.name, "crewEmail": new_user.email,
+            "crewUserId": user_id, "crewName": new_user.name, "crewPhone": phone, "crewNumber": crew_number,
             "matatuId": payload.matatu_id, "crewRole": payload.crew_role,
         },
     )
@@ -106,13 +166,16 @@ async def issue_crew_credentials(
         await db.commit()
     except IntegrityError:
         # Same check-then-insert race guarded elsewhere (auth.py register,
-        # users.py create_user) — the pre-check above is the friendly
-        # message, the unique constraint on User.email is the real guard.
+        # users.py create_user) — the pre-checks above are the friendly
+        # messages, the unique constraints on User.email/phone are the real
+        # guard.
         await db.rollback()
-        raise HTTPException(status_code=400, detail="A user with that email already exists")
+        raise HTTPException(status_code=400, detail="A user with that email or phone number already exists")
 
     await db.refresh(assignment, attribute_names=["user", "matatu"])
-    return CrewIssueResponse(assignment=_to_response(assignment), generated_password=generated_password)
+    return CrewIssueResponse(
+        assignment=_to_response(assignment), generated_password=generated_password, crew_number=crew_number
+    )
 
 
 @router.patch("/{assignment_id}/revoke", response_model=CrewAssignmentResponse)

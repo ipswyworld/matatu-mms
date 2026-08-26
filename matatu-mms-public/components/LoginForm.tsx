@@ -39,7 +39,19 @@ export default function LoginForm({ tagline }: LoginFormProps) {
       <form action={formAction} className="space-y-4">
         <div>
           <label className="label" htmlFor="email">{t("login.email")}</label>
-          <input className="input" id="email" name="email" type="email" placeholder="you@nairobi.go.ke" required />
+          {/* type="text", not "email" — this field also accepts a phone
+              number or a crew number (e.g. "UMO001"), either of which
+              would fail the browser's native email-format validation
+              before the request ever reaches the backend. */}
+          <input
+            className="input"
+            id="email"
+            name="email"
+            type="text"
+            autoComplete="username"
+            placeholder="0712 345 678, you@nairobi.go.ke, or UMO001"
+            required
+          />
         </div>
         <div>
           <div className="flex items-center justify-between gap-3 flex-wrap">

@@ -170,6 +170,16 @@ class User(Base):
     # editing someone else's account.
     favorite_sacco_id = Column(String, ForeignKey("saccos.id"), nullable=True)
 
+    # A crew is one driver + one conductor working the same vehicle, sharing
+    # one human-readable identifier (e.g. "UMO001" — Sacco prefix + sequence)
+    # — set when the operator issues the second person's credentials on a
+    # vehicle that already has an active crew member of the other role (see
+    # app/routes/crew.py). Deliberately NOT unique: exactly two User rows
+    # are expected to carry the same value. Login accepts this alongside
+    # phone/email (routes/auth.py's login()); when it resolves to two
+    # accounts, the submitted password is checked against each in turn.
+    crew_number = Column(String, nullable=True, index=True)
+
     crew_assignments = relationship("CrewAssignment", back_populates="user")
 
     sacco = relationship("Sacco", back_populates="users", foreign_keys=[sacco_id])

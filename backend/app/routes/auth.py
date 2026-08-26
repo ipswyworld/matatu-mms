@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import or_
 import base64
 import json
 
@@ -157,17 +158,40 @@ async def _issue_token_response(
 # what a real login form can produce by hand.
 @limiter.limit("30/minute")
 async def login(request: Request, response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == credentials.email))
-    user = result.scalars().first()
+    # `credentials.email` is really "identifier" now — resolves against
+    # email, phone, or crew_number (see UserLogin's docstring). A
+    # crew_number is shared by exactly two accounts (the driver and
+    # conductor of one team, see models.py's User.crew_number), so this can
+    # legitimately return two rows; email/phone are each unique, so those
+    # branches of the OR return at most one. Whichever candidate's password
+    # actually matches is the account that logs in — no separate "are you
+    # the driver or conductor" step needed.
+    identifier = credentials.email
+    result = await db.execute(
+        select(User).where(
+            or_(
+                User.email == identifier.lower(),
+                User.phone == identifier,
+                User.crew_number == identifier.upper(),
+            )
+        )
+    )
+    candidates = result.scalars().all()
 
-    if not user or not await verify_password(credentials.password, user.password):
+    user = None
+    for candidate in candidates:
+        if await verify_password(credentials.password, candidate.password):
+            user = candidate
+            break
+
+    if not user:
         await _record_login_event(
-            db, request, event_type="LOGIN_FAILED", user_id=user.id if user else None,
-            email=credentials.email, reason="invalid_credentials",
+            db, request, event_type="LOGIN_FAILED", user_id=None,
+            email=identifier, reason="invalid_credentials",
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid login details or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
