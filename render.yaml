@@ -67,6 +67,21 @@ services:
       # and update this if either differs.
       - key: CORS_ORIGINS
         value: https://matatu-mms-frontend.onrender.com,https://matatu-mms-public.onrender.com
+      # OpenTelemetry trace export (app/tracing.py) — the module already
+      # fully supports this; setting these two vars is the entire
+      # activation, no code change needed. OTEL_EXPORTER_OTLP_HEADERS is
+      # the OTel SDK's own standard env var name — OTLPSpanExporter() picks
+      # it up automatically without any code passing it explicitly, so
+      # tracing.py stays exactly as-is. sync: false on both: the endpoint
+      # is provider-specific (not secret, but pointless to commit before a
+      # provider is chosen) and the header carries the actual API key.
+      # Honeycomb example values:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT = https://api.honeycomb.io/v1/traces
+      #   OTEL_EXPORTER_OTLP_HEADERS  = x-honeycomb-team=<your API key>
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
 
   # Staff app — county government back-office (admin, enforcement,
   # director/chief officer, viewer). Front door is /login. Split from the
