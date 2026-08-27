@@ -307,7 +307,7 @@ export default async function DashboardPage() {
         icon={LayoutDashboard}
         eyebrow="Nairobi City County Government"
         title={isSacco ? "Your fleet at a glance" : "Matatu public service managing system"}
-        subtitle={`Welcome back, ${session.name}. This view updates itself in real time as bookings, fines, and approvals happen across ${isSacco ? "your fleet" : "Nairobi's matatu sector"}.`}
+        subtitle={`Welcome back, ${session.name}. Tracking ${isSacco ? "your fleet" : "Nairobi's matatu sector"}.`}
         action={session.token && <DashboardLiveRefresh token={session.token} />}
       />
 

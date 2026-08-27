@@ -40,16 +40,19 @@ export default function LoginForm({ tagline }: LoginFormProps) {
         <div>
           <label className="label" htmlFor="email">{t("login.email")}</label>
           {/* type="text", not "email" — this field also accepts a phone
-              number or a crew number (e.g. "UMO001"), either of which
-              would fail the browser's native email-format validation
-              before the request ever reaches the backend. */}
+              number (and, for crew, their crew number — not advertised in
+              the label/placeholder to keep the field's wording short, but
+              still accepted: the backend resolves this value against
+              email, phone, AND crew_number, see routes/auth.py's login()).
+              A plain "email" input would fail its native format validation
+              on any of those before the request ever reaches the backend. */}
           <input
             className="input"
             id="email"
             name="email"
             type="text"
             autoComplete="username"
-            placeholder="0712 345 678, you@nairobi.go.ke, or UMO001"
+            placeholder="0712 345 678 or you@nairobi.go.ke"
             required
           />
         </div>
