@@ -36,6 +36,78 @@ jobs:
           BACKEND_URL: http://127.0.0.1:8000
           NEXT_PUBLIC_WS_URL: ws://127.0.0.1:8000
 
+  # matatu-mms-public and matatu-mms-ops had no CI coverage at all until
+  # now — only the staff app (matatu-mms, job above) was typechecked/built
+  # here, so a broken change to either of the other two could merge to
+  # master with nothing catching it. Same job shape as "frontend" above,
+  # just pointed at the other two app directories.
+  frontend-public:
+    name: Frontend Public (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: matatu-mms-public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: matatu-mms-public/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          BACKEND_URL: http://127.0.0.1:8000
+          NEXT_PUBLIC_WS_URL: ws://127.0.0.1:8000
+
+      # NotificationBell.tsx is deliberately kept byte-identical between
+      # matatu-mms and matatu-mms-public (see the file's own header
+      # comment) rather than pulled into a shared package — the two apps'
+      # type surfaces have otherwise genuinely diverged (confirmed by
+      # diffing lib/types.ts: Trip/QueueStatus only exist on the public
+      # side, Beat/EnforcementCase review fields/ComplianceFunnel only on
+      # the staff side), so a full shared-package abstraction would be
+      # solving a problem that's smaller than it looks. This one real
+      # duplicate file is worth guarding directly: fail CI the moment the
+      # two copies drift, instead of relying on someone remembering to
+      # copy the file by hand.
+      - name: Verify NotificationBell.tsx is identical to the staff app's copy
+        run: diff ../matatu-mms/components/NotificationBell.tsx components/NotificationBell.tsx
+
+  frontend-ops:
+    name: Frontend Ops (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: matatu-mms-ops
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: matatu-mms-ops/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          BACKEND_URL: http://127.0.0.1:8000
+
   backend:
     name: Backend (boot-smoke tests)
     runs-on: ubuntu-latest
@@ -141,7 +213,7 @@ jobs:
   build-and-push:
     name: Build & push images (git-SHA tagged)
     runs-on: ubuntu-latest
-    needs: [frontend, backend, postgres-integration]
+    needs: [frontend, frontend-public, frontend-ops, backend, postgres-integration]
     # CD, not CI — only runs once all checks pass on a real push to
     # master/main, never on a PR (ARCHITECTURE_DECISIONS.md §14.4: "build
     # once, promote the same artefact" — a PR build would never be the
@@ -163,6 +235,10 @@ jobs:
             context: backend
           - name: frontend
             context: matatu-mms
+          - name: frontend-public
+            context: matatu-mms-public
+          - name: frontend-ops
+            context: matatu-mms-ops
     steps:
       - uses: actions/checkout@v4
 
