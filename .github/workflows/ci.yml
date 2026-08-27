@@ -82,6 +82,15 @@ jobs:
       - name: Verify NotificationBell.tsx is identical to the staff app's copy
         run: diff ../matatu-mms/components/NotificationBell.tsx components/NotificationBell.tsx
 
+      # PageBanner.tsx is the same situation as NotificationBell.tsx above —
+      # confirmed byte-identical before the 2026-08-27 compact redesign, and
+      # kept byte-identical by applying that edit to both copies. Same
+      # reasoning: guard the one file that's a real duplicate, rather than
+      # pretending the two apps' broader type/component surfaces are more
+      # alike than they are.
+      - name: Verify PageBanner.tsx is identical to the staff app's copy
+        run: diff ../matatu-mms/components/PageBanner.tsx components/PageBanner.tsx
+
   frontend-ops:
     name: Frontend Ops (typecheck + build)
     runs-on: ubuntu-latest
