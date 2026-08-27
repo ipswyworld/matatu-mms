@@ -156,9 +156,13 @@ async def _issue_token_response(
 # share one public IP behind carrier-grade NAT — a limit tight enough to
 # stop a scripted brute force but still generous enough that one cell
 # tower's worth of real people signing in around the same time doesn't
-# lock each other out. 30/minute per IP is still ~0.5 req/s, nowhere near
-# what a real login form can produce by hand.
-@limiter.limit("30/minute")
+# lock each other out. Raised from 30 to 100/minute after this demo
+# deployment kept locking out groups of people demoing from one shared
+# office/WiFi IP while cycling through the different demo accounts —
+# 100/minute is still ~1.7 req/s, far below what scripted credential
+# stuffing needs to be effective, but well above what a room of people
+# clicking through a login form by hand can produce.
+@limiter.limit("100/minute")
 async def login(request: Request, response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     # `credentials.email` is really "identifier" now — resolves against
     # email, phone, or crew_number (see UserLogin's docstring). A
