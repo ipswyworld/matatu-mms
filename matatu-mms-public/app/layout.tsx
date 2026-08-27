@@ -1,10 +1,4 @@
 import type { Metadata } from "next";
-// Self-hosted (no request to Google's font CDN from a citizen/staff
-// browser — a real consideration for a government service) via
-// Fontsource, which distributes it under Google's own open license. The
-// weight axis alone (400-700) covers everything the type scale here
-// actually uses; matches "Google Sans Variable" in tailwind.config.ts.
-import "@fontsource-variable/google-sans/wght.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import { LanguageProvider } from "@/components/LanguageProvider";

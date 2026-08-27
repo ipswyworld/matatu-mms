@@ -20,7 +20,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Google Sans Variable", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
       },
     },
   },
