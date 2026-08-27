@@ -1,5 +1,5 @@
 import datetime
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -179,7 +179,7 @@ async def create_booking(
     if conflicts:
         raise HTTPException(status_code=409, detail=f"Seat(s) {sorted(conflicts)} already booked")
 
-    booking_id = f"PASS-{int(datetime.datetime.utcnow().timestamp())}{random.randint(10, 99)}"
+    booking_id = f"PASS-{uuid.uuid4().hex[:10].upper()}"
     new_booking = Booking(
         id=booking_id,
         matatu_id=payload.matatu_id,

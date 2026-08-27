@@ -1,5 +1,5 @@
 import datetime
-import random
+import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +59,7 @@ async def create_crime(
     if not photo.filename:
         raise HTTPException(status_code=400, detail="Photo evidence is required.")
 
-    crime_id = f"crime-{random.randint(10000, 99999)}"
+    crime_id = f"crime-{uuid.uuid4().hex[:8]}"
     now_iso = datetime.datetime.now(datetime.timezone.utc)
     reg_number_normalized = reg_number.upper().strip()
 

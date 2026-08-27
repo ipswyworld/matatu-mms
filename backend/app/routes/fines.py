@@ -1,5 +1,5 @@
 import datetime
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,10 +49,7 @@ async def issue_fine(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu vehicle not found")
         
-    # Generate unique ID
-    count_result = await db.execute(select(Fine))
-    total_count = len(count_result.scalars().all())
-    fine_id = f"f-{1000 + total_count + random.randint(1, 99)}"
+    fine_id = f"f-{uuid.uuid4().hex[:8]}"
 
     new_fine = Fine(
         id=fine_id,

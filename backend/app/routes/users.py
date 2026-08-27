@@ -1,6 +1,6 @@
 import contextlib
 import datetime
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -159,10 +159,7 @@ async def create_user(
         if not sacco_result.scalars().first():
             raise HTTPException(status_code=400, detail="Invalid Sacco ID")
 
-    # Generate incremental/unique ID
-    count_result = await db.execute(select(User))
-    total_count = len(count_result.scalars().all())
-    user_id = f"u-{1000 + total_count + random.randint(1, 99)}"
+    user_id = f"u-{uuid.uuid4().hex[:8]}"
 
     new_user = User(
         id=user_id,

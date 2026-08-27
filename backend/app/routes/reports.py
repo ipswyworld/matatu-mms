@@ -1,5 +1,5 @@
 import datetime
-import random
+import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +52,7 @@ async def create_public_comment(
     if not message:
         raise HTTPException(status_code=400, detail="Comment cannot be empty")
 
-    report_id = f"rep-{random.randint(100000, 999999)}"
+    report_id = f"rep-{uuid.uuid4().hex[:8]}"
     new_report = PassengerReport(
         id=report_id,
         category="Site Feedback",
@@ -79,7 +79,7 @@ async def create_report(
     current_user: User = Depends(requires_permission("submit_report")),
     db: AsyncSession = Depends(get_db),
 ):
-    report_id = f"rep-{random.randint(100000, 999999)}"
+    report_id = f"rep-{uuid.uuid4().hex[:8]}"
 
     photo_path = None
     if photo is not None and photo.filename:
@@ -128,7 +128,7 @@ async def update_report_status(
 
     # Escalating a report opens a real crime/citation record so it enters the enforcement ledger
     if new_status == "ESCALATED":
-        crime_id = f"crime-{random.randint(10000, 99999)}"
+        crime_id = f"crime-{uuid.uuid4().hex[:8]}"
         db.add(CrimeRecord(
             id=crime_id,
             offence_committed=CATEGORY_TO_OFFENCE.get(report.category, f"{report.category} (Passenger Reported)"),

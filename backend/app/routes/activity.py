@@ -1,5 +1,5 @@
 import datetime
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,10 +46,7 @@ async def create_activity(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu vehicle not found")
         
-    # Generate unique ID
-    count_result = await db.execute(select(ActivityLog))
-    total_count = len(count_result.scalars().all())
-    activity_id = f"a-{1000 + total_count + random.randint(1, 99)}"
+    activity_id = f"a-{uuid.uuid4().hex[:8]}"
 
     new_activity = ActivityLog(
         id=activity_id,

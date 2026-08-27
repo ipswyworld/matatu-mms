@@ -1,7 +1,7 @@
 import csv
 import datetime
 import io
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,10 +69,7 @@ async def create_matatu(
     if not route_result.scalars().first():
         raise HTTPException(status_code=400, detail="Invalid Route ID")
 
-    # Generate incremental/unique ID
-    count_result = await db.execute(select(Matatu))
-    total_count = len(count_result.scalars().all())
-    matatu_id = f"m-{1000 + total_count + random.randint(1, 99)}"
+    matatu_id = f"m-{uuid.uuid4().hex[:8]}"
 
     new_matatu = Matatu(
         id=matatu_id,
@@ -263,9 +260,6 @@ async def bulk_import_matatus(
     sacco_result = await db.execute(select(Sacco).where(Sacco.id == sacco_id))
     sacco = sacco_result.scalars().first()
 
-    count_result = await db.execute(select(Matatu))
-    total_count = len(count_result.scalars().all())
-
     created: List[Matatu] = []
     errors: List[BulkImportRowError] = []
 
@@ -301,8 +295,7 @@ async def bulk_import_matatus(
             errors.append(BulkImportRowError(row=idx, reg_number=reg_number, missing_fields=[], message=f"A vehicle with plate {reg_number} is already registered."))
             continue
 
-        total_count += 1
-        matatu_id = f"m-{1000 + total_count + random.randint(1, 99)}"
+        matatu_id = f"m-{uuid.uuid4().hex[:8]}"
         new_matatu = Matatu(
             id=matatu_id,
             reg_number=reg_number,
