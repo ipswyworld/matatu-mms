@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db, IS_SQLITE
-from app.models import Fine, Booking, Matatu, User
+from app.models import Fine, Booking, Matatu, Trip, User
 from app.schemas import TimeseriesResponse, TimeseriesPoint
 from app.auth import requires_permission
 from app.abac import sacco_scope_query
@@ -35,6 +35,14 @@ METRICS = {
     # metric name -> (model, timestamp_column, value_column_or_None, sacco_join_column)
     "fines": (Fine, "issued_at", "amount_kes", "sacco_id_via_matatu"),
     "bookings": (Booking, "booked_at", "fare_kes", "sacco_id_via_matatu"),
+    # Real ridership, distinct from "bookings" (app-based seat reservations
+    # only) — crew's own headcount estimate logged at trip completion
+    # (Trip.passenger_count, nullable). Most crews won't log every trip, so
+    # an untouched trip must read as missing data, not a real zero — see
+    # get_timeseries()'s count(value_col) below, which naturally skips NULL
+    # passenger_count rows (unlike count(model.id), which would count every
+    # completed AND cancelled trip regardless of whether headcount exists).
+    "ridership": (Trip, "ended_at", "passenger_count", "sacco_id_via_matatu"),
 }
 
 GROUPINGS = {"day", "week", "month"}
@@ -55,7 +63,7 @@ def _date_trunc(grouping: str, column):
 
 @router.get("/timeseries", response_model=TimeseriesResponse)
 async def get_timeseries(
-    metric: str = Query(..., description="fines | bookings"),
+    metric: str = Query(..., description="fines | bookings | ridership"),
     days: int = Query(30, ge=1, le=730, description="Lookback window in days from today."),
     grouping: str = Query("day", description="day | week | month"),
     current_user: User = Depends(requires_permission("view_dashboard")),
@@ -76,7 +84,11 @@ async def get_timeseries(
     query = (
         select(
             bucket.label("bucket"),
-            func.count(model.id).label("count"),
+            # count(value_col), not count(model.id): for "ridership" this
+            # must only count trips with a logged headcount, not every
+            # completed trip — a no-op change for fines/bookings since
+            # their value columns are never null.
+            func.count(value_col).label("count"),
             func.coalesce(func.sum(value_col), 0).label("value"),
         )
         .where(ts_col >= since)

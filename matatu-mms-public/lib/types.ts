@@ -198,6 +198,7 @@ export interface Trip {
   startedAt: string;
   departedAt?: string | null;
   endedAt?: string | null;
+  passengerCount?: number | null;
 }
 
 export interface QueueStatus {

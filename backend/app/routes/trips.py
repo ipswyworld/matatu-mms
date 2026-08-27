@@ -16,7 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import Trip, Matatu, Route, Stage, User
-from app.schemas import TripActivateRequest, TripResponse, QueueStatusResponse
+from app.schemas import TripActivateRequest, TripCompleteRequest, TripResponse, QueueStatusResponse
 from app.auth import requires_permission
 from app.abac import enforce_own_sacco
 
@@ -40,6 +40,7 @@ def _to_response(trip: Trip) -> TripResponse:
         started_at=trip.started_at,
         departed_at=trip.departed_at,
         ended_at=trip.ended_at,
+        passenger_count=trip.passenger_count,
     )
 
 
@@ -120,6 +121,7 @@ async def depart_trip(
 @router.post("/{trip_id}/complete", response_model=TripResponse)
 async def complete_trip(
     trip_id: str,
+    payload: TripCompleteRequest = TripCompleteRequest(),
     current_user: User = Depends(requires_permission("manage_trips")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -127,6 +129,21 @@ async def complete_trip(
     enforce_own_sacco(current_user, trip.matatu.sacco_id, "You can only manage trips for your own Sacco's vehicles.")
     if trip.status not in ACTIVE_STATUSES:
         raise HTTPException(status_code=400, detail=f"Trip is already {trip.status}.")
+
+    if payload.passenger_count is not None:
+        # Generous upper bound (not just capacity) — a single trip can span
+        # multiple boarding/alighting cycles across several stages on a
+        # long route, so total riders carried can genuinely exceed seat
+        # count. This only catches an obvious fat-fingered entry, not a
+        # legitimately busy trip.
+        max_plausible = max(trip.matatu.capacity, 14) * 5
+        if payload.passenger_count < 0 or payload.passenger_count > max_plausible:
+            raise HTTPException(
+                status_code=400,
+                detail=f"That passenger count doesn't look right for this vehicle — check the number.",
+            )
+        trip.passenger_count = payload.passenger_count
+
     trip.status = "COMPLETED"
     trip.ended_at = datetime.datetime.now(datetime.timezone.utc)
     await db.commit()

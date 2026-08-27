@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, ODMatrixCell, OfficerAssignment, OffenceType, PassengerReport, Route, RouteGeometry, Sacco, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, ODMatrixCell, OfficerAssignment, OffenceType, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -113,6 +113,12 @@ export async function getOdMatrix(days = 30): Promise<ODMatrixCell[]> {
 
 export async function getBoardingHeatmap(days = 30): Promise<BoardingHeatmapPoint[]> {
   return apiFetch<BoardingHeatmapPoint[]>(`/api/demand/boarding-heatmap?days=${days}`);
+}
+
+// Real, crew-logged ridership per route — distinct from od-matrix/boarding-
+// heatmap above, which only ever see app-based search/booking activity.
+export async function getRidershipByRoute(days = 30): Promise<RouteRidership[]> {
+  return apiFetch<RouteRidership[]>(`/api/demand/ridership-by-route?days=${days}`);
 }
 
 // Backend defaults to the most recent 200 records, not the whole table.

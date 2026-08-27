@@ -413,6 +413,13 @@ class TripActivateRequest(BaseModelCamel):
     origin_stage_id: str
     destination_stage_id: str
 
+class TripCompleteRequest(BaseModelCamel):
+    # Optional, never forced — crew's own estimate of how many passengers
+    # rode this trip. Omitted entirely (not zero) means "not logged," which
+    # is exactly how it's stored and read back (see models.py's Trip.
+    # passenger_count comment).
+    passenger_count: Optional[int] = None
+
 class TripResponse(BaseModelCamel):
     id: str
     matatu_id: str
@@ -427,6 +434,7 @@ class TripResponse(BaseModelCamel):
     started_at: datetime.datetime
     departed_at: Optional[datetime.datetime] = None
     ended_at: Optional[datetime.datetime] = None
+    passenger_count: Optional[int] = None
 
 class QueueStatusResponse(BaseModelCamel):
     my_trip_id: Optional[str] = None

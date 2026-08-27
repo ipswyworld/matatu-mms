@@ -1040,9 +1040,14 @@ export async function departTripAction(tripId: string): Promise<{ trip?: import(
   }
 }
 
-export async function completeTripAction(tripId: string): Promise<{ trip?: import("./types").Trip; error?: string }> {
+export async function completeTripAction(
+  tripId: string,
+  passengerCount?: number
+): Promise<{ trip?: import("./types").Trip; error?: string }> {
   try {
-    const trip = await apiWrite<import("./types").Trip>(`/api/trips/${tripId}/complete`, "POST");
+    const trip = await apiWrite<import("./types").Trip>(`/api/trips/${tripId}/complete`, "POST", {
+      ...(passengerCount !== undefined ? { passengerCount } : {}),
+    });
     return { trip };
   } catch (err: any) {
     return { error: err.message || "Could not complete trip." };

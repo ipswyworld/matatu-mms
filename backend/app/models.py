@@ -363,6 +363,13 @@ class Trip(Base):
     started_at = Column(DateTime(timezone=True), nullable=False)
     departed_at = Column(DateTime(timezone=True), nullable=True)
     ended_at = Column(DateTime(timezone=True), nullable=True)
+    # Crew's own estimate of passengers carried this trip, logged (optionally
+    # — never forced) when they mark it COMPLETED. This is the real-ridership
+    # counterpart to demand_signals (which only ever sees app-based searches/
+    # bookings, a small fraction of actual cash-at-boarding riders). Null
+    # means "crew didn't log it," not "zero passengers" — every aggregate
+    # reading this column must treat it as missing data, not a real zero.
+    passenger_count = Column(Integer, nullable=True)
 
     matatu = relationship("Matatu")
     route = relationship("Route")

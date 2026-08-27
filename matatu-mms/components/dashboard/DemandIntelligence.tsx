@@ -1,21 +1,23 @@
-import { BarChart3, Route as RouteIcon } from "lucide-react";
-import type { BoardingHeatmapPoint, ODMatrixCell } from "@/lib/types";
+import { BarChart3, Route as RouteIcon, Users } from "lucide-react";
+import type { BoardingHeatmapPoint, ODMatrixCell, RouteRidership } from "@/lib/types";
 
 /**
- * Surfaces backend/app/routes/demand.py's OD matrix + boarding heatmap —
- * built during the demand-intelligence work but never actually wired into
- * a screen until now. Both are citywide planning signals (which stages see
- * the most activity, which stage-pairs get searched/booked together), not
- * per-vehicle or per-Sacco data, so this reads the same for every role
- * that reaches the dashboard rather than being scoped like the fleet
- * panels around it.
+ * Surfaces backend/app/routes/demand.py's demand-intelligence endpoints —
+ * OD matrix and boarding heatmap were built but never wired into a screen
+ * until this pass; ridership-by-route is newer, backed by crew's own
+ * optional headcount logging at trip completion (Trip.passenger_count).
+ * All three are citywide planning signals, not per-vehicle or per-Sacco
+ * data, so this reads the same for every role that reaches the dashboard
+ * rather than being scoped like the fleet panels around it.
  */
 export default function DemandIntelligence({
   odMatrix,
   boardingHeatmap,
+  ridershipByRoute,
 }: {
   odMatrix: ODMatrixCell[];
   boardingHeatmap: BoardingHeatmapPoint[];
+  ridershipByRoute: RouteRidership[];
 }) {
   const topStages = boardingHeatmap.slice(0, 8);
   const maxActivity = Math.max(1, ...topStages.map((s) => s.activityCount));
@@ -25,8 +27,10 @@ export default function DemandIntelligence({
     .sort((a, b) => b.searchCount + b.bookingCount - (a.searchCount + a.bookingCount))
     .slice(0, 8);
 
+  const topRoutes = ridershipByRoute.slice(0, 8);
+
   return (
-    <div className="grid sm:grid-cols-2 gap-4 md:gap-6">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
       <div className="rounded-2xl bg-white p-5 md:p-6 shadow-sm ring-1 ring-county-ink/[0.06]">
         <div className="mb-4">
           <h3 className="font-black text-county-ink text-base tracking-tight flex items-center gap-1.5">
@@ -86,6 +90,37 @@ export default function DemandIntelligence({
                 </div>
               </li>
             ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-2xl bg-white p-5 md:p-6 shadow-sm ring-1 ring-county-ink/[0.06]">
+        <div className="mb-4">
+          <h3 className="font-black text-county-ink text-base tracking-tight flex items-center gap-1.5">
+            <Users size={14} strokeWidth={2.5} className="text-county-red" />
+            Ridership by route
+          </h3>
+          <p className="text-[11px] text-county-ink/50 mt-1">Crew-logged headcounts — optional, so coverage varies by route</p>
+        </div>
+
+        {topRoutes.length === 0 ? (
+          <p className="text-sm text-county-ink/40 py-6 text-center">No crew has logged a passenger count yet in the last 30 days.</p>
+        ) : (
+          <ul className="space-y-2">
+            {topRoutes.map((r) => {
+              const coveragePct = r.tripsCompleted > 0 ? Math.round((r.tripsWithCount / r.tripsCompleted) * 100) : 0;
+              return (
+                <li key={r.routeId} className="rounded-xl bg-county-cream/60 ring-1 ring-county-ink/[0.05] p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-county-ink truncate">{r.routeCode} · {r.routeName}</span>
+                    <span className="text-xs font-black text-county-ink shrink-0">{r.totalPassengers}</span>
+                  </div>
+                  <p className="text-[10px] font-semibold text-county-ink/45 mt-1">
+                    Logged in {r.tripsWithCount} of {r.tripsCompleted} completed trip{r.tripsCompleted === 1 ? "" : "s"} ({coveragePct}% coverage)
+                  </p>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models import DemandSignal, Stage, User
+from app.models import DemandSignal, Route, Stage, Trip, User
 from app.schemas import BaseModelCamel
 from app.auth import requires_permission
 
@@ -39,6 +39,22 @@ class BoardingHeatmapPoint(BaseModelCamel):
     lat: float | None = None
     lng: float | None = None
     activity_count: int
+
+
+class RouteRidership(BaseModelCamel):
+    route_id: str
+    route_name: str
+    route_code: str
+    total_passengers: int
+    trips_completed: int
+    # Of trips_completed, how many actually had a headcount logged — the
+    # honesty signal for this whole feature: crew headcount logging is
+    # optional, so total_passengers is a real number but very likely an
+    # undercount of true ridership on routes with low coverage. A route
+    # showing 40 passengers from 2/50 trips logged is not "quiet," it's
+    # "barely measured" — this field is what lets a viewer tell the
+    # difference instead of reading total_passengers at face value.
+    trips_with_count: int
 
 
 @router.get("/od-matrix", response_model=List[ODMatrixCell])
@@ -112,3 +128,50 @@ async def get_boarding_heatmap(
             activity_count=r.activity_count,
         ))
     return points
+
+
+@router.get("/ridership-by-route", response_model=List[RouteRidership])
+async def get_ridership_by_route(
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(requires_permission("view_dashboard")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Real, crew-logged ridership per route (Trip.passenger_count) — the
+    counterpart to od-matrix/boarding-heatmap above, which only ever see
+    app-based search/booking activity. count(Trip.passenger_count) skips
+    NULLs (trips where crew didn't log a headcount) the same way
+    analytics.py's timeseries endpoint does for the "ridership" metric —
+    trips_completed and trips_with_count are reported separately rather
+    than collapsed into one number specifically so this can't be misread
+    as complete ridership data when it's actually partial-coverage data.
+    """
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)
+    query = (
+        select(
+            Trip.route_id,
+            func.coalesce(func.sum(Trip.passenger_count), 0).label("total_passengers"),
+            func.count(Trip.id).label("trips_completed"),
+            func.count(Trip.passenger_count).label("trips_with_count"),
+        )
+        .where(Trip.status == "COMPLETED", Trip.ended_at >= since)
+        .group_by(Trip.route_id)
+        .order_by(func.coalesce(func.sum(Trip.passenger_count), 0).desc())
+    )
+    result = await db.execute(query)
+    rows = result.all()
+
+    route_ids = [r.route_id for r in rows]
+    routes_result = await db.execute(select(Route).where(Route.id.in_(route_ids))) if route_ids else None
+    routes_by_id = {r.id: r for r in routes_result.scalars().all()} if routes_result else {}
+
+    return [
+        RouteRidership(
+            route_id=r.route_id,
+            route_name=routes_by_id[r.route_id].name if r.route_id in routes_by_id else r.route_id,
+            route_code=routes_by_id[r.route_id].code if r.route_id in routes_by_id else "",
+            total_passengers=r.total_passengers,
+            trips_completed=r.trips_completed,
+            trips_with_count=r.trips_with_count,
+        )
+        for r in rows
+    ]

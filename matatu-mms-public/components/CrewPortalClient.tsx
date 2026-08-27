@@ -58,6 +58,10 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   const [originStageId, setOriginStageId] = useState("");
   const [destinationStageId, setDestinationStageId] = useState("");
   const [tripError, setTripError] = useState<string | null>(null);
+  // Optional headcount logged when a trip completes — the real-ridership
+  // counterpart to app bookings (see backend/app/models.py's Trip.
+  // passenger_count comment). Left blank is a valid choice, not an error.
+  const [passengerCountInput, setPassengerCountInput] = useState("");
   const [isTripPending, startTripTransition] = useTransition();
 
   const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
@@ -169,14 +173,21 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   const handleCompleteTrip = () => {
     if (!activeTrip) return;
     setTripError(null);
+    const trimmed = passengerCountInput.trim();
+    const passengerCount = trimmed ? Number(trimmed) : undefined;
+    if (trimmed && (!Number.isInteger(passengerCount) || passengerCount! < 0)) {
+      setTripError("Passenger count must be a whole number, 0 or more.");
+      return;
+    }
     startTripTransition(async () => {
-      const result = await completeTripAction(activeTrip.id);
+      const result = await completeTripAction(activeTrip.id, passengerCount);
       if (result.error) {
         setTripError(result.error);
         return;
       }
       setActiveTrip(null);
       setQueueStatus(null);
+      setPassengerCountInput("");
     });
   };
 
@@ -484,6 +495,20 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
               <p className="text-sm font-bold text-county-black">
                 {activeTrip.originStageName} → {activeTrip.destinationStageName}
               </p>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-black/50 block mb-1">
+                How many passengers rode this trip? <span className="font-normal text-black/35">(optional — helps the county plan routes)</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={passengerCountInput}
+                onChange={(e) => setPassengerCountInput(e.target.value)}
+                placeholder="e.g. 41"
+                className="input text-xs w-full"
+              />
             </div>
             <button
               onClick={handleCompleteTrip}

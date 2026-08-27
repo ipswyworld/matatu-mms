@@ -397,6 +397,15 @@ export interface BoardingHeatmapPoint {
   activityCount: number;
 }
 
+export interface RouteRidership {
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  totalPassengers: number;
+  tripsCompleted: number;
+  tripsWithCount: number;
+}
+
 export interface AuditLog {
   id: number;
   resourceType: string;
