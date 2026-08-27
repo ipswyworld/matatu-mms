@@ -126,3 +126,12 @@ STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "").strip().lower()
 # Talking is configured, and a guardian tapping a link with no scheme opens
 # nothing. Defaults to the local public-app dev port.
 PUBLIC_FRONTEND_URL = os.getenv("PUBLIC_FRONTEND_URL", "http://localhost:3001")
+
+# Server-side TomTom key for the Traffic Incident Details API (app/traffic.py)
+# — deliberately separate from NEXT_PUBLIC_TOMTOM_API_KEY, which is baked
+# into the frontend bundle for map tiles and is not a secret once shipped.
+# This one is never sent to a browser, so it can carry a real request quota
+# without that quota being exposed to anyone who opens devtools. Unset is a
+# supported, graceful state (same as NAIROBIPAY/AFRICASTALKING above) — the
+# crowdsourced half of the Live Updates feed keeps working on its own.
+TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")

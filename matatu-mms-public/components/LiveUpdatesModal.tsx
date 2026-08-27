@@ -37,6 +37,7 @@ interface ConditionReportData {
   message?: string | null;
   created_at: string;
   report_count: number;
+  source: "CROWDSOURCED" | "TOMTOM";
 }
 
 const CONDITION_META: Record<string, { label: string; icon: typeof CloudRain }> = {
@@ -336,11 +337,11 @@ function RouteAlerts() {
 }
 
 /**
- * Crowdsourced conditions — "it's raining", "jam on Waiyaki Way" — anyone
- * can report with no login, no picking from a list of official stages.
- * Matching reports at the same rough location within the backend's 90-
- * minute freshness window collapse into one card with a corroboration
- * count, so this reads as the system "catching on", not a duplicate feed.
+ * Half crowdsourced, half official: reports anyone can submit with no
+ * login ("it's raining", "jam on Waiyaki Way" — matching reports at the
+ * same rough location within the backend's 90-minute freshness window
+ * collapse into one card with a corroboration count) merged with TomTom's
+ * live Nairobi traffic incident feed, badged separately below.
  */
 function Conditions() {
   const [reports, setReports] = useState<ConditionReportData[] | null>(null);
@@ -457,8 +458,12 @@ function Conditions() {
                     <span className="text-[10px] font-semibold text-county-ink/45 shrink-0">{timeAgo(r.created_at)}</span>
                   </div>
                   {r.message && <p className="text-xs text-county-ink/60 mt-0.5">{r.message}</p>}
-                  {r.report_count > 1 && (
-                    <span className="text-[10px] font-bold text-county-green">{r.report_count} people reported this</span>
+                  {r.source === "TOMTOM" ? (
+                    <span className="text-[10px] font-bold text-county-blue">TomTom traffic data</span>
+                  ) : (
+                    r.report_count > 1 && (
+                      <span className="text-[10px] font-bold text-county-green">{r.report_count} people reported this</span>
+                    )
                   )}
                 </div>
               </li>

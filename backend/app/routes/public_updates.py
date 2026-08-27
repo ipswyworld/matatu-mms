@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.database import AsyncSessionLocal
 from app.models import ConditionReport, RouteDetour, User
 from app.schemas import GuardianApprovalInfo, GuardianApproveRequest
+from app.traffic import get_tomtom_incidents
 
 router = APIRouter(prefix="/api/public", tags=["Public Live Updates"])
 
@@ -87,6 +88,11 @@ class ConditionReportOut(BaseModel):
     message: Optional[str] = None
     created_at: datetime.datetime
     report_count: int  # how many matching reports landed in the freshness window
+    # CROWDSOURCED (a real person typed this) or TOMTOM (TomTom's own
+    # probe-vehicle/sensor network) — the frontend badges these differently
+    # so "3 people reported this" and "TomTom is reporting this" read as the
+    # distinct kinds of confidence they actually are.
+    source: str = "CROWDSOURCED"
 
 
 @router.post("/conditions", status_code=status.HTTP_201_CREATED)
@@ -117,10 +123,15 @@ async def submit_condition_report(payload: ConditionReportCreate):
 
 @router.get("/conditions", response_model=List[ConditionReportOut])
 async def list_condition_reports():
-    """Recent crowdsourced conditions, collapsed by (category, location) so
-    three people reporting rain on the same road within the freshness
-    window read as one card with a corroboration count — "the system
-    catches on" rather than a noisy duplicate feed."""
+    """The "50/50" Live Updates feed: crowdsourced reports (a person typed
+    "jam on Waiyaki Way" seconds ago) merged with TomTom's live Traffic
+    Incident data for Nairobi (app/traffic.py) — one half catches what's
+    happening on a road right now even with no official sensor there, the
+    other catches incidents across the whole city regardless of whether any
+    app user happens to be nearby. Crowdsourced entries are still collapsed
+    by (category, location) with a corroboration count; TomTom entries are
+    already deduplicated incidents, so they pass through as-is, sorted in
+    together by recency."""
     cutoff = datetime.datetime.now(datetime.timezone.utc) - CONDITION_FRESHNESS
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -138,14 +149,27 @@ async def list_condition_reports():
         if key not in latest_by_key:
             latest_by_key[key] = r  # first hit is the newest, since the query is already ordered desc
 
-    return [
+    crowdsourced = [
         ConditionReportOut(
             id=r.id, category=r.category, location_label=r.location_label,
             message=r.message, created_at=_as_aware_utc(r.created_at),
             report_count=counts[(r.category, r.location_label.strip().lower())],
+            source="CROWDSOURCED",
         )
         for r in latest_by_key.values()
     ]
+
+    tomtom_incidents = await get_tomtom_incidents()
+    official = [
+        ConditionReportOut(
+            id=i["id"], category=i["category"], location_label=i["location_label"],
+            message=i["message"], created_at=i["created_at"], report_count=1,
+            source="TOMTOM",
+        )
+        for i in tomtom_incidents
+    ]
+
+    return sorted(crowdsourced + official, key=lambda c: c.created_at, reverse=True)
 
 
 async def _find_valid_guardian_token(db, token: str) -> User:

@@ -30,6 +30,12 @@ services:
         generateValue: true
       - key: NAIROBIPAY_CALLBACK_SECRET
         generateValue: true
+      # Real TomTom key, set manually in the Render dashboard once you have
+      # one — not generated (it's an external account credential, same
+      # category as the S3_* keys below) and not required (the feed
+      # degrades to crowdsourced-only with this unset).
+      - key: TOMTOM_API_KEY
+        sync: false
       - key: SESSION_COOKIE_NAME
         value: mms_session
       - key: TERMS_VERSION

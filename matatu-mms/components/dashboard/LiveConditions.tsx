@@ -22,6 +22,7 @@ interface ConditionReportData {
   message?: string | null;
   created_at: string;
   report_count: number;
+  source: "CROWDSOURCED" | "TOMTOM";
 }
 
 const CONDITION_META: Record<string, { label: string; icon: typeof CloudRain }> = {
@@ -90,7 +91,7 @@ export default function LiveConditions() {
               <Radio size={14} strokeWidth={2.5} className="text-county-red" />
               Live conditions
             </h3>
-            <p className="text-[11px] text-county-ink/50 mt-1">What passengers and crew are reporting right now</p>
+            <p className="text-[11px] text-county-ink/50 mt-1">Crowdsourced reports + live TomTom traffic data</p>
           </div>
         </div>
       </div>
@@ -129,9 +130,15 @@ export default function LiveConditions() {
                     <span className="text-[10px] font-semibold text-county-ink/45 shrink-0">{timeAgo(r.created_at)}</span>
                   </div>
                   {r.message && <p className="text-xs text-county-ink/60 mt-0.5">{r.message}</p>}
-                  {r.report_count > 1 && (
-                    <span className="text-[10px] font-bold text-county-green">{r.report_count} reports</span>
-                  )}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {r.source === "TOMTOM" ? (
+                      <span className="text-[10px] font-bold text-county-blue">TomTom traffic data</span>
+                    ) : (
+                      r.report_count > 1 && (
+                        <span className="text-[10px] font-bold text-county-green">{r.report_count} reports</span>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
             );
