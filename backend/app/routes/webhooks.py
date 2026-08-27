@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import WebhookSubscription, WebhookLog, User, Sacco
 from app.schemas import WebhookSubscriptionCreate, WebhookSubscriptionResponse, WebhookLogResponse
-from app.auth import get_current_user
+from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.abac import sacco_scope_query, enforce_own_sacco
 from app.security import validate_public_webhook_url, UnsafeWebhookUrlError
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/webhooks", tags=["Webhooks Simulator"])
 @router.post("/subscriptions", response_model=WebhookSubscriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_subscription(
     payload: WebhookSubscriptionCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(requires_permission("manage_webhooks")),
     db: AsyncSession = Depends(get_db)
 ):
     enforce_own_sacco(current_user, payload.sacco_id, "Sacco Operators can only subscribe for their own fleet events.")
@@ -62,7 +62,7 @@ async def create_subscription(
 
 @router.get("/subscriptions", response_model=List[WebhookSubscriptionResponse])
 async def get_subscriptions(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(requires_permission("manage_webhooks")),
     db: AsyncSession = Depends(get_db)
 ):
     query = select(WebhookSubscription)
@@ -73,7 +73,7 @@ async def get_subscriptions(
 
 @router.get("/logs", response_model=List[WebhookLogResponse])
 async def get_webhook_logs(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(requires_permission("manage_webhooks")),
     db: AsyncSession = Depends(get_db)
 ):
     query = select(WebhookLog).join(
@@ -92,12 +92,18 @@ async def trigger_simulator_event(
     event_type: str,
     sacco_id: str,
     payload_data: dict,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(requires_permission("manage_webhooks"))
 ):
     """
     Manually triggers an event in the pub/sub system.
     This simulates real-world actions for webhook verification testing.
     """
+    # A Sacco Operator may only fire test events at their own subscriptions
+    # — without this, any operator could forge FINE_ISSUED/etc. events with
+    # arbitrary payload_data against another Sacco's real registered
+    # webhook endpoint. Admin/Superadmin oversight stays unrestricted.
+    enforce_own_sacco(current_user, sacco_id, "You can only trigger test events for your own Sacco's webhooks.")
+
     valid_events = ["FINE_ISSUED", "FINE_STATUS_CHANGED", "VEHICLE_STATUS_CHANGED"]
     if event_type not in valid_events:
         raise HTTPException(status_code=400, detail=f"Invalid event: {event_type}. Allowed: {valid_events}")
