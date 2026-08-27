@@ -380,6 +380,23 @@ export interface SystemHealth {
   abacPolicies: AbacPolicy[];
 }
 
+export interface ODMatrixCell {
+  fromStageId: string;
+  fromStageName: string;
+  toStageId: string;
+  toStageName: string;
+  searchCount: number;
+  bookingCount: number;
+}
+
+export interface BoardingHeatmapPoint {
+  stageId: string;
+  stageName: string;
+  lat: number | null;
+  lng: number | null;
+  activityCount: number;
+}
+
 export interface AuditLog {
   id: number;
   resourceType: string;

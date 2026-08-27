@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, RouteGeometry, Sacco, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, ODMatrixCell, OfficerAssignment, OffenceType, PassengerReport, Route, RouteGeometry, Sacco, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -101,6 +101,18 @@ export async function getTimeseries(
   grouping: "day" | "week" | "month" = "day"
 ): Promise<TimeseriesResponse> {
   return apiFetch<TimeseriesResponse>(`/api/analytics/timeseries?metric=${metric}&days=${days}&grouping=${grouping}`);
+}
+
+// Origin-destination search/booking pairs and busiest boarding stages —
+// backend/app/routes/demand.py, built on the demand_signals log. Citywide,
+// not Sacco-scoped (this is planning data, not fleet data), so it's shown
+// the same to every role that reaches the dashboard.
+export async function getOdMatrix(days = 30): Promise<ODMatrixCell[]> {
+  return apiFetch<ODMatrixCell[]>(`/api/demand/od-matrix?days=${days}`);
+}
+
+export async function getBoardingHeatmap(days = 30): Promise<BoardingHeatmapPoint[]> {
+  return apiFetch<BoardingHeatmapPoint[]>(`/api/demand/boarding-heatmap?days=${days}`);
 }
 
 // Backend defaults to the most recent 200 records, not the whole table.

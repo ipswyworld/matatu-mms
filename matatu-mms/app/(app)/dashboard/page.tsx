@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX, TrendingUp } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getFines, getMatatus, getActivity, getRoutes, getRouteNetwork, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry, getTimeseries } from "@/lib/data";
+import { getFines, getMatatus, getActivity, getRoutes, getRouteNetwork, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry, getTimeseries, getOdMatrix, getBoardingHeatmap } from "@/lib/data";
 import { canAny, ADMIN_TIER_ROLES } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 
@@ -16,6 +16,7 @@ import BookingsPanel from "@/components/dashboard/BookingsPanel";
 import FleetLiveStatus from "@/components/dashboard/FleetLiveStatus";
 import DashboardLiveRefresh from "@/components/DashboardLiveRefresh";
 import LiveConditions from "@/components/dashboard/LiveConditions";
+import DemandIntelligence from "@/components/dashboard/DemandIntelligence";
 
 // "3d 4h", "6h", "40m" — a submitted-at timestamp compared to now. Used for
 // WorkQueueList's ageLabel (oldest-first work queues) across persona
@@ -144,12 +145,14 @@ export default async function DashboardPage() {
   // operational admin dashboard below, which showed "Awaiting your
   // approval" cards a Viewer has no permission to act on. ---
   if (!hasAdminTier && session.role === "VIEWER") {
-    const [viewerMatatus, viewerFines, viewerSaccos, viewerRoutes, viewerRouteNetwork] = await Promise.all([
+    const [viewerMatatus, viewerFines, viewerSaccos, viewerRoutes, viewerRouteNetwork, viewerOdMatrix, viewerBoardingHeatmap] = await Promise.all([
       getMatatus(),
       getFines(),
       getSaccos(),
       getRoutes(),
       getRouteNetwork(),
+      getOdMatrix(30),
+      getBoardingHeatmap(30),
     ]);
     const activeV = viewerMatatus.filter((m) => m.status === "ACTIVE").length;
     const flaggedV = viewerMatatus.filter((m) => m.status === "FLAGGED").length;
@@ -218,12 +221,14 @@ export default async function DashboardPage() {
           <TrendChart metric="bookings" title="Passenger demand over time" countUnit="bookings" color="#0F5132" />
         </div>
 
+        <DemandIntelligence odMatrix={viewerOdMatrix} boardingHeatmap={viewerBoardingHeatmap} />
+
         <RouteNetworkMap geometry={viewerRouteNetwork} routes={viewerRoutes} matatus={viewerMatatus} fines={viewerFines} />
       </div>
     );
   }
 
-  const [allMatatus, allFines, allActivity, saccos, routes, routeNetwork, auditLogs, reports, bookings, telemetry, finesTrend] = await Promise.all([
+  const [allMatatus, allFines, allActivity, saccos, routes, routeNetwork, auditLogs, reports, bookings, telemetry, finesTrend, odMatrix, boardingHeatmap] = await Promise.all([
     getMatatus(),
     getFines(),
     getActivity(),
@@ -235,6 +240,8 @@ export default async function DashboardPage() {
     getMyBookings(),
     getFleetTelemetry(),
     getTimeseries("fines", 14, "day"),
+    getOdMatrix(30),
+    getBoardingHeatmap(30),
   ]);
   const finesSparkline = finesTrend.points.map((p) => p.value);
 
@@ -446,6 +453,11 @@ export default async function DashboardPage() {
       {/* Row 3b: crowdsourced conditions + official route alerts, the admin
           counterpart to the public login page's Live Updates modal */}
       <LiveConditions />
+
+      {/* Row 3c: demand intelligence — busiest boarding stages + top O-D
+          pairs, computed by backend/app/routes/demand.py since Task 23 but
+          never surfaced on a screen until now */}
+      <DemandIntelligence odMatrix={odMatrix} boardingHeatmap={boardingHeatmap} />
 
       {/* Row 4: route network map, replacing the previous flat corridor-health list */}
       <RouteNetworkMap
