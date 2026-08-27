@@ -440,6 +440,11 @@ async def dispute_case(
     case = result.scalars().first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    # Same states the public dispute endpoint allows — a case already
+    # released, waived, or in/past the review pipeline can't be knocked
+    # back into DISPUTED (that would silently reopen a settled case).
+    if case.status not in ("ARRESTED", "PAID"):
+        raise HTTPException(status_code=400, detail=f"This case is already {case.status.lower()} and cannot be disputed.")
 
     case.status = "DISPUTED"
     case.dispute_reason = payload.reason
@@ -636,6 +641,11 @@ async def waive_case(
     case = result.scalars().first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    # A case already released, resolved, or previously waived can't be
+    # waived again — same terminal-state guard every other decision
+    # endpoint in this file already applies.
+    if case.status in ("RELEASED", "WAIVED") or case.status.startswith("RESOLVED_"):
+        raise HTTPException(status_code=400, detail=f"This case is already {case.status.lower()} and cannot be waived.")
 
     case.status = "WAIVED"
     case.waived_reason = payload.reason
