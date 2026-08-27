@@ -8,8 +8,10 @@ backend/venv/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/mms.db
+backend/test_*.db
 backend/uploads/
 backend/*.log
+backend/.pytest_cache/
 
 # Frontend — staff app
 matatu-mms/node_modules/
