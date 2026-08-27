@@ -25,7 +25,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        sans: ["Google Sans Variable", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
       },
       boxShadow: {
         elevated: "0 10px 30px -12px rgba(15, 81, 50, 0.18), 0 4px 12px -6px rgba(15, 81, 50, 0.12)",
