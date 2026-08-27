@@ -759,10 +759,23 @@ async def consume_impersonation_ticket(request: Request, payload: ImpersonateCon
     reset token."""
     redis = await get_redis()
     key = f"impersonation:ticket:{payload.ticket}"
-    raw = await redis.get(key)
+    # Atomic get-and-delete via a Lua script, not GETDEL: two concurrent
+    # requests for the same ticket (a double-click, a retried request, a
+    # replayed sniffed ticket within its 60s window) could otherwise both
+    # pass a plain GET before either DELETE ran, both minting a session —
+    # defeating "single-use." GETDEL only exists on Redis 6.2+ and this
+    # deployment's Redis turned out to be 3.0.504 (confirmed directly, not
+    # assumed) — EVAL has worked since Redis 2.6, so this is the version
+    # that's actually safe to rely on rather than the newer built-in.
+    raw = await redis.eval(
+        "local v = redis.call('GET', KEYS[1]) "
+        "if v then redis.call('DEL', KEYS[1]) end "
+        "return v",
+        1,
+        key,
+    )
     if not raw:
         raise HTTPException(status_code=401, detail="This impersonation link has expired. Start again from the ops console.")
-    await redis.delete(key)  # single-use
     data = json.loads(raw)
 
     target = (await db.execute(select(User).where(User.id == data["targetId"]))).scalars().first()

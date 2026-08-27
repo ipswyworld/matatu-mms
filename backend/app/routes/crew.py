@@ -16,6 +16,7 @@ from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
 from app.abac import sacco_scope_query, enforce_own_sacco
 from app.routes.notifications import notify_user
+from app.realtime import get_redis
 
 router = APIRouter(prefix="/api/crew", tags=["Crew"])
 
@@ -125,52 +126,61 @@ async def issue_crew_credentials(
     if existing_email.scalars().first():
         raise HTTPException(status_code=400, detail="A user with that email already exists")
 
-    crew_number = await _resolve_crew_number(db, payload.matatu_id, payload.crew_role, matatu.sacco_id)
-
     generated_password = secrets.token_urlsafe(9)
     now = datetime.datetime.now(datetime.timezone.utc)
     user_id = f"crew-{secrets.token_hex(4)}"
     assignment_id = f"ca-{secrets.token_hex(4)}"
 
-    new_user = User(
-        id=user_id,
-        name=payload.name.strip(),
-        email=email,
-        phone=phone,
-        password=await get_password_hash(generated_password),
-        role="CREW",
-        sacco_id=matatu.sacco_id,
-        crew_number=crew_number,
-    )
-    db.add(new_user)
+    # crew_number has no unique constraint (two rows legitimately sharing
+    # one is the whole point — see _resolve_crew_number) so a collision
+    # between two unrelated teams would never raise an IntegrityError to
+    # catch; the lock is the only thing preventing it. It has to span from
+    # resolving the number through the actual commit, not just the lookup —
+    # releasing it any earlier would let a second concurrent request read
+    # the same "not yet committed" state and compute the same number anyway.
+    redis = await get_redis()
+    async with redis.lock(f"crew_number_gen:{matatu.sacco_id}", timeout=10, blocking_timeout=10):
+        crew_number = await _resolve_crew_number(db, payload.matatu_id, payload.crew_role, matatu.sacco_id)
 
-    assignment = CrewAssignment(
-        id=assignment_id,
-        user_id=user_id,
-        matatu_id=payload.matatu_id,
-        crew_role=payload.crew_role,
-        assigned_at=now,
-    )
-    db.add(assignment)
+        new_user = User(
+            id=user_id,
+            name=payload.name.strip(),
+            email=email,
+            phone=phone,
+            password=await get_password_hash(generated_password),
+            role="CREW",
+            sacco_id=matatu.sacco_id,
+            crew_number=crew_number,
+        )
+        db.add(new_user)
 
-    stage_audit_log(
-        db, resource_type="crew_assignment", resource_id=assignment_id, action="CREATE",
-        user_id=current_user.id,
-        new_values={
-            "crewUserId": user_id, "crewName": new_user.name, "crewPhone": phone, "crewNumber": crew_number,
-            "matatuId": payload.matatu_id, "crewRole": payload.crew_role,
-        },
-    )
+        assignment = CrewAssignment(
+            id=assignment_id,
+            user_id=user_id,
+            matatu_id=payload.matatu_id,
+            crew_role=payload.crew_role,
+            assigned_at=now,
+        )
+        db.add(assignment)
 
-    try:
-        await db.commit()
-    except IntegrityError:
-        # Same check-then-insert race guarded elsewhere (auth.py register,
-        # users.py create_user) — the pre-checks above are the friendly
-        # messages, the unique constraints on User.email/phone are the real
-        # guard.
-        await db.rollback()
-        raise HTTPException(status_code=400, detail="A user with that email or phone number already exists")
+        stage_audit_log(
+            db, resource_type="crew_assignment", resource_id=assignment_id, action="CREATE",
+            user_id=current_user.id,
+            new_values={
+                "crewUserId": user_id, "crewName": new_user.name, "crewPhone": phone, "crewNumber": crew_number,
+                "matatuId": payload.matatu_id, "crewRole": payload.crew_role,
+            },
+        )
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            # Same check-then-insert race guarded elsewhere (auth.py register,
+            # users.py create_user) — the pre-checks above are the friendly
+            # messages, the unique constraints on User.email/phone are the real
+            # guard.
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="A user with that email or phone number already exists")
 
     await db.refresh(assignment, attribute_names=["user", "matatu"])
     return CrewIssueResponse(
