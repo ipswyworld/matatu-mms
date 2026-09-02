@@ -663,6 +663,64 @@ class RateLimitOverride(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class MessageLog(Base):
+    """One outbound message, with cost and outcome (Readiness List §19).
+
+    SMS is both the primary reach channel for this user base and the largest
+    recurring operational cost, and some messages (fine notices, hearing
+    dates) are legal communications where "we sent it" and "it was
+    delivered" are different claims.
+
+    The message body is deliberately NOT stored — only a short preview.
+    These carry names, fine amounts and hearing dates; retaining every
+    message indefinitely would create a large pool of personal data with no
+    operational use the metadata here does not already serve.
+    """
+    __tablename__ = "message_logs"
+
+    id = Column(String, primary_key=True)
+    phone = Column(String, nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    # otp, fine_notice, hearing_notice, booking_confirmation, ...
+    category = Column(String, nullable=False, index=True)
+    channel = Column(String, nullable=False, default="sms")
+
+    # Billing is per segment, not per message. A stray curly quote switches
+    # the encoding to UCS-2 and more than halves segment capacity, so both
+    # are recorded rather than inferred later.
+    segments = Column(Integer, nullable=False, default=1)
+    is_unicode = Column(Boolean, nullable=False, default=False)
+    cost_kes = Column(Numeric(12, 4), nullable=False, default=0)
+
+    # SENT, FAILED, SUPPRESSED_OPT_OUT, DELIVERED, UNDELIVERED
+    status = Column(String, nullable=False, index=True)
+    error = Column(String, nullable=True)
+    # Set from the provider's delivery receipt, which arrives after the send.
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    provider_message_id = Column(String, nullable=True, index=True)
+
+    reference_type = Column(String, nullable=True)
+    reference_id = Column(String, nullable=True)
+    body_preview = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class MessagingOptOut(Base):
+    """Consent record for one phone number (Readiness List §19, §9).
+
+    Keyed on the normalised international form, because the same person
+    arrives as 0712…, +254712… and 254712… — an opt-out stored against one
+    form that silently fails to match another is worse than none, since it
+    looks compliant.
+    """
+    __tablename__ = "messaging_opt_outs"
+
+    phone = Column(String, primary_key=True)
+    opted_out_at = Column(DateTime(timezone=True), nullable=True)
+    opted_in_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(String, nullable=True)  # sms_reply, user_action, admin
+
+
 class JournalEntry(Base):
     """One balanced accounting transaction (Readiness List §15).
 

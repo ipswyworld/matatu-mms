@@ -75,6 +75,7 @@ from app.routes.control import router as control_router
 from app.routes.oauth import router as oauth_router
 from app.routes.partner import router as partner_router
 from app.routes.ledger_routes import router as ledger_router
+from app.routes.messaging_routes import router as messaging_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -337,6 +338,8 @@ app.include_router(partner_router)
 # happen as a side effect of business events, never as a standalone
 # 'adjust the books' action.
 app.include_router(ledger_router)
+# Messaging consent, delivery receipts and spend (Readiness List §19).
+app.include_router(messaging_router)
 
 # Serves uploaded verification/onboarding documents when app/storage.py is
 # in local-disk mode (dev, or the self-hosted docker-compose stack's

@@ -161,3 +161,26 @@ async def search_origin_destination(
     # sort conventions per §29.5.
     results.sort(key=lambda r: (r.fare_kes, -r.seats_available))
     return results
+
+
+# --- Staff record search (Readiness List §18) --------------------------------
+#
+# Distinct from the passenger origin-destination search above, which answers
+# "how do I get from A to B". This answers "find me that vehicle / fine /
+# operator", which is what staff do all day and what degrades first as the
+# tables grow.
+
+@router.get("/records")
+async def search_records(
+    q: str = Query(..., min_length=2, max_length=120, description="Search term"),
+    limit: int = Query(25, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cross-entity search over vehicles, fines, Saccos and users.
+
+    Results are ABAC-scoped to the caller: a Sacco operator sees only their
+    own vehicles and fines, and no Sacco directory or user list at all.
+    """
+    from app.fulltext import search_all
+    return await search_all(db, principal=current_user, term=q, limit=limit)
