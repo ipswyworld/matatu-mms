@@ -74,3 +74,32 @@ python -m pytest -q
 Making the suite self-cleaning would be better than documenting the
 workaround, and is worth doing before it runs in CI against a shared
 Postgres — where the second run would fail and look like a regression.
+
+## Licence matters, not just the extension
+
+Render's Postgres ships TimescaleDB under the **Apache-2** licence.
+Hypertables work; continuous aggregates, compression and retention do not —
+they are Timescale **Community** (TSL) features and raise:
+
+    functionality not supported under the current "apache" license
+
+This broke a production deploy. The migration checked that the extension was
+installed and that the table was a hypertable, both true, then issued a TSL
+statement that raised. Because `alembic upgrade head` runs before uvicorn in
+`docker-entrypoint.sh`, the container exited and the whole deploy failed.
+
+Verifying against `timescaledb-ha` hid it: that image carries the full
+licence, so everything passed locally while failing in production. **Verify
+against the licence production actually runs**, not just the same engine.
+
+To reproduce the production constraint locally:
+
+```bash
+docker exec <container> psql -U matatu -d postgres -c "ALTER SYSTEM SET timescaledb.license='apache';"
+docker restart <container>
+docker exec <container> psql -U matatu -d <db> -tAc "SELECT current_setting('timescaledb.license');"  # -> apache
+```
+
+`verify_postgres.py` now reads the licence and reports the Community
+features as SKIPPED there rather than FAILED — they are unavailable, not
+broken.

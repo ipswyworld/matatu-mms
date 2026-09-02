@@ -129,11 +129,45 @@ async def main():
 
     # --- TimescaleDB ------------------------------------------------------
     print("\n[5] TimescaleDB hypertable, aggregate, policies")
+
+    # The extension being installed says nothing about whether the Community
+    # (TSL) features are licensed. Render ships the Apache-2 build, where
+    # continuous aggregates, compression and retention all raise
+    # "functionality not supported under the current apache license".
+    #
+    # The migration originally checked only for the extension and aborted the
+    # entire deploy on the first TSL statement. This harness had the same
+    # blind spot and reported four FAILs for features that are simply not
+    # available — which is a wrong answer, not a finding.
+    licence = None
+    if present["timescaledb"]:
+        async with engine.connect() as conn:
+            try:
+                licence = (await conn.execute(
+                    text("SELECT current_setting('timescaledb.license')")
+                )).scalar()
+            except Exception:
+                licence = "unknown"
+        print("      timescaledb licence: " + str(licence))
+
     if not present["timescaledb"]:
         print("      SKIPPED - TimescaleDB not installed on this instance.")
         print("      The migration's graceful-degradation path ran instead:")
         print("      full-text indexes created, aggregates correctly skipped.")
         skip("timescaledb objects", "extension absent")
+    elif licence == "apache":
+        # This is what production actually runs.
+        async with engine.connect() as conn:
+            hyper = (await conn.execute(text(
+                "SELECT 1 FROM timescaledb_information.hypertables "
+                "WHERE hypertable_name='vehicle_positions'"
+            ))).scalar()
+        record("vehicle_positions is a hypertable", bool(hyper),
+               "hypertables ARE available under Apache")
+        print("      SKIPPED (aggregate/compression/retention) - Apache licence.")
+        print("      These are Timescale Community features. The migration must")
+        print("      skip them without failing, which is what production needs.")
+        skip("timescaledb community features", "apache licence - not licensed here")
     else:
         async with engine.connect() as conn:
             hyper = (await conn.execute(text(

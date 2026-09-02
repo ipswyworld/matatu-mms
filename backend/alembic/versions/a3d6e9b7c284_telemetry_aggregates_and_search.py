@@ -48,6 +48,41 @@ def _has_timescale(bind) -> bool:
         return False
 
 
+def _try_timescale(description: str, sql: str) -> bool:
+    """Runs a TimescaleDB statement that may not be licensed on this host.
+
+    Continuous aggregates, compression and retention are Timescale
+    *Community* (TSL) features. The extension being installed says nothing
+    about whether they are available: Render ships the Apache-2 build, where
+    `CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)` raises
+
+        functionality not supported under the current "apache" license
+
+    That failure took down a whole deploy, because a raising migration aborts
+    the container before uvicorn starts. These are optimisations — the table
+    is perfectly usable without them — so each one degrades independently and
+    says so, matching what the enable_postgis and enable_timescaledb
+    migrations already do for the extensions themselves.
+
+    Each statement gets its own savepoint: under transactional DDL a failed
+    statement poisons the surrounding transaction, so without this the first
+    failure would break every statement after it too.
+    """
+    bind = op.get_bind()
+    try:
+        with bind.begin_nested():
+            bind.execute(sa.text(sql))
+        return True
+    except Exception as e:
+        detail = str(e).splitlines()[0][:200] if str(e) else type(e).__name__
+        logger.warning(
+            "Skipping %s - not available on this Postgres (%s). "
+            "Raw telemetry still works; it just will not be downsampled or aged out here.",
+            description, detail,
+        )
+        return False
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     if not _is_postgres(bind):
@@ -132,7 +167,8 @@ def upgrade() -> None:
     # WITH NO DATA: backfilling years of history inside a migration would
     # hold a transaction open for a very long time on a live system. The
     # refresh policy below fills it incrementally instead.
-    op.execute(
+    aggregate_created = _try_timescale(
+        "continuous aggregate vehicle_positions_hourly",
         """
         CREATE MATERIALIZED VIEW IF NOT EXISTS vehicle_positions_hourly
         WITH (timescaledb.continuous) AS
@@ -151,34 +187,39 @@ def upgrade() -> None:
         FROM vehicle_positions
         GROUP BY matatu_id, bucket
         WITH NO DATA
-        """
+        """,
     )
 
-    op.execute(
-        """
+    if aggregate_created:
+        _try_timescale(
+            "continuous aggregate refresh policy",
+            """
         SELECT add_continuous_aggregate_policy('vehicle_positions_hourly',
             start_offset => INTERVAL '3 days',
             end_offset   => INTERVAL '1 hour',
             schedule_interval => INTERVAL '30 minutes',
             if_not_exists => TRUE)
-        """
-    )
+        """,
+        )
 
     # Compress raw points after a week. They stay queryable, just far
     # smaller — Timescale typically achieves better than 10x on this shape
     # of data.
-    op.execute(
+    compression_enabled = _try_timescale(
+        "compression settings on vehicle_positions",
         """
         ALTER TABLE vehicle_positions SET (
             timescaledb.compress,
             timescaledb.compress_segmentby = 'matatu_id',
             timescaledb.compress_orderby = 'recorded_at DESC'
         )
-        """
+        """,
     )
-    op.execute(
-        "SELECT add_compression_policy('vehicle_positions', INTERVAL '7 days', if_not_exists => TRUE)"
-    )
+    if compression_enabled:
+        _try_timescale(
+            "compression policy (7 days)",
+            "SELECT add_compression_policy('vehicle_positions', INTERVAL '7 days', if_not_exists => TRUE)",
+        )
 
     # Drop raw points after 90 days. The hourly aggregate survives, so
     # historical analysis keeps working — this discards per-second detail
@@ -187,8 +228,9 @@ def upgrade() -> None:
     # 90 days is a deliberate choice tied to the enforcement dispute window:
     # raw GPS is evidence while a citation can still be contested, and
     # merely storage cost afterwards. Revisit if that window changes.
-    op.execute(
-        "SELECT add_retention_policy('vehicle_positions', INTERVAL '90 days', if_not_exists => TRUE)"
+    _try_timescale(
+        "retention policy (90 days)",
+        "SELECT add_retention_policy('vehicle_positions', INTERVAL '90 days', if_not_exists => TRUE)",
     )
 
 
@@ -198,12 +240,30 @@ def downgrade() -> None:
         return
 
     if _has_timescale(bind):
-        op.execute("SELECT remove_retention_policy('vehicle_positions', if_exists => TRUE)")
-        op.execute("SELECT remove_compression_policy('vehicle_positions', if_exists => TRUE)")
-        op.execute(
-            "SELECT remove_continuous_aggregate_policy('vehicle_positions_hourly', if_exists => TRUE)"
+        # Same guard as upgrade(), for the same reason: on an Apache-licensed
+        # TimescaleDB these functions do not exist, and a downgrade that
+        # raises is worse than one that skips — it leaves the schema stranded
+        # between revisions with no way forward or back.
+        #
+        # Each is independent so an object that was never created (because
+        # the licence blocked it on the way up) does not stop the rest being
+        # cleaned up.
+        _try_timescale(
+            "remove retention policy",
+            "SELECT remove_retention_policy('vehicle_positions', if_exists => TRUE)",
         )
-        op.execute("DROP MATERIALIZED VIEW IF EXISTS vehicle_positions_hourly")
+        _try_timescale(
+            "remove compression policy",
+            "SELECT remove_compression_policy('vehicle_positions', if_exists => TRUE)",
+        )
+        _try_timescale(
+            "remove continuous aggregate policy",
+            "SELECT remove_continuous_aggregate_policy('vehicle_positions_hourly', if_exists => TRUE)",
+        )
+        _try_timescale(
+            "drop continuous aggregate",
+            "DROP MATERIALIZED VIEW IF EXISTS vehicle_positions_hourly",
+        )
 
     op.execute("DROP INDEX IF EXISTS ix_vehicle_positions_matatu_time")
     op.execute("DROP INDEX IF EXISTS ix_fines_issued_at")
