@@ -15,6 +15,8 @@ from app.audit import stage_audit_log
 from app.config import NAIROBIPAY_CALLBACK_SECRET
 from app.rate_limit import limiter
 from app import ops_limits
+from app.ledger import LedgerError
+from app.revenue import record_fine_paid
 
 logger = logging.getLogger("app.routes.payments")
 router = APIRouter(prefix="/api/payments", tags=["NairobiPay Payments Integration"])
@@ -99,6 +101,30 @@ async def nairobipay_payment_callback(
         old_values={"status": old_status},
         new_values={"status": "PAID", "transactionId": payload.transaction_id, "amount": amount_paid},
     )
+
+    # Ledger posting (Readiness List §15) — staged into the SAME transaction
+    # as the status change, deliberately. A fine marked PAID with no
+    # corresponding ledger entry, or an entry with no payment, would each
+    # leave the books disagreeing with reality in a way that is very hard to
+    # reconstruct later. Either both land or neither does.
+    #
+    # Keyed on NairobiPay's transaction id, so a redelivered callback that
+    # got past the status check above still cannot credit the county twice.
+    try:
+        await record_fine_paid(
+            db, fine_id=fine.id, amount=amount_paid, transaction_id=payload.transaction_id
+        )
+    except LedgerError as e:
+        # Refuse the payment rather than record it outside the books. A
+        # rejected callback is retried by the provider; a silently
+        # unrecorded shilling is found by an auditor months later.
+        logger.error("Ledger rejected fine payment %s: %s", fine.id, e)
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Payment could not be recorded. Please retry.",
+        )
+
     await db.commit()
 
     # Dispatch status change event

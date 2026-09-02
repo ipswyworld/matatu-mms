@@ -12,6 +12,7 @@ from app.schemas import FineResponse, FineCreate, FineStatusUpdate
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.revenue import record_fine_issued, record_fine_paid, record_fine_waived
 from app.abac import sacco_scope_query, enforce_own_sacco, is_own_sacco
 
 router = APIRouter(prefix="/api/fines", tags=["Fines & Penalties"])
@@ -67,6 +68,15 @@ async def issue_fine(
         db, resource_type="fine", resource_id=fine_id, action="CREATE",
         user_id=current_user.id,
         new_values={"matatuId": payload.matatu_id, "reason": payload.reason, "amountKes": payload.amount_kes},
+    )
+
+    # Revenue is recognised at issue, not at payment (see app/revenue.py):
+    # the county is legally owed the money the moment the fine is issued, and
+    # the unpaid balance belongs in receivable:fines where it is visible
+    # rather than invisible until someone happens to pay. Staged into the
+    # same transaction as the fine itself.
+    await record_fine_issued(
+        db, fine_id=fine_id, amount=payload.amount_kes, officer_id=current_user.id
     )
     await db.commit()
 
@@ -150,6 +160,24 @@ async def update_fine_status(
             db, resource_type="fine", resource_id=fine.id, action="STATUS_CHANGE",
             user_id=current_user.id, old_values={"status": old_status}, new_values={"status": new_status},
         )
+
+        # Status transitions that move money must move it in the books too,
+        # in this same transaction (Readiness List §15). DISPUTED is
+        # deliberately absent: a dispute does not change what is owed, only
+        # whether it is contested — the write-off happens on the outcome.
+        if new_status == "WAIVED":
+            await record_fine_waived(
+                db, fine_id=fine.id, amount=fine.amount_kes, authorized_by=current_user.id
+            )
+        elif new_status == "PAID":
+            # Manual reconciliation path (cash, or an admin override) rather
+            # than the NairobiPay callback. Keyed on the fine id so it cannot
+            # double-post against a later automated payment for the same fine.
+            await record_fine_paid(
+                db, fine_id=fine.id, amount=fine.amount_kes,
+                transaction_id=f"manual:{fine.id}",
+            )
+
         await db.commit()
 
         # Dispatch event

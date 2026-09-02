@@ -1,3 +1,4 @@
+from decimal import Decimal
 import datetime
 import re
 from typing import Optional, List
@@ -554,7 +555,20 @@ class FineBase(BaseModelCamel):
     due_date: datetime.date  # a calendar date — Pydantic parses "YYYY-MM-DD" from the frontend directly
 
 class FineCreate(FineBase):
-    pass
+    # Decimal on the way IN, deliberately overriding FineBase's float.
+    #
+    # This is the point where precision is lost irrecoverably: a float
+    # parsed here is already inexact before it reaches the Numeric(12,2)
+    # column or the ledger, and no amount of care downstream recovers it.
+    # Pydantic accepts both 3500 and "3500.00" and yields an exact Decimal.
+    #
+    # FineBase keeps float for the RESPONSE shape, because Pydantic v2
+    # serialises Decimal as a JSON string and the frontends expect a number.
+    # Responses are derived from the stored Numeric, so that is a display
+    # concern rather than a corruption path. Migrating every money field to
+    # Decimal end to end (schemas.py has ~8 float money fields) is worth
+    # doing, but it is a coordinated frontend change, not a drive-by.
+    amount_kes: Decimal
 
 class FineResponse(FineBase):
     id: str

@@ -663,6 +663,67 @@ class RateLimitOverride(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class JournalEntry(Base):
+    """One balanced accounting transaction (Readiness List §15).
+
+    Immutable by contract: nothing updates or deletes a row here. A mistake
+    is corrected by posting a reversing entry that points back via
+    `reverses_entry_id`, so the trail records both what was believed at the
+    time and what corrected it — which is precisely what an audit asks for.
+
+    See app/ledger.py; postings are written only through post_entry(), which
+    refuses to write an entry whose lines do not sum to zero.
+    """
+    __tablename__ = "journal_entries"
+
+    id = Column(String, primary_key=True)
+    description = Column(String, nullable=False)
+
+    # What in the business domain caused this entry — "fine", "booking",
+    # "licence_renewal" — and its id, so a row in the ledger can always be
+    # traced back to the event that produced it.
+    reference_type = Column(String, nullable=True, index=True)
+    reference_id = Column(String, nullable=True, index=True)
+
+    # Makes replay safe: a redelivered payment callback reusing this key
+    # posts nothing rather than crediting the county twice.
+    idempotency_key = Column(String, nullable=True, unique=True, index=True)
+
+    actor_id = Column(String, nullable=True)
+    reverses_entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=True, index=True)
+
+    # When the money actually moved, versus when we recorded it. These differ
+    # whenever a callback arrives late, and reports must use the former.
+    occurred_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    postings = relationship("LedgerPosting", back_populates="entry")
+
+
+class LedgerPosting(Base):
+    """One line of a journal entry.
+
+    `amount` is signed: positive is a debit, negative is a credit. One signed
+    column rather than two makes "does this entry balance" a single SUM
+    instead of a comparison between columns that could each be individually
+    plausible.
+
+    Numeric, never Float — binary floating point cannot represent 0.10, and a
+    ledger that adds up money in floats eventually disagrees with the bank by
+    a few cents that nobody can account for.
+    """
+    __tablename__ = "ledger_postings"
+
+    id = Column(String, primary_key=True)
+    entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)
+    account = Column(String, nullable=False, index=True)
+    amount = Column(Numeric(14, 2), nullable=False)
+    memo = Column(String, nullable=True)
+
+    entry = relationship("JournalEntry", back_populates="postings")
+
+
 class ApiClient(Base):
     """A machine principal for the partner API (Readiness List §14).
 
