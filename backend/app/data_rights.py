@@ -230,6 +230,9 @@ async def erase_subject_data(
 
     # --- Direct identifiers on the account itself -------------------------
     original_email = user.email
+    # Captured before the fields below are cleared — the consent lookup
+    # near the end needs the original phone, and by then it is gone.
+    original_phone = user.phone
     user.name = "Erased Subject"
     # Kept unique and syntactically valid: the column is NOT NULL and unique,
     # and a collision here would fail the erasure rather than complete it.
@@ -277,13 +280,42 @@ async def erase_subject_data(
         a.user_id = alias
     actions["audit_logs"] = f"{len(audits)} audit record(s) retained; actor pseudonymised."
 
-    # --- Consent record -----------------------------------------------------
-    if original_email or user.phone:
-        pass
-    consents = (
-        await db.execute(select(MessagingOptOut).where(MessagingOptOut.phone == alias))
-    ).scalars().all()
-    actions["messaging_opt_outs"] = f"{len(consents)} consent record(s) retained under the pseudonym."
+    # --- Consent record ---------------------------------------------------
+    #
+    # Must be looked up by the subject's ORIGINAL phone, because that is what
+    # the row is keyed on. An earlier version searched by the pseudonym,
+    # which matched nothing and silently left the person's real phone number
+    # sitting in messaging_opt_outs after an erasure — a PII leak in the one
+    # operation whose entire purpose is removing PII.
+    #
+    # The record is re-keyed rather than deleted: if the person opted out of
+    # messaging, that decision has to survive erasure, or anonymising them
+    # would silently opt them back in and they would start receiving
+    # messages again.
+    consent_count = 0
+    if original_phone:
+        from app.messaging import normalize_phone
+
+        original_key = normalize_phone(original_phone)
+        existing = (
+            await db.execute(
+                select(MessagingOptOut).where(MessagingOptOut.phone == original_key)
+            )
+        ).scalars().first()
+        if existing is not None:
+            # phone is the primary key, so it cannot be updated in place —
+            # insert under the pseudonym and drop the identifying row.
+            db.add(MessagingOptOut(
+                phone=alias,
+                opted_out_at=existing.opted_out_at,
+                opted_in_at=existing.opted_in_at,
+                source=existing.source,
+            ))
+            await db.delete(existing)
+            consent_count = 1
+    actions["messaging_opt_outs"] = (
+        f"{consent_count} consent record(s) re-keyed to the pseudonym; the phone number was removed."
+    )
 
     stage_audit_log(
         db, resource_type="user", resource_id=user_id, action="DATA_ERASURE",
