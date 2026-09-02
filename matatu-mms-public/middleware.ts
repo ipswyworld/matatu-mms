@@ -13,7 +13,11 @@ const SESSION_COOKIE_NAME = "mms_session";
 // County staff (admin, enforcement, director/chief officer, viewer) sign
 // in through a completely separate app/deployment and never reach this
 // middleware at all.
-const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve", "/compliance-notice"];
+// "/offline" is the service worker's navigation fallback. It MUST be public:
+// it is shown precisely when there is no network, and redirecting it to a
+// sign-in page that itself needs network would make the offline experience
+// worse than no service worker at all. It contains no user data.
+const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve", "/compliance-notice", "/offline"];
 
 /**
  * Verifies the HMAC signature before trusting anything in the cookie. A
@@ -39,10 +43,16 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Next.js internals + any static file in /public (identified by file extension)
+  //
+  // `webmanifest` was missing and PWA installation silently broke: the
+  // browser fetches /manifest.webmanifest unauthenticated, got a 307 to the
+  // sign-in page, and simply declined to offer installation with no error
+  // anyone would notice. sw.js worked only because `js` happened to be in
+  // this list, which made the omission harder to spot rather than easier.
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
-    /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|woff2?|ttf)$/i.test(pathname)
+    /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|json|webmanifest|woff2?|ttf)$/i.test(pathname)
   ) {
     return NextResponse.next();
   }
