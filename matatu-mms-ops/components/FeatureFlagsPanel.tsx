@@ -5,6 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import { Trash2 } from "lucide-react";
 import { FeatureFlag } from "@/lib/types";
 import { createFeatureFlagAction, toggleFeatureFlagAction, deleteFeatureFlagAction } from "@/lib/actions";
+import ActionButton from "./ActionButton";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -17,32 +18,22 @@ function SubmitButton() {
 
 function FlagRow({ flag }: { flag: FeatureFlag }) {
   const [enabled, setEnabled] = useState(flag.enabled);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Applied inline rather than through <ActionButton>: the switch is its
+  // own confirmation (see ActionDescriptor.inlineApply). Optimistic, with
+  // a rollback if the write fails.
   function handleToggle() {
     const next = !enabled;
-    setEnabled(next); // optimistic — routine toggle, no confirmation needed (A.4 #1)
+    setEnabled(next);
     startTransition(async () => {
       const result = await toggleFeatureFlagAction(flag.key, next);
       if (result.error) {
         setEnabled(!next);
         setError(result.error);
       }
-    });
-  }
-
-  function handleDelete() {
-    startTransition(async () => {
-      const result = await deleteFeatureFlagAction(flag.key);
-      if (result.error) {
-        setError(result.error);
-        setConfirmDelete(false);
-        return;
-      }
-      setDeleted(true);
     });
   }
 
@@ -60,26 +51,30 @@ function FlagRow({ flag }: { flag: FeatureFlag }) {
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label={`Toggle ${flag.key}`}
           onClick={handleToggle}
           disabled={isPending}
           className={`relative w-10 h-6 rounded-full transition-colors ${enabled ? "bg-county-green" : "bg-black/15"}`}
         >
-          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+              enabled ? "translate-x-[18px]" : "translate-x-0.5"
+            }`}
+          />
         </button>
-        {confirmDelete ? (
-          <div className="flex items-center gap-1.5">
-            <button type="button" onClick={handleDelete} disabled={isPending} className="text-[10px] font-bold text-white bg-county-red rounded px-2 py-1">
-              {isPending ? "…" : "Confirm"}
-            </button>
-            <button type="button" onClick={() => setConfirmDelete(false)} className="text-[10px] font-bold text-black/50 rounded px-2 py-1 hover:bg-black/5">
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setConfirmDelete(true)} className="text-black/30 hover:text-county-red p-1" aria-label="Delete flag">
-            <Trash2 size={14} strokeWidth={2} />
-          </button>
-        )}
+        <ActionButton
+          actionId="flag.delete"
+          target={flag.key}
+          onConfirm={async (reason) => {
+            const result = await deleteFeatureFlagAction(flag.key);
+            if (result.error) return result;
+            setDeleted(true);
+            return {};
+          }}
+          className="text-black/30 hover:text-county-red p-1"
+        >
+          <Trash2 size={14} strokeWidth={2} />
+        </ActionButton>
       </div>
     </div>
   );
@@ -93,8 +88,8 @@ export default function FeatureFlagsPanel({ flags }: { flags: FeatureFlag[] }) {
       <div>
         <h3 className="font-bold text-sm text-county-black">Feature Flags</h3>
         <p className="text-xs text-black/50 mt-0.5">
-          Toggle capabilities per environment without a redeploy. Every create/toggle/delete is recorded in the
-          Audit Trail below.
+          Toggle capabilities per environment without a redeploy. Every create, toggle, and delete is recorded in
+          the Audit tab.
         </p>
       </div>
 

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +71,7 @@ from app.routes.trips import router as trips_router
 from app.routes.uploads import router as uploads_router
 from app.routes.feature_flags import router as feature_flags_router
 from app.routes.jobs import router as jobs_router
+from app.routes.control import router as control_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -131,6 +133,18 @@ async def lifespan(app: FastAPI):
     logger.info("Verifying default seed data...")
     async with AsyncSessionLocal() as session:
         await seed_data(session)
+
+    # 3b. Live rate limits (app/ops_limits.py) — seed the in-process cache
+    # from Postgres BEFORE serving any request, so a restarted process
+    # doesn't silently revert every override to its coded default, then
+    # start the refresh loop that keeps replicas converged.
+    from app import ops_limits
+    async with AsyncSessionLocal() as session:
+        await ops_limits.load_from_db(session)
+    await ops_limits.publish_to_redis()
+    ops_limits.start_refresh_task()
+    logger.info("Live rate limit store loaded.")
+
     logger.info("System initialization complete.")
     
     yield
@@ -140,6 +154,8 @@ async def lifespan(app: FastAPI):
     telemetry_broadcaster.stop()
     dashboard_broadcaster.stop()
     notifications_broadcaster.stop()
+    from app import ops_limits
+    ops_limits.stop_refresh_task()
     if event_consumer_task is not None:
         event_consumer_task.cancel()
     if arq_worker_task is not None:
@@ -182,6 +198,37 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
+
+
+# Rolling request metrics for the ops console's live feed (app/ops_metrics.py).
+# In-process and bounded-memory by design — this is not a Prometheus
+# replacement, it exists so the console still shows request and error rates
+# during an incident in which the external metrics backend may itself be
+# unreachable.
+@app.middleware("http")
+async def record_request_metrics(request: Request, call_next):
+    from app.ops_metrics import metrics
+
+    started = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        # The SSE stream is a single long-lived request; recording it would
+        # skew p95 latency into meaninglessness.
+        if not request.url.path.startswith("/api/control/stream"):
+            try:
+                metrics.record(
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    status_code=status_code,
+                    method=request.method,
+                    path=request.url.path,
+                )
+            except Exception:
+                # Metrics must never break a request.
+                pass
 
 # Configure CORS for Next.js frontend communication. Extra origins (e.g. a
 # deployed frontend URL) come from CORS_ORIGINS as a comma-separated list —
@@ -238,6 +285,10 @@ app.include_router(trips_router)
 app.include_router(uploads_router)
 app.include_router(feature_flags_router)
 app.include_router(jobs_router)
+# Ops control plane (Ops Console Rebuild Spec §6). Mounted here for now;
+# the /api/control prefix is what lets it be lifted into its own uvicorn
+# entrypoint later (Spec §3.1 Path A) without any client change.
+app.include_router(control_router)
 
 # Serves uploaded verification/onboarding documents when app/storage.py is
 # in local-disk mode (dev, or the self-hosted docker-compose stack's

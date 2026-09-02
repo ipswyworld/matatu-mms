@@ -14,6 +14,7 @@ from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.abac import enforce_own_record, enforce_own_sacco, sacco_scope_query, is_own_record
 from app.rate_limit import limiter
+from app import ops_limits
 
 router = APIRouter(prefix="/api/bookings", tags=["Passenger Bookings"])
 
@@ -146,7 +147,7 @@ async def update_booking_status(
     return _to_response(booking)
 
 @router.post("", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("20/minute")
+@limiter.limit(ops_limits.limit_callable("bookings_create"))
 async def create_booking(
     request: Request,
     payload: BookingCreate,

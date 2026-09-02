@@ -1,0 +1,228 @@
+/**
+ * Action safety framework (Ops Console Rebuild Spec §4).
+ *
+ * Every action in this console is declared here as a descriptor and
+ * rendered through <ActionButton>, so confirmation, reason capture, and
+ * blast-radius disclosure are enforced by the component rather than by
+ * remembering to add them at each call site. A new action cannot
+ * accidentally ship without its safety properties, because the properties
+ * are what the renderer consumes.
+ *
+ * Pure data and types — no "use server" here, because client components
+ * import these to render.
+ */
+
+export type ActionClass = "routine" | "elevated" | "critical";
+
+export interface ActionDescriptor {
+  /** Stable identifier. Recorded in the audit trail and used by the
+   *  command palette, so renaming one is a breaking change. */
+  id: string;
+  /** Verb + object, e.g. "Cancel job" — never "OK" or "Confirm". */
+  label: string;
+  actionClass: ActionClass;
+  /** Human-readable blast radius: "1 account", "all sessions", "this replica". */
+  affectedScope: string;
+  reversible: boolean | "partial";
+  /** How to undo it, shown in the confirmation when reversible. */
+  reversalHint?: string;
+  /** Longer explanation of what actually happens. */
+  detail?: string;
+  /**
+   * True when the control itself is the confirmation — a toggle switch
+   * shows its new state immediately and flips back with one more click.
+   *
+   * Wrapping something like that in a modal would be safety theatre, and
+   * worse than useless: operators who dismiss a dialog for every trivial
+   * toggle learn to dismiss dialogs, which is exactly the habit that makes
+   * the confirmation on a genuinely dangerous action stop working. Only
+   * instantly-reversible, self-evident controls qualify.
+   */
+  inlineApply?: boolean;
+}
+
+export const ACTION_CLASS_META: Record<
+  ActionClass,
+  { label: string; chip: string; requiresReason: boolean; requiresTypedConfirm: boolean }
+> = {
+  routine: {
+    label: "Routine",
+    chip: "bg-county-green/10 text-county-green",
+    requiresReason: false,
+    requiresTypedConfirm: false,
+  },
+  elevated: {
+    label: "Elevated",
+    chip: "bg-amber-100 text-amber-800",
+    requiresReason: true,
+    requiresTypedConfirm: false,
+  },
+  critical: {
+    // Not yet used: Critical actions arrive in Phase 5, deliberately after
+    // the approval and re-authentication machinery that makes them safe.
+    // Declared now so the classification is complete and the renderer does
+    // not need changing when they land.
+    label: "Critical",
+    chip: "bg-county-red/10 text-county-red",
+    requiresReason: true,
+    requiresTypedConfirm: true,
+  },
+};
+
+/**
+ * Every action the console can perform. The command palette enumerates
+ * this, and each panel looks its own actions up by id, so there is exactly
+ * one place where an action's safety properties are defined.
+ */
+export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
+  // --- Feature flags (existing, migrated onto the framework) --------------
+  "flag.create": {
+    id: "flag.create",
+    label: "Add flag",
+    actionClass: "routine",
+    affectedScope: "New flag, disabled by default",
+    reversible: true,
+    reversalHint: "Delete the flag.",
+    detail: "Creates a feature flag in the off position. Nothing branches on it until code checks it.",
+  },
+  "flag.toggle": {
+    id: "flag.toggle",
+    label: "Toggle flag",
+    actionClass: "routine",
+    affectedScope: "Every request that checks this flag",
+    reversible: true,
+    reversalHint: "Toggle it back.",
+    // The switch is the confirmation: the new state is visible instantly
+    // and one more click undoes it.
+    inlineApply: true,
+  },
+  "flag.delete": {
+    id: "flag.delete",
+    label: "Delete flag",
+    actionClass: "elevated",
+    affectedScope: "Every call site checking this flag falls back to its default",
+    reversible: "partial",
+    reversalHint: "The flag can be recreated, but its history and current value are lost.",
+  },
+
+  // --- Jobs ---------------------------------------------------------------
+  "job.retry": {
+    id: "job.retry",
+    label: "Retry job",
+    actionClass: "routine",
+    affectedScope: "1 job",
+    reversible: false,
+    detail: "Re-enqueues the same function and arguments as a fresh job. Job types here are documented as idempotent.",
+  },
+  "job.cancel": {
+    id: "job.cancel",
+    label: "Cancel job",
+    actionClass: "routine",
+    affectedScope: "1 job",
+    reversible: "partial",
+    reversalHint: "A cancelled job can be re-enqueued with Retry, but partial work already done is not rolled back.",
+  },
+  "job.retryAllFailed": {
+    id: "job.retryAllFailed",
+    label: "Retry all failed jobs",
+    actionClass: "elevated",
+    affectedScope: "Every failed job currently in the result store",
+    reversible: false,
+    detail: "ARQ has no dead-letter queue; failed results stay in its result store. This re-enqueues all of them at once, which can produce a burst of load.",
+  },
+
+  // --- Webhooks -----------------------------------------------------------
+  "webhook.replay": {
+    id: "webhook.replay",
+    label: "Replay delivery",
+    actionClass: "routine",
+    affectedScope: "1 webhook delivery to 1 partner endpoint",
+    reversible: false,
+    detail: "Re-sends through the normal queued path, so it inherits the same retry and circuit-breaker behaviour as an original delivery.",
+  },
+
+  // --- Circuit breakers ---------------------------------------------------
+  "breaker.override": {
+    id: "breaker.override",
+    label: "Override breaker",
+    actionClass: "elevated",
+    affectedScope: "All calls to this dependency, on this replica",
+    reversible: true,
+    reversalHint: 'Set the override back to "auto".',
+    detail: "Overrides are per-process: they apply to the replica that received the request, because a breaker guards that process's own calls.",
+  },
+
+  // --- Rate limits --------------------------------------------------------
+  "rateLimit.update": {
+    id: "rateLimit.update",
+    label: "Change limit",
+    actionClass: "elevated",
+    affectedScope: "Every client hitting this endpoint",
+    reversible: true,
+    reversalHint: "Restore the default, or set the previous value back.",
+    detail: "Takes effect on this replica immediately and on others within about 10 seconds. Raising a limit weakens the protection it provides.",
+  },
+
+  // --- Sessions and accounts ---------------------------------------------
+  "session.revoke": {
+    id: "session.revoke",
+    label: "Revoke sessions",
+    actionClass: "elevated",
+    affectedScope: "Every active session for 1 account",
+    reversible: false,
+    detail: "The user is signed out everywhere and must sign in again. Existing tokens stop working immediately.",
+  },
+  "user.lock": {
+    id: "user.lock",
+    label: "Lock account",
+    actionClass: "elevated",
+    affectedScope: "1 account, signed out and unable to sign in",
+    reversible: true,
+    reversalHint: "Unlock the account.",
+    detail: "Deactivates the account and revokes its live sessions together, so an already-issued token cannot outlive the lock.",
+  },
+  "user.unlock": {
+    id: "user.unlock",
+    label: "Unlock account",
+    actionClass: "elevated",
+    affectedScope: "1 account",
+    reversible: true,
+    reversalHint: "Lock the account again.",
+  },
+  "user.resetMfa": {
+    id: "user.resetMfa",
+    label: "Reset MFA",
+    actionClass: "elevated",
+    affectedScope: "1 account's MFA enrolment and all its sessions",
+    reversible: false,
+    detail: "Clears the authenticator enrolment so the user can re-enrol, and revokes sessions in case the lost device still holds one.",
+  },
+
+  // --- Impersonation ------------------------------------------------------
+  "impersonate.start": {
+    id: "impersonate.start",
+    label: "Impersonate",
+    actionClass: "routine",
+    affectedScope: "Your own session, viewing the staff app as this user",
+    reversible: true,
+    reversalHint: "End impersonation from the banner in the staff app.",
+    detail: "Start and end are both audited, and a persistent banner marks the session throughout.",
+  },
+};
+
+export function actionFor(id: string): ActionDescriptor {
+  const found = OPS_ACTIONS[id];
+  if (!found) {
+    // Loud rather than silent: an unregistered action would otherwise
+    // render with no safety metadata at all, which is the exact failure
+    // this framework exists to prevent.
+    throw new Error(`Unregistered ops action: ${id}`);
+  }
+  return found;
+}
+
+export function reversibilityText(d: ActionDescriptor): string {
+  if (d.reversible === true) return d.reversalHint ? `Reversible. ${d.reversalHint}` : "Reversible.";
+  if (d.reversible === "partial") return d.reversalHint ? `Partly reversible. ${d.reversalHint}` : "Partly reversible.";
+  return "Not reversible.";
+}

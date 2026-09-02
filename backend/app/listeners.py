@@ -10,6 +10,7 @@ from app.database import AsyncSessionLocal
 from app.models import WebhookSubscription, WebhookLog
 from app.events import dispatcher
 from app.resilience import CircuitBreaker, CircuitBreakerOpenException, retry_async
+from app import ops_breakers
 from app.config import WEBHOOK_MAX_RETRIES
 
 logger = logging.getLogger("app.listeners")
@@ -150,10 +151,19 @@ async def webhook_dispatcher_listener(event_type: str, data: dict):
         if event_type not in subscribed_events:
             continue
 
-        # Get or create breaker for this subscription
+        # Get or create breaker for this subscription. Also registered by
+        # name in app/ops_breakers.py so the ops console can see that a
+        # subscription's breaker has tripped and manually hold it open or
+        # closed — previously these existed only in this dict, invisible and
+        # untouchable from outside this module.
         if sub.id not in subscription_breakers:
-            subscription_breakers[sub.id] = CircuitBreaker(failure_threshold=3, recovery_time=30.0)
-        
+            subscription_breakers[sub.id] = ops_breakers.get_or_create(
+                f"webhook:{sub.id}",
+                failure_threshold=3,
+                recovery_time=30.0,
+                description=f"Webhook delivery to subscription {sub.id}",
+            )
+
         breaker = subscription_breakers[sub.id]
         
         payload = {

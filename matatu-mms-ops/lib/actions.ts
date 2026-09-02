@@ -207,3 +207,98 @@ export async function startImpersonationAction(userId: string): Promise<{ url?: 
   }
   return { url: `${STAFF_APP_URL}/impersonate/consume?ticket=${encodeURIComponent(ticket)}` };
 }
+
+// --- Ops control plane actions (Ops Console Rebuild Spec §6) ---------------
+// Each of these is fronted by <ActionButton>, which supplies the `reason`
+// after showing the operator the action's blast radius and reversibility.
+// The reason is not decoration: the backend records it in the audit trail
+// so the entry explains intent, not just occurrence.
+
+/** Shared shape so every panel handles failure identically. */
+type ActionResult = { error?: string };
+
+async function runAction(fn: () => Promise<unknown>, fallback: string, revalidate = "/"): Promise<ActionResult> {
+  try {
+    await fn();
+  } catch (err: any) {
+    return { error: err.message || fallback };
+  }
+  revalidatePath(revalidate);
+  return {};
+}
+
+export async function cancelJobAction(jobId: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/jobs/${encodeURIComponent(jobId)}/cancel`, "POST", { reason: reason || "Cancelled from ops console" }),
+    "Could not cancel this job.",
+    "/jobs",
+  );
+}
+
+export async function retryAllFailedJobsAction(reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/jobs/retry-all-failed", "POST", { reason }),
+    "Could not retry failed jobs.",
+    "/jobs",
+  );
+}
+
+export async function replayWebhookAction(logId: number, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/webhooks/${logId}/replay`, "POST", { reason: reason || "Replayed from ops console" }),
+    "Could not replay this delivery.",
+    "/integrations",
+  );
+}
+
+export async function updateRateLimitAction(
+  scope: string,
+  limitValue: string | null,
+  reason: string,
+): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/rate-limits/${encodeURIComponent(scope)}`, "PATCH", { limit_value: limitValue, reason }),
+    "Could not update this rate limit.",
+    "/config",
+  );
+}
+
+export async function overrideBreakerAction(name: string, override: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/circuit-breakers/${encodeURIComponent(name)}`, "POST", { override, reason }),
+    "Could not override this circuit breaker.",
+    "/integrations",
+  );
+}
+
+export async function revokeSessionsAction(userId: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/sessions/revoke", "POST", { user_id: userId, reason }),
+    "Could not revoke sessions.",
+    "/sessions",
+  );
+}
+
+export async function lockUserAction(userId: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/users/${encodeURIComponent(userId)}/lock`, "POST", { reason }),
+    "Could not lock this account.",
+    "/sessions",
+  );
+}
+
+export async function unlockUserAction(userId: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/users/${encodeURIComponent(userId)}/unlock`, "POST", { reason }),
+    "Could not unlock this account.",
+    "/sessions",
+  );
+}
+
+export async function resetMfaAction(userId: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/users/${encodeURIComponent(userId)}/reset-mfa`, "POST", { reason }),
+    "Could not reset MFA for this account.",
+    "/sessions",
+  );
+}

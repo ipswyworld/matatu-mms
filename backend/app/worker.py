@@ -72,6 +72,11 @@ class WorkerSettings:
     functions = [deliver_webhook_job]
     redis_settings = _redis_settings()
     max_tries = 3
+    # Required for the ops console's "cancel job" action (Ops Console
+    # Rebuild Spec §6.2). Without this, arq's Job.abort() can only remove a
+    # job that hasn't started yet; with it, a job already executing is
+    # cancelled too, which is what an operator means by "make this stop".
+    allow_abort_jobs = True
 
 
 async def run_worker() -> None:
@@ -83,6 +88,7 @@ async def run_worker() -> None:
         functions=WorkerSettings.functions,
         redis_settings=WorkerSettings.redis_settings,
         max_tries=WorkerSettings.max_tries,
+        allow_abort_jobs=WorkerSettings.allow_abort_jobs,
         # This worker runs embedded in the same asyncio loop as
         # uvicorn/FastAPI (see module docstring) — arq's default
         # signal-handler installation would fight with uvicorn's own

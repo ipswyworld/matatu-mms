@@ -637,6 +637,32 @@ class FeatureFlag(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class RateLimitOverride(Base):
+    """Live-adjustable rate limits (Ops Console Rebuild Spec §6.1).
+
+    Postgres is the source of truth so an override survives a Redis flush
+    and is audited like any other config write; app/ops_limits.py mirrors
+    it to Redis and caches it in-process, because slowapi's limit callable
+    runs synchronously on every request and cannot await a lookup.
+
+    Only scopes present in ops_limits.DEFAULTS are accepted — an unknown
+    scope here would be dead config that silently governs nothing.
+    """
+    __tablename__ = "rate_limit_overrides"
+
+    # Stable scope identifier (e.g. "auth_login"), matching a key in
+    # ops_limits.DEFAULTS. Primary key rather than a surrogate id for the
+    # same reason FeatureFlag.key is: this is what code and operators
+    # reference, so it must be stable and human-chosen.
+    scope = Column(String, primary_key=True)
+    # slowapi's "<count>/<period>" form, validated at the API boundary by
+    # ops_limits.parse_limit before it ever reaches this table.
+    limit_value = Column(String, nullable=False)
+    reason = Column(String, nullable=True)
+    updated_by = Column(String, ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class Zone(Base):
     __tablename__ = "zones"
 

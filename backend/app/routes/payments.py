@@ -14,6 +14,7 @@ from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.config import NAIROBIPAY_CALLBACK_SECRET
 from app.rate_limit import limiter
+from app import ops_limits
 
 logger = logging.getLogger("app.routes.payments")
 router = APIRouter(prefix="/api/payments", tags=["NairobiPay Payments Integration"])
@@ -28,7 +29,7 @@ class NairobiPayCallbackPayload(BaseModel):
     payer_name: str
 
 @router.post("/nairobipay-callback/{callback_token}")
-@limiter.limit("60/minute")
+@limiter.limit(ops_limits.limit_callable("payments_callback"))
 async def nairobipay_payment_callback(
     request: Request,
     callback_token: str,

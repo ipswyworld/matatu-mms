@@ -24,6 +24,7 @@ from app.schemas import (
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme, requires_permission
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
 from app.rate_limit import limiter
+from app import ops_limits
 from app.sms import send_sms
 from app.rbac import ADMIN_TIER_ROLES
 from app.audit import stage_audit_log
@@ -156,13 +157,18 @@ async def _issue_token_response(
 # share one public IP behind carrier-grade NAT — a limit tight enough to
 # stop a scripted brute force but still generous enough that one cell
 # tower's worth of real people signing in around the same time doesn't
-# lock each other out. Raised from 30 to 100/minute after this demo
-# deployment kept locking out groups of people demoing from one shared
-# office/WiFi IP while cycling through the different demo accounts —
-# 100/minute is still ~1.7 req/s, far below what scripted credential
-# stuffing needs to be effective, but well above what a room of people
-# clicking through a login form by hand can produce.
-@limiter.limit("100/minute")
+# lock each other out.
+#
+# The value now lives in app/ops_limits.py rather than in this decorator,
+# and is adjustable live from the ops console. That change came directly
+# out of an incident on this system: the limit had to be raised from 30 to
+# 100/minute because groups demoing from one shared office IP kept locking
+# each other out, and the only way to do it was edit-commit-push-redeploy.
+# 100/minute remains the coded default (~1.7 req/s — far below what
+# scripted credential stuffing needs, far above what a room of people
+# clicking a login form by hand produces); the store only changes how
+# quickly that number can be corrected, not what it is.
+@limiter.limit(ops_limits.limit_callable("auth_login"))
 async def login(request: Request, response: Response, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     # `credentials.email` is really "identifier" now — resolves against
     # email, phone, or crew_number (see UserLogin's docstring). A
@@ -258,7 +264,7 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
 # would expire) trade a token that's expired-or-about-to for a fresh one,
 # without forcing a full re-login.
 @router.post("/refresh", response_model=RefreshTokenResponse)
-@limiter.limit("30/minute")
+@limiter.limit(ops_limits.limit_callable("auth_refresh"))
 async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
     auth_header = request.headers.get("Authorization", "")
     raw_token = auth_header.removeprefix("Bearer ").strip() if auth_header else None
@@ -317,7 +323,7 @@ async def refresh_token(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/verify-mfa", response_model=Token)
-@limiter.limit("20/minute")
+@limiter.limit(ops_limits.limit_callable("auth_verify_mfa"))
 async def verify_mfa(request: Request, response: Response, payload: MfaVerifyRequest, db: AsyncSession = Depends(get_db)):
     try:
         pending = pyjwt_lib.decode(payload.mfa_token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -427,7 +433,7 @@ SELF_REGISTRATION_ALLOWED_ROLES = {"PASSENGER"}
 GUARDIAN_APPROVAL_TOKEN_TTL_MINUTES = 60 * 24 * 7  # a week — a guardian may not see the text right away
 
 @router.post("/register", response_model=None)
-@limiter.limit("15/minute")
+@limiter.limit(ops_limits.limit_callable("auth_register"))
 async def register(request: Request, credentials: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
     # Only Passengers self-register here. Crew accounts are issued by the
     # operator when they onboard a vehicle (see saccos.py's crew-assignment
@@ -617,7 +623,7 @@ async def register(request: Request, credentials: UserCreate, response: Response
     )
 
 @router.post("/forgot-password")
-@limiter.limit("10/minute")
+@limiter.limit(ops_limits.limit_callable("auth_forgot_password"))
 async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     # Always returns the same generic message regardless of whether the email
     # exists, so this endpoint can't be used to enumerate registered accounts.
@@ -640,7 +646,7 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: 
     return {"message": "If that email is registered, a password reset link has been sent."}
 
 @router.post("/reset-password")
-@limiter.limit("20/minute")
+@limiter.limit(ops_limits.limit_callable("auth_reset_password"))
 async def reset_password(request: Request, payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(payload.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -665,7 +671,7 @@ async def reset_password(request: Request, payload: ResetPasswordRequest, db: As
     return {"message": "Password updated. You can now sign in with your new password."}
 
 @router.post("/forgot-password-phone")
-@limiter.limit("10/minute")
+@limiter.limit(ops_limits.limit_callable("auth_forgot_password_phone"))
 async def forgot_password_phone(request: Request, payload: PhoneForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """
     Phone-based counterpart to /forgot-password — a short numeric OTP sent
@@ -687,7 +693,7 @@ async def forgot_password_phone(request: Request, payload: PhoneForgotPasswordRe
     return {"message": "If that phone number is registered, a reset code has been sent."}
 
 @router.post("/reset-password-phone")
-@limiter.limit("20/minute")
+@limiter.limit(ops_limits.limit_callable("auth_reset_password_phone"))
 async def reset_password_phone(request: Request, payload: PhoneResetPasswordRequest, db: AsyncSession = Depends(get_db)):
     if len(payload.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")

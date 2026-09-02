@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview } from "./types";
+import {
+  SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview,
+  OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery,
+} from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 const AUDIT_LOG_PAGE_SIZE = 50;
@@ -59,4 +62,26 @@ export async function getJobQueue(): Promise<JobSummary[]> {
 
 export async function getLoginOverview(): Promise<LoginOverview> {
   return apiFetch<LoginOverview>("/api/users/activity/overview");
+}
+
+// --- Ops control plane (Ops Console Rebuild Spec §6) -----------------------
+// Server-side reads for each page's first paint. The SSE stream
+// (app/api/stream/route.ts -> /api/control/stream) supersedes these for
+// ongoing updates, so a page renders instantly and then goes live rather
+// than showing a spinner while the first event arrives.
+
+export async function getOpsOverview(): Promise<OpsSnapshot> {
+  return apiFetch<OpsSnapshot>("/api/control/overview");
+}
+
+export async function getRateLimits(): Promise<RateLimitState[]> {
+  return apiFetch<RateLimitState[]>("/api/control/rate-limits");
+}
+
+export async function getCircuitBreakers(): Promise<CircuitBreakerState[]> {
+  return apiFetch<CircuitBreakerState[]>("/api/control/circuit-breakers");
+}
+
+export async function getWebhookDeliveries(): Promise<WebhookDelivery[]> {
+  return apiFetch<WebhookDelivery[]>("/api/control/webhooks/recent?limit=50");
 }
