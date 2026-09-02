@@ -1,5 +1,5 @@
 import time
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -9,7 +9,7 @@ from app.models import User
 from app.config import SECRET_KEY_IS_CONFIGURED, NAIROBIPAY_CALLBACK_SECRET_IS_CONFIGURED, SENTRY_DSN
 from app.abac import POLICIES
 from app.realtime import get_redis
-from app import network_gate, secrets_provider
+from app import client_ip, network_gate, secrets_provider
 
 router = APIRouter(prefix="/api/system", tags=["System (Super Admin)"])
 
@@ -83,3 +83,19 @@ async def get_system_health(current_user: User = Depends(requires_permission("vi
             for p in POLICIES
         ],
     }
+
+
+@router.get("/client-ip")
+async def client_ip_debug(
+    request: Request,
+    current_user: User = Depends(requires_permission("view_system_health")),
+):
+    """What this server thinks the caller's address is, and why.
+
+    Exists because the "Too many sign-in attempts" bug took three attempts
+    to diagnose: the limit was raised twice before anyone checked what the
+    limiter was actually keying on. If `resolved` comes back as an RFC1918
+    address, every user behind that proxy hop is sharing one bucket, and
+    raising the limit will not help.
+    """
+    return client_ip.debug_info(request)

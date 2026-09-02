@@ -52,7 +52,7 @@ import os
 
 from app.database import AsyncSessionLocal, engine
 from app.rate_limit import limiter
-from app import network_gate
+from app import client_ip, network_gate
 from app.routes.control import router as control_router
 
 logger = logging.getLogger("app.control_plane")
@@ -129,7 +129,10 @@ async def enforce_network_gate(request: Request, call_next):
     dead and get it restarted in a loop.
     """
     if request.url.path not in ("/healthz",):
-        client_host = request.client.host if request.client else None
+        # Resolved the same way the rate limiter does. Gating on
+        # request.client.host would compare an allowlist against a proxy
+        # address, which either admits everyone behind it or nobody.
+        client_host = client_ip.resolve(request)
         if not network_gate.is_allowed(client_host):
             logger.warning(
                 "Blocked ops control plane request from %s to %s",

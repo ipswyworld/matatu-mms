@@ -24,7 +24,7 @@ from app.schemas import (
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme, requires_permission
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
 from app.rate_limit import limiter
-from app import login_throttle, ops_limits
+from app import client_ip, login_throttle, ops_limits
 from app.sms import send_sms
 from app.rbac import ADMIN_TIER_ROLES
 from app.audit import stage_audit_log
@@ -74,7 +74,11 @@ async def _record_login_event(
             email=email,
             event_type=event_type,
             reason=reason,
-            ip_address=request.client.host if request.client else None,
+            # Real client, not the proxy hop — see app/client_ip.py. This
+            # column is what an operator reads when investigating a
+            # suspicious sign-in, so recording a load balancer's address
+            # makes the security signal useless as well as the rate limit.
+            ip_address=client_ip.resolve(request),
             user_agent=request.headers.get("user-agent"),
             created_at=datetime.datetime.now(datetime.timezone.utc),
         )

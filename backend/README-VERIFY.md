@@ -50,3 +50,27 @@ without one they report a failure that is really missing fixtures.
 A check that cannot run reports SKIPPED, never PASS. On plain Postgres
 without TimescaleDB, section 5 skips and says so — the graceful-degradation
 path is exercised, but the aggregates remain unverified.
+
+## Running the regression suite against Postgres
+
+`test_security_regressions.py` is **not idempotent against a persistent
+database**. It creates users with fixed phone numbers and crew identifiers,
+so a second run against the same Postgres fails with "A user with that phone
+number already exists" — a state-pollution artefact, not a product bug.
+
+Against SQLite this never shows, because that suite runs on a throwaway file.
+
+Use a fresh database each time:
+
+```bash
+docker exec mms-verify-pg psql -U matatu -d postgres \
+  -c "DROP DATABASE IF EXISTS mms_pytest;" -c "CREATE DATABASE mms_pytest;"
+
+export DATABASE_URL="postgresql+asyncpg://matatu:testpw@127.0.0.1:55432/mms_pytest"
+python -m alembic upgrade head
+python -m pytest -q
+```
+
+Making the suite self-cleaning would be better than documenting the
+workaround, and is worth doing before it runs in CI against a shared
+Postgres — where the second run would fail and look like a regression.
