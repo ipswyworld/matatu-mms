@@ -1,4 +1,31 @@
 from decimal import Decimal
+from typing import Annotated
+from pydantic import PlainSerializer
+
+# Money on the wire (Readiness List §15).
+#
+# Decimal everywhere in Python — parsing, arithmetic, storage — because
+# binary floating point cannot represent 0.10 and a system that adds up
+# money in floats eventually disagrees with the bank by a few cents nobody
+# can account for.
+#
+# Serialised to a JSON *number* rather than Pydantic v2's default string,
+# because the three frontends already treat these as numbers and switching
+# to strings would be a silent breaking change across every currency
+# display in the product.
+#
+# That last step is safe, specifically: a two-decimal value below ~9x10^15
+# is exactly representable in float64, and JSON numbers become IEEE754
+# doubles in JavaScript no matter what we emit. The hazard of float is
+# arithmetic, and by this point all arithmetic is done — this is the final
+# render boundary, not a calculation.
+MoneyKES = Annotated[
+    Decimal,
+    PlainSerializer(lambda v: float(v) if v is not None else None,
+                    return_type=float, when_used="json"),
+]
+
+
 import datetime
 import re
 from typing import Optional, List
@@ -378,7 +405,7 @@ class RouteBase(BaseModelCamel):
     code: str
     name: str
     description: Optional[str] = None
-    fare_kes: Optional[float] = 100.0
+    fare_kes: Optional[MoneyKES] = Decimal('100.00')
 
 class RouteCreate(RouteBase):
     id: str
@@ -448,7 +475,7 @@ class QueueStatusResponse(BaseModelCamel):
 class FareStageCreate(BaseModelCamel):
     from_label: str
     to_label: str
-    fare_kes: float
+    fare_kes: MoneyKES
     direction: Optional[str] = None
     from_stage_id: Optional[str] = None
     to_stage_id: Optional[str] = None
@@ -460,7 +487,7 @@ class FareStageResponse(BaseModelCamel):
     to_stage_id: Optional[str] = None
     from_label: str
     to_label: str
-    fare_kes: float
+    fare_kes: MoneyKES
     direction: Optional[str] = None
     source: str
     created_at: datetime.datetime
@@ -536,7 +563,7 @@ class CrimeRecordBase(BaseModelCamel):
     driver_name: str
     driver_license: str
     location: str
-    fine_amount_kes: float = 0.0
+    fine_amount_kes: MoneyKES = Decimal('0.00')
     remarks: Optional[str] = None
 
 class CrimeRecordResponse(CrimeRecordBase):
@@ -551,24 +578,15 @@ class CrimeRecordResponse(CrimeRecordBase):
 class FineBase(BaseModelCamel):
     matatu_id: str
     reason: str
-    amount_kes: float
+    amount_kes: MoneyKES
     due_date: datetime.date  # a calendar date — Pydantic parses "YYYY-MM-DD" from the frontend directly
 
 class FineCreate(FineBase):
-    # Decimal on the way IN, deliberately overriding FineBase's float.
-    #
-    # This is the point where precision is lost irrecoverably: a float
-    # parsed here is already inexact before it reaches the Numeric(12,2)
-    # column or the ledger, and no amount of care downstream recovers it.
-    # Pydantic accepts both 3500 and "3500.00" and yields an exact Decimal.
-    #
-    # FineBase keeps float for the RESPONSE shape, because Pydantic v2
-    # serialises Decimal as a JSON string and the frontends expect a number.
-    # Responses are derived from the stored Numeric, so that is a display
-    # concern rather than a corruption path. Migrating every money field to
-    # Decimal end to end (schemas.py has ~8 float money fields) is worth
-    # doing, but it is a coordinated frontend change, not a drive-by.
-    amount_kes: Decimal
+    # No override needed any more: FineBase.amount_kes is MoneyKES, so input
+    # is exact Decimal and output is a JSON number. The float that used to
+    # live on the base class was the actual corruption path — money was
+    # already inexact before it reached the Numeric column or the ledger.
+    pass
 
 class FineResponse(FineBase):
     id: str
@@ -601,7 +619,7 @@ class BookingResponse(BaseModelCamel):
     phone: str
     stage_name: str
     seat_numbers: List[int]
-    fare_kes: float
+    fare_kes: MoneyKES
     status: str
     booked_at: datetime.datetime
     reg_number: Optional[str] = None
@@ -743,7 +761,7 @@ class ZoneResponse(BaseModelCamel):
 class OffenceTypeResponse(BaseModelCamel):
     id: str
     name: str
-    default_fine_kes: float
+    default_fine_kes: MoneyKES
     is_other: bool
 
 class OfficerAssignmentUpdate(BaseModelCamel):
@@ -856,7 +874,7 @@ class EnforcementCaseResponse(BaseModelCamel):
     offence_type_id: str
     offence_name: Optional[str] = None
     offence_description: Optional[str] = None
-    fine_amount_kes: float
+    fine_amount_kes: MoneyKES
     action_taken: str
     photo_paths: List[str] = []
     zone_id: Optional[str] = None
@@ -888,7 +906,7 @@ class PublicCaseResponse(BaseModelCamel):
     case_reference: str
     reg_number: str
     offence_name: Optional[str] = None
-    fine_amount_kes: float
+    fine_amount_kes: MoneyKES
     status: str
     created_at: datetime.datetime
 

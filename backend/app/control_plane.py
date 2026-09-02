@@ -52,6 +52,7 @@ import os
 
 from app.database import AsyncSessionLocal, engine
 from app.rate_limit import limiter
+from app import network_gate
 from app.routes.control import router as control_router
 
 logger = logging.getLogger("app.control_plane")
@@ -78,6 +79,10 @@ async def lifespan(app: FastAPI):
     # Note: no metrics *publish* task here. This process serves no user
     # traffic, so publishing its own near-zero window would dilute the
     # cluster aggregate. It only reads what the app processes publish.
+
+    # The network gate's state is logged at startup so an operator can see
+    # whether this control is actually in force, rather than assuming it.
+    network_gate.log_startup_status()
 
     logger.info("Control plane ready.")
     yield
@@ -112,6 +117,29 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+
+@app.middleware("http")
+async def enforce_network_gate(request: Request, call_next):
+    """Rejects requests from outside the configured allowlist.
+
+    The application-layer backstop for the period before the control
+    plane has no public ingress at all. /healthz is exempt: a liveness
+    probe comes from the cluster, and gating it would make the pod look
+    dead and get it restarted in a loop.
+    """
+    if request.url.path not in ("/healthz",):
+        client_host = request.client.host if request.client else None
+        if not network_gate.is_allowed(client_host):
+            logger.warning(
+                "Blocked ops control plane request from %s to %s",
+                client_host, request.url.path,
+            )
+            # 404 rather than 403: a 403 confirms something worth
+            # attacking is here. An unreachable console should look
+            # like nothing at all.
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return await call_next(request)
 
 
 @app.middleware("http")

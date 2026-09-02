@@ -20,6 +20,7 @@ handled the write. That is the right trade for a rate limit: a few seconds
 of skew is harmless, blocking the request path on a DB read is not.
 """
 import asyncio
+import os
 import json
 import logging
 from typing import Dict, Optional
@@ -36,8 +37,27 @@ REFRESH_INTERVAL_SECONDS = 10
 # These MUST match the literals they replaced exactly — this refactor is
 # behaviour-preserving by construction, so that moving limits into a store
 # cannot itself change how the system behaves.
+# The login limit is environment-aware, and this is the one exception to the
+# behaviour-preserving rule above.
+#
+# 100/minute was a deliberate demo relaxation: groups of people showing the
+# system from one shared office IP kept locking each other out. That reason
+# does not survive contact with production, where the same generosity is
+# just a wider brute-force window — and a demo-era value silently becoming
+# the production default is exactly how a temporary loosening becomes
+# permanent.
+#
+# Production tightens to 30/minute per IP. That is safe now in a way it was
+# not before: app/login_throttle.py adds a per-ACCOUNT limit that catches
+# credential stuffing spread across many IPs, which is the attack the per-IP
+# number was being stretched to cover. The two controls together are
+# stronger than either at any single value.
+#
+# APP_ENV=production selects it; anything else keeps the demo value.
+_IS_PRODUCTION = os.getenv("APP_ENV", "").strip().lower() in ("production", "prod")
+
 DEFAULTS: Dict[str, str] = {
-    "auth_login": "100/minute",
+    "auth_login": "30/minute" if _IS_PRODUCTION else "100/minute",
     # Failed sign-ins tolerated against ONE account before it is temporarily
     # locked, regardless of source IP (app/login_throttle.py). The period is
     # the memory window, not a rate: 10/hour means ten failures within a

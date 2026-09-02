@@ -9,7 +9,7 @@ from app.models import User
 from app.config import SECRET_KEY_IS_CONFIGURED, NAIROBIPAY_CALLBACK_SECRET_IS_CONFIGURED, SENTRY_DSN
 from app.abac import POLICIES
 from app.realtime import get_redis
-from app import secrets_provider
+from app import network_gate, secrets_provider
 
 router = APIRouter(prefix="/api/system", tags=["System (Super Admin)"])
 
@@ -74,6 +74,10 @@ async def get_system_health(current_user: User = Depends(requires_permission("vi
         # Whether a managed secrets provider is backing the config, never
         # any secret's value (Readiness List §4).
         "secretsProvider": secrets_provider.status(),
+        # Whether the ops console is network-restricted. Surfaced so the
+        # gap is visible on the console itself rather than only in a
+        # startup log nobody reads (Readiness List §4).
+        "opsNetworkGate": network_gate.startup_status(),
         "abacPolicies": [
             {"id": p.id, "description": p.description, "appliesToRoles": list(p.applies_to_roles)}
             for p in POLICIES
