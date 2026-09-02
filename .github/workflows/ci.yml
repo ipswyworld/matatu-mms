@@ -144,6 +144,37 @@ jobs:
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
 
+  performance-budget:
+    name: Frontend performance budget
+    runs-on: ubuntu-latest
+    # Enforced, not advisory. Bundle regressions are always gradual — every
+    # individual dependency looks affordable — and a budget nothing blocks
+    # on is a number in a document rather than a constraint.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: matatu-mms-public/package-lock.json
+
+      - name: Build the public app
+        working-directory: matatu-mms-public
+        run: |
+          npm ci
+          npm run build
+        env:
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+          SESSION_SECRET: ci-only-not-a-real-secret
+
+      - name: Check first-load JS against the budget
+        # The passenger app specifically: it is the one used on lower-end
+        # Android over mobile data, where bundle size decides whether the
+        # app opens at all. The staff apps run on desktops in county
+        # offices and are held to a looser standard.
+        run: node scripts/check-bundle-budget.mjs matatu-mms-public --budget-kb=200
+
   security-scan:
     name: Dependency + container vulnerability scan
     runs-on: ubuntu-latest

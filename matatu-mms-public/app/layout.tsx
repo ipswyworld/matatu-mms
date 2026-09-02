@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import { LanguageProvider } from "@/components/LanguageProvider";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 
 // Set NEXT_PUBLIC_SITE_URL once this deploys to a real domain — canonical
 // URLs and Open Graph images resolve against it.
@@ -14,6 +15,26 @@ export const metadata: Metadata = {
     template: "%s | Matatu Management System",
   },
   description: "Fleet registration, live GPS telemetry, seat booking, fare compliance and enforcement for Nairobi County's matatu sector.",
+  // Installable on a phone (Readiness List §11) — lower friction than an
+  // app-store download, and works better on the lower-end Android devices
+  // common among this user base.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Nairobi Matatu",
+  },
+};
+
+// Separate export per Next 14: viewport and themeColor moved out of
+// metadata, and leaving them there logs a warning without taking effect.
+export const viewport: Viewport = {
+  themeColor: "#0F5132",
+  width: "device-width",
+  initialScale: 1,
+  // Not locked: pinch-zoom is an accessibility requirement (WCAG 1.4.4),
+  // and disabling it is a common and avoidable failure in mobile web apps.
+  maximumScale: 5,
 };
 
 const governmentOfficeSchema = {
@@ -53,6 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen">
         <LanguageProvider>{children}</LanguageProvider>
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );
