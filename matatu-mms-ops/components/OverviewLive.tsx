@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, CircleDashed, Radio, WifiOff, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDashed, PowerOff, Radio, WifiOff, XCircle } from "lucide-react";
 import { useOpsStream } from "@/lib/useOpsStream";
 import type { DependencyState, OpsSnapshot, SeriesPoint } from "@/lib/types";
 
@@ -35,6 +35,37 @@ export default function OverviewLive({ initial }: { initial: OpsSnapshot | null 
         <StreamBadge status={status} lastEventAt={lastEventAt} />
       </div>
 
+      {/* An active maintenance window or engaged kill switch must be the
+          first thing an operator sees — otherwise the obvious question
+          during an incident ("is this us?") goes unanswered. */}
+      {snapshot.controls?.maintenance.enabled && (
+        <div className="rounded-lg border border-county-red/30 bg-county-red/5 px-4 py-3 flex items-start gap-2">
+          <PowerOff size={15} className="text-county-red shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-county-red">
+              Maintenance mode is ACTIVE (scope: {snapshot.controls.maintenance.scope})
+            </div>
+            <p className="text-[11px] text-black/60 mt-0.5">
+              {snapshot.controls.maintenance.scope === "all"
+                ? "All traffic is being rejected, staff included."
+                : "Public traffic is being rejected. Staff endpoints remain reachable."}{" "}
+              Turn it off from Config.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {(snapshot.controls?.killSwitches ?? []).some((k) => k.killed) && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800 flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" />
+          Kill switches engaged:{" "}
+          {snapshot.controls.killSwitches
+            .filter((k) => k.killed)
+            .map((k) => k.feature)
+            .join(", ")}
+        </div>
+      )}
+
       {/* A stale feed must be obvious. The single worst failure for this
           page is showing old numbers that look current. */}
       {stale && (
@@ -56,7 +87,17 @@ export default function OverviewLive({ initial }: { initial: OpsSnapshot | null 
           sub={`${snapshot.metrics.serverErrorCount} server errors`}
           alarming={snapshot.metrics.errorRate > 0.05}
         />
-        <Metric label="p95 latency" value={snapshot.metrics.p95Ms === null ? "—" : `${snapshot.metrics.p95Ms} ms`} sub={snapshot.metrics.p50Ms === null ? "no samples" : `p50 ${snapshot.metrics.p50Ms} ms`} />
+        <Metric
+          label="p95 latency"
+          value={snapshot.metrics.p95Ms === null ? "—" : `${snapshot.metrics.p95Ms} ms`}
+          sub={
+            snapshot.metrics.latencyIsWorstInstance
+              ? `worst of ${snapshot.metrics.instanceCount} replicas`
+              : snapshot.metrics.p50Ms === null
+                ? "no samples"
+                : `p50 ${snapshot.metrics.p50Ms} ms`
+          }
+        />
         <Metric
           label="Queue"
           value={String(snapshot.queue.queued + snapshot.queue.inProgress)}

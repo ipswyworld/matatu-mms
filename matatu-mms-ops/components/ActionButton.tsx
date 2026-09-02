@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { AlertTriangle, Loader2, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, KeyRound, Loader2, ShieldAlert, X } from "lucide-react";
 import { ACTION_CLASS_META, actionFor, reversibilityText } from "@/lib/opsActions";
+import { reauthenticateAction } from "@/lib/actions";
 
 interface ActionButtonProps {
   /** Key into OPS_ACTIONS — carries the safety metadata. */
@@ -10,8 +11,9 @@ interface ActionButtonProps {
   /** What is being acted on, shown verbatim in the confirmation. */
   target: string;
   /** Runs after confirmation. `reason` is guaranteed non-empty for
-   *  Elevated and Critical actions, and empty for Routine ones. */
-  onConfirm: (reason: string) => Promise<{ error?: string } | void>;
+   *  Elevated and Critical actions, and empty for Routine ones.
+   *  `reauthToken` is present only for Critical actions. */
+  onConfirm: (reason: string, reauthToken?: string) => Promise<{ error?: string } | void>;
   children?: React.ReactNode;
   className?: string;
   disabled?: boolean;
@@ -52,6 +54,8 @@ export default function ActionButton({
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [typed, setTyped] = useState("");
+  const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -70,11 +74,14 @@ export default function ActionButton({
 
   const reasonOk = !meta.requiresReason || reason.trim().length >= 3;
   const typedOk = !meta.requiresTypedConfirm || typed.trim() === target.trim();
-  const canSubmit = reasonOk && typedOk && !pending;
+  const reauthOk = !meta.requiresReauth || password.length > 0;
+  const canSubmit = reasonOk && typedOk && reauthOk && !pending;
 
   function reset() {
     setReason("");
     setTyped("");
+    setPassword("");
+    setMfaCode("");
     setError(null);
   }
 
@@ -82,9 +89,26 @@ export default function ActionButton({
     if (!canSubmit) return;
     setError(null);
     startTransition(async () => {
-      const result = await onConfirm(reason.trim());
+      let reauthToken: string | undefined;
+
+      // Step-up authentication for Critical actions. Done here rather than
+      // in each action so no Critical action can ship without it, and the
+      // password never leaves this dialog — it is exchanged for a
+      // short-lived token immediately.
+      if (meta.requiresReauth) {
+        const auth = await reauthenticateAction(password, mfaCode.trim() || undefined);
+        if (auth.error || !auth.reauthToken) {
+          setError(auth.error || "Re-authentication failed.");
+          setPassword("");
+          return;
+        }
+        reauthToken = auth.reauthToken;
+      }
+
+      const result = await onConfirm(reason.trim(), reauthToken);
       if (result && "error" in result && result.error) {
         setError(result.error);
+        setPassword("");
         return;
       }
       setOpen(false);
@@ -178,6 +202,46 @@ export default function ActionButton({
                     onChange={(e) => setTyped(e.target.value)}
                     autoComplete="off"
                   />
+                </div>
+              )}
+
+              {meta.requiresReauth && (
+                <div className="rounded-lg border border-county-red/25 bg-county-red/[0.03] p-3 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-county-red">
+                    <KeyRound size={12} />
+                    Confirm it&apos;s you
+                  </div>
+                  <p className="text-[10px] text-black/55 leading-relaxed">
+                    Critical actions re-check your password, so an unattended session cannot fire one.
+                  </p>
+                  <div>
+                    <label className="label" htmlFor={`pw-${actionId}`}>
+                      Password
+                    </label>
+                    <input
+                      id={`pw-${actionId}`}
+                      type="password"
+                      className="input text-xs"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                  <div>
+                    <label className="label" htmlFor={`mfa-${actionId}`}>
+                      Authenticator code <span className="text-black/40 font-normal">(if enrolled)</span>
+                    </label>
+                    <input
+                      id={`mfa-${actionId}`}
+                      className="input text-xs font-mono"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      autoComplete="one-time-code"
+                      inputMode="numeric"
+                      placeholder="123456"
+                    />
+                  </div>
                 </div>
               )}
 

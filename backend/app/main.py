@@ -138,12 +138,21 @@ async def lifespan(app: FastAPI):
     # from Postgres BEFORE serving any request, so a restarted process
     # doesn't silently revert every override to its coded default, then
     # start the refresh loop that keeps replicas converged.
-    from app import ops_limits
+    from app import ops_breakers, ops_controls, ops_limits, ops_metrics
     async with AsyncSessionLocal() as session:
         await ops_limits.load_from_db(session)
+        await ops_controls.load_from_db(session)
     await ops_limits.publish_to_redis()
+    await ops_controls.publish_to_redis()
     ops_limits.start_refresh_task()
-    logger.info("Live rate limit store loaded.")
+    ops_controls.start_refresh_task()
+    # Breaker overrides and request metrics are shared through Redis so the
+    # ops console sees this process even when it runs as a separate control
+    # plane (Ops Console Rebuild Spec §3.1 Path A).
+    await ops_breakers.load_overrides()
+    ops_breakers.start_refresh_task()
+    ops_metrics.start_publish_task()
+    logger.info("Ops control state loaded (rate limits, system controls, breakers, metrics).")
 
     logger.info("System initialization complete.")
     
@@ -154,8 +163,11 @@ async def lifespan(app: FastAPI):
     telemetry_broadcaster.stop()
     dashboard_broadcaster.stop()
     notifications_broadcaster.stop()
-    from app import ops_limits
+    from app import ops_breakers, ops_controls, ops_limits, ops_metrics
     ops_limits.stop_refresh_task()
+    ops_controls.stop_refresh_task()
+    ops_breakers.stop_refresh_task()
+    ops_metrics.stop_publish_task()
     if event_consumer_task is not None:
         event_consumer_task.cancel()
     if arq_worker_task is not None:
@@ -198,6 +210,30 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
+
+
+# Maintenance mode (app/ops_controls.py) — the Critical-tier lever that
+# takes the system out of service. Registered before the metrics middleware
+# so a rejected request is still counted; ordering matters because Starlette
+# runs the most recently added middleware first.
+#
+# /api/control is always exempt, so an operator can always turn maintenance
+# back off. The lever can never lock out the hand that pulls it.
+@app.middleware("http")
+async def enforce_maintenance_mode(request: Request, call_next):
+    from app import ops_controls
+
+    if ops_controls.blocks_request(request.url.path):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": ops_controls.maintenance_message(),
+                "maintenance": True,
+                "scope": ops_controls.maintenance_scope(),
+            },
+            headers={"Retry-After": "120"},
+        )
+    return await call_next(request)
 
 
 # Rolling request metrics for the ops console's live feed (app/ops_metrics.py).

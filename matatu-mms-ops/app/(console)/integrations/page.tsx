@@ -2,12 +2,16 @@ import type { Metadata } from "next";
 import { getCircuitBreakers, getWebhookDeliveries } from "@/lib/data";
 import CircuitBreakerPanel from "@/components/CircuitBreakerPanel";
 import WebhookDeliveriesPanel from "@/components/WebhookDeliveriesPanel";
+import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Integrations | Ops Console" };
 export const dynamic = "force-dynamic";
 
 export default async function IntegrationsPage() {
-  const [breakers, deliveries] = await Promise.all([getCircuitBreakers(), getWebhookDeliveries()]);
+  const [breakers, deliveries] = await Promise.all([
+    settle(getCircuitBreakers()),
+    settle(getWebhookDeliveries()),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -18,8 +22,17 @@ export default async function IntegrationsPage() {
         </p>
       </div>
 
-      <CircuitBreakerPanel breakers={breakers} />
-      <WebhookDeliveriesPanel deliveries={deliveries} />
+      {breakers.data ? (
+        <CircuitBreakerPanel breakers={breakers.data} />
+      ) : (
+        <PanelError title="Circuit breakers" error={breakers.error!} />
+      )}
+
+      {deliveries.data ? (
+        <WebhookDeliveriesPanel deliveries={deliveries.data} />
+      ) : (
+        <PanelError title="Webhook deliveries" error={deliveries.error!} />
+      )}
     </div>
   );
 }

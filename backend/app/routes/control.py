@@ -42,7 +42,8 @@ from app.database import engine, get_db
 from app.models import RateLimitOverride, User, WebhookLog, WebhookSubscription
 from app.ops_metrics import metrics
 from app.realtime import get_redis
-from app import ops_breakers, ops_limits
+from app import mfa as mfa_lib
+from app import ops_breakers, ops_controls, ops_limits, ops_metrics, ops_reauth
 
 logger = logging.getLogger("app.routes.control")
 router = APIRouter(prefix="/api/control", tags=["Ops Control Plane"])
@@ -75,6 +76,41 @@ class BreakerBody(ReasonBody):
 
 class RevokeSessionsBody(ReasonBody):
     user_id: str
+
+
+class ReauthBody(BaseModel):
+    password: str
+    mfa_code: Optional[str] = None
+
+
+class CriticalBody(ReasonBody):
+    """Every Critical action carries a re-auth token alongside its reason.
+
+    Two-person approval was the original design, but this console is
+    internal and everyone with access is trusted — requiring a second
+    approver would mostly mean nobody is reachable at 3am. Re-auth defends
+    against the threat that actually remains: a session left open on an
+    unlocked laptop, or a stolen cookie.
+    """
+    reauth_token: str
+
+
+class MaintenanceBody(CriticalBody):
+    enabled: bool
+    scope: str = "public"
+    message: Optional[str] = None
+
+
+class KillSwitchBody(CriticalBody):
+    killed: bool
+
+
+def require_reauth(token: str, user: User) -> None:
+    if not ops_reauth.verify(token, user.id):
+        raise HTTPException(
+            status_code=401,
+            detail="Re-authentication required or expired. Confirm your password and try again.",
+        )
 
 
 # --------------------------------------------------------------------------
@@ -157,7 +193,7 @@ async def _dependency_states() -> List[dict]:
 
     # A tripped breaker is a degraded dependency, which is exactly the
     # framing an operator wants rather than a separate list to cross-check.
-    for breaker in ops_breakers.snapshot():
+    for breaker in await ops_breakers.snapshot_cluster():
         states.append({
             "name": breaker["description"] or breaker["name"],
             "status": "degraded" if breaker["effectivelyBlocking"] else "ok",
@@ -175,20 +211,34 @@ async def _dependency_states() -> List[dict]:
 async def _collect_snapshot() -> dict:
     dependencies = await _dependency_states()
     depth = await _queue_depth()
+    # Cluster-wide rather than this process's own numbers: once the control
+    # plane runs as its own process (Spec §3.1 Path A) it serves no user
+    # traffic, so local metrics would read as a permanent zero while the
+    # app replicas were saturated.
+    aggregate = await ops_metrics.aggregate_cluster()
+    controls = ops_controls.snapshot()
+
+    worst = (
+        "down" if any(d["status"] == "down" for d in dependencies)
+        else "degraded" if any(d["status"] == "degraded" for d in dependencies)
+        else "ok"
+    )
+    # An active maintenance window is not an outage, but the overview must
+    # never look green while the public cannot reach the system.
+    if controls["maintenance"]["enabled"] and worst == "ok":
+        worst = "degraded"
+
     return {
         "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "dependencies": dependencies,
-        "metrics": metrics.snapshot(60),
-        "series": metrics.series(60),
+        "metrics": aggregate["metrics"],
+        "series": aggregate["series"],
         "queue": depth,
-        "breakers": ops_breakers.snapshot(),
+        "breakers": await ops_breakers.snapshot_cluster(),
         "rateLimits": list(ops_limits.current_limits().values()),
-        "recentErrors": metrics.recent_errors(),
-        "worstStatus": (
-            "down" if any(d["status"] == "down" for d in dependencies)
-            else "degraded" if any(d["status"] == "degraded" for d in dependencies)
-            else "ok"
-        ),
+        "recentErrors": aggregate["recentErrors"],
+        "controls": controls,
+        "worstStatus": worst,
     }
 
 
@@ -333,12 +383,22 @@ async def override_circuit_breaker(
     current_user: User = Depends(requires_permission("manage_system_config")),
     db: AsyncSession = Depends(get_db),
 ):
-    breaker = ops_breakers.get(name)
-    if breaker is None:
-        raise HTTPException(status_code=404, detail=f"No registered circuit breaker named {name!r}")
-    previous = breaker.override
+    # Deliberately does NOT require the breaker to exist in this process:
+    # a split control plane makes no webhook calls of its own, so its local
+    # registry is empty and requiring local registration would make every
+    # override from it fail. The name is validated against what the cluster
+    # has actually published instead.
+    known = await ops_breakers.known_names()
+    if name not in known:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No circuit breaker named {name!r} is registered anywhere in the cluster",
+        )
+
+    local = ops_breakers.get(name)
+    previous = local.override if local is not None else "auto"
     try:
-        ops_breakers.set_override(name, body.override)
+        await ops_breakers.set_override(name, body.override)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -349,7 +409,7 @@ async def override_circuit_breaker(
         new_values={"override": body.override, "reason": body.reason},
     )
     await db.commit()
-    return ops_breakers.snapshot()
+    return await ops_breakers.snapshot_cluster()
 
 
 # --------------------------------------------------------------------------
@@ -589,6 +649,205 @@ async def unlock_user(
     )
     await db.commit()
     return {"userId": user_id, "isActive": True}
+
+
+# --------------------------------------------------------------------------
+# Critical tier: re-authentication + system-wide controls
+# --------------------------------------------------------------------------
+
+@router.post("/reauth")
+async def reauthenticate(
+    body: ReauthBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Step-up authentication, required before any Critical action.
+
+    Verifies the operator's password, and their MFA code when enrolled.
+    Returns a short-lived token that Critical endpoints accept, proving the
+    person at the keyboard is the account holder rather than whoever found
+    an unlocked laptop.
+    """
+    from app.auth import verify_password
+
+    if not await verify_password(body.password, current_user.password):
+        await _record_reauth_failure(db, current_user, "invalid_password")
+        raise HTTPException(status_code=401, detail="That password is incorrect.")
+
+    if current_user.mfa_enabled and current_user.totp_secret:
+        if not body.mfa_code:
+            raise HTTPException(status_code=401, detail="Enter your authenticator code to continue.")
+        if not mfa_lib.verify_totp_code(mfa_lib.decrypt_secret(current_user.totp_secret), body.mfa_code):
+            await _record_reauth_failure(db, current_user, "invalid_mfa_code")
+            raise HTTPException(status_code=401, detail="That authenticator code is incorrect.")
+
+    stage_audit_log(
+        db, resource_type="ops_reauth", resource_id=current_user.id, action="REAUTH_SUCCESS",
+        user_id=current_user.id,
+    )
+    await db.commit()
+    return ops_reauth.mint(current_user.id)
+
+
+async def _record_reauth_failure(db: AsyncSession, user: User, reason: str) -> None:
+    """A failed step-up on the most privileged console in the system is a
+    security signal, not just a typo — record it either way."""
+    stage_audit_log(
+        db, resource_type="ops_reauth", resource_id=user.id, action="REAUTH_FAILED",
+        user_id=user.id, new_values={"reason": reason},
+    )
+    await db.commit()
+
+
+@router.get("/system-controls")
+async def get_system_controls(
+    current_user: User = Depends(requires_permission("view_system_health")),
+):
+    return ops_controls.snapshot()
+
+
+async def _persist_control(
+    db: AsyncSession, key: str, enabled: bool, value: dict, reason: str, user_id: str
+) -> None:
+    from app.models import SystemControl
+
+    existing = (
+        await db.execute(select(SystemControl).where(SystemControl.key == key))
+    ).scalars().first()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if existing:
+        existing.enabled = enabled
+        existing.value = json.dumps(value)
+        existing.reason = reason
+        existing.updated_by = user_id
+        existing.updated_at = now
+    else:
+        db.add(SystemControl(
+            key=key, enabled=enabled, value=json.dumps(value),
+            reason=reason, updated_by=user_id, updated_at=now,
+        ))
+
+
+@router.post("/maintenance-mode")
+async def set_maintenance_mode(
+    body: MaintenanceBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Takes the system out of service, or puts it back.
+
+    Scope "public" leaves staff endpoints reachable so the people handling
+    the incident can keep working; "all" is a genuine full stop. The ops
+    control plane itself is always exempt — the lever can never lock out
+    the hand that pulls it.
+    """
+    require_reauth(body.reauth_token, current_user)
+
+    if body.scope not in ops_controls.MAINTENANCE_SCOPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Scope must be one of: {', '.join(ops_controls.MAINTENANCE_SCOPES)}",
+        )
+
+    was_enabled = ops_controls.is_maintenance_active()
+    value = {"scope": body.scope}
+    if body.message:
+        value["message"] = body.message
+
+    await _persist_control(db, ops_controls.MAINTENANCE_KEY, body.enabled, value, body.reason, current_user.id)
+    stage_audit_log(
+        db, resource_type="system_control", resource_id=ops_controls.MAINTENANCE_KEY,
+        action="ENABLE" if body.enabled else "DISABLE",
+        user_id=current_user.id,
+        old_values={"enabled": was_enabled},
+        new_values={"enabled": body.enabled, "scope": body.scope, "reason": body.reason},
+    )
+    await db.commit()
+
+    ops_controls.apply_local(ops_controls.MAINTENANCE_KEY, body.enabled, value)
+    await ops_controls.publish_to_redis()
+    logger.warning(
+        "Maintenance mode %s (scope=%s) by %s: %s",
+        "ENABLED" if body.enabled else "DISABLED", body.scope, current_user.id, body.reason,
+    )
+    return ops_controls.snapshot()
+
+
+@router.post("/kill-switch/{feature}")
+async def set_kill_switch(
+    feature: str,
+    body: KillSwitchBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sheds load by turning one expensive capability off cluster-wide."""
+    require_reauth(body.reauth_token, current_user)
+
+    if feature not in ops_controls.KILL_SWITCHES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown kill switch {feature!r}. Known: {', '.join(ops_controls.KILL_SWITCHES)}",
+        )
+
+    key = f"killswitch:{feature}"
+    was_killed = ops_controls.is_killed(feature)
+
+    await _persist_control(db, key, body.killed, {}, body.reason, current_user.id)
+    stage_audit_log(
+        db, resource_type="system_control", resource_id=key,
+        action="ENABLE" if body.killed else "DISABLE",
+        user_id=current_user.id,
+        old_values={"killed": was_killed},
+        new_values={"killed": body.killed, "reason": body.reason},
+    )
+    await db.commit()
+
+    ops_controls.apply_local(key, body.killed, {})
+    await ops_controls.publish_to_redis()
+    logger.warning(
+        "Kill switch %r %s by %s: %s",
+        feature, "ENGAGED" if body.killed else "RELEASED", current_user.id, body.reason,
+    )
+    return ops_controls.snapshot()
+
+
+@router.post("/sessions/revoke-all")
+async def revoke_all_sessions_endpoint(
+    body: CriticalBody,
+    current_user: User = Depends(requires_permission("manage_admins")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Signs out every account in the system — the containment action for a
+    suspected broad compromise, and maximally disruptive.
+
+    The operator's own session is revoked too. That is deliberate: exempting
+    it would leave exactly one live session behind during a compromise
+    response, and if the operator's own account is the compromised one, the
+    exemption would defeat the entire action.
+    """
+    require_reauth(body.reauth_token, current_user)
+
+    from app.session_revocation import revoke_all_sessions
+
+    users = (await db.execute(select(User))).scalars().all()
+    revoked = 0
+    failed = 0
+    for user in users:
+        try:
+            await revoke_all_sessions(user.id)
+            revoked += 1
+        except Exception as e:
+            logger.warning("Could not revoke sessions for %s: %s", user.id, e)
+            failed += 1
+
+    stage_audit_log(
+        db, resource_type="user", resource_id="*", action="REVOKE_ALL_SESSIONS",
+        user_id=current_user.id,
+        new_values={"revokedCount": revoked, "failedCount": failed, "reason": body.reason},
+    )
+    await db.commit()
+    logger.warning("ALL SESSIONS REVOKED by %s (%d accounts): %s", current_user.id, revoked, body.reason)
+    return {"revoked": revoked, "failed": failed, "yourSessionRevoked": True}
 
 
 @router.post("/users/{user_id}/reset-mfa")

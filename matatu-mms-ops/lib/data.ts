@@ -2,18 +2,29 @@ import { redirect } from "next/navigation";
 import { readSession } from "./session";
 import {
   SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview,
-  OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery,
+  OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery, SystemControls,
 } from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 const AUDIT_LOG_PAGE_SIZE = 50;
+
+// Ops Console Rebuild Spec §3.1 (Path A): once the control plane runs as
+// its own process, /api/control lives there rather than on the main API.
+// Falls back to BACKEND_URL so the un-split single-process deployment
+// (Render today) keeps working with no configuration at all.
+export const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || BACKEND_URL;
+
+/** Control endpoints go to the control plane; everything else to the main API. */
+export function baseUrlFor(path: string): string {
+  return path.startsWith("/api/control") ? CONTROL_PLANE_URL : BACKEND_URL;
+}
 
 async function apiFetch<T>(path: string): Promise<T> {
   const session = readSession();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
-  const res = await fetch(`${BACKEND_URL}${path}`, { headers, cache: "no-store" });
+  const res = await fetch(`${baseUrlFor(path)}${path}`, { headers, cache: "no-store" });
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) redirect("/login");
@@ -84,4 +95,8 @@ export async function getCircuitBreakers(): Promise<CircuitBreakerState[]> {
 
 export async function getWebhookDeliveries(): Promise<WebhookDelivery[]> {
   return apiFetch<WebhookDelivery[]>("/api/control/webhooks/recent?limit=50");
+}
+
+export async function getSystemControls(): Promise<SystemControls> {
+  return apiFetch<SystemControls>("/api/control/system-controls");
 }

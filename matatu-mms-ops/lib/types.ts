@@ -132,6 +132,10 @@ export interface RequestMetrics {
   p50Ms: number | null;
   p95Ms: number | null;
   p99Ms: number | null;
+  /** True when more than one process reported: percentiles cannot be merged
+   *  validly, so the figure shown is the worst instance's, not a blend. */
+  latencyIsWorstInstance?: boolean;
+  instanceCount?: number;
 }
 
 export interface SeriesPoint {
@@ -187,6 +191,24 @@ export interface WebhookDelivery {
   succeeded: boolean;
 }
 
+export interface MaintenanceState {
+  enabled: boolean;
+  scope: string;      // "public" | "all"
+  message: string;
+  scopes: string[];
+}
+
+export interface KillSwitchState {
+  feature: string;
+  description: string;
+  killed: boolean;
+}
+
+export interface SystemControls {
+  maintenance: MaintenanceState;
+  killSwitches: KillSwitchState[];
+}
+
 /** One tick of the live feed — the shape both `/api/control/overview` and
  *  each SSE `snapshot` event carry, so first paint and live updates use
  *  exactly the same renderer. */
@@ -199,5 +221,6 @@ export interface OpsSnapshot {
   breakers: CircuitBreakerState[];
   rateLimits: RateLimitState[];
   recentErrors: RecentError[];
+  controls: SystemControls;
   worstStatus: DependencyStatus;
 }

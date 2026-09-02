@@ -14,13 +14,20 @@ import { FeatureFlag } from "./types";
 // just hidden in the UI) since the backend itself has no concept of "this
 // request came from the ops console."
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+// Control actions go to the control plane once it runs as its own process
+// (Spec §3.1 Path A); falls back to the main API when unsplit.
+const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || BACKEND_URL;
+
+function baseUrlFor(path: string): string {
+  return path.startsWith("/api/control") ? CONTROL_PLANE_URL : BACKEND_URL;
+}
 
 async function apiWrite<T = any>(path: string, method: string, body?: any): Promise<T> {
   const session = readSession();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
-  const res = await fetch(`${BACKEND_URL}${path}`, {
+  const res = await fetch(`${baseUrlFor(path)}${path}`, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -301,4 +308,107 @@ export async function resetMfaAction(userId: string, reason: string): Promise<Ac
     "Could not reset MFA for this account.",
     "/sessions",
   );
+}
+
+// --- Critical tier (Phase 5) ----------------------------------------------
+
+/**
+ * Step-up authentication for Critical actions.
+ *
+ * The password is exchanged for a short-lived token inside this Server
+ * Action, so it is posted once to the control plane and never stored,
+ * logged, or held in client state beyond the dialog that collected it.
+ */
+export async function reauthenticateAction(
+  password: string,
+  mfaCode?: string,
+): Promise<{ reauthToken?: string; error?: string }> {
+  const session = readSession();
+  if (!session?.token) return { error: "Your session has expired. Sign in again." };
+
+  // Deliberately does NOT go through apiWrite. That helper treats every 401
+  // as "session expired" and calls redirect("/login") — correct for ordinary
+  // calls, badly wrong here, where a 401 means "that password was wrong".
+  // Routing re-auth through it both showed the operator a raw NEXT_REDIRECT
+  // string instead of a real message, and would have signed them out for a
+  // single typo in the middle of an incident.
+  try {
+    const res = await fetch(`${CONTROL_PLANE_URL}/api/control/reauth`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({ password, mfa_code: mfaCode }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      let detail = "Could not confirm your identity.";
+      try {
+        detail = (await res.json()).detail || detail;
+      } catch {}
+      return { error: detail };
+    }
+
+    const data = await res.json();
+    return { reauthToken: data.reauthToken };
+  } catch {
+    return { error: "Could not reach the control plane to confirm your identity." };
+  }
+}
+
+export async function setMaintenanceModeAction(
+  enabled: boolean,
+  scope: string,
+  message: string | null,
+  reason: string,
+  reauthToken?: string,
+): Promise<ActionResult> {
+  return runAction(
+    () =>
+      apiWrite("/api/control/maintenance-mode", "POST", {
+        enabled,
+        scope,
+        message: message || undefined,
+        reason,
+        reauth_token: reauthToken,
+      }),
+    "Could not change maintenance mode.",
+    "/config",
+  );
+}
+
+export async function setKillSwitchAction(
+  feature: string,
+  killed: boolean,
+  reason: string,
+  reauthToken?: string,
+): Promise<ActionResult> {
+  return runAction(
+    () =>
+      apiWrite(`/api/control/kill-switch/${encodeURIComponent(feature)}`, "POST", {
+        killed,
+        reason,
+        reauth_token: reauthToken,
+      }),
+    "Could not change this kill switch.",
+    "/config",
+  );
+}
+
+export async function revokeAllSessionsAction(
+  reason: string,
+  reauthToken?: string,
+): Promise<ActionResult> {
+  // Deliberately no revalidatePath: this revokes the operator's own session
+  // too, so the next request will fail auth and redirect to /login. Trying
+  // to re-render the current page first would just surface a confusing
+  // error before the redirect.
+  try {
+    await apiWrite("/api/control/sessions/revoke-all", "POST", { reason, reauth_token: reauthToken });
+  } catch (err: any) {
+    return { error: err.message || "Could not revoke all sessions." };
+  }
+  return {};
 }

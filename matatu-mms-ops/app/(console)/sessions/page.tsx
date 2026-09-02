@@ -3,12 +3,16 @@ import { getStaffUsers, getLoginOverview } from "@/lib/data";
 import SessionControlPanel from "@/components/SessionControlPanel";
 import PrivilegedActivityPanel from "@/components/PrivilegedActivityPanel";
 import ImpersonationPanel from "@/components/ImpersonationPanel";
+import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Sessions | Ops Console" };
 export const dynamic = "force-dynamic";
 
 export default async function SessionsPage() {
-  const [staffUsers, loginOverview] = await Promise.all([getStaffUsers(), getLoginOverview()]);
+  const [staffUsers, loginOverview] = await Promise.all([
+    settle(getStaffUsers()),
+    settle(getLoginOverview()),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -19,9 +23,20 @@ export default async function SessionsPage() {
         </p>
       </div>
 
-      <PrivilegedActivityPanel overview={loginOverview} />
-      <SessionControlPanel users={staffUsers} />
-      <ImpersonationPanel staff={staffUsers} />
+      {loginOverview.data ? (
+        <PrivilegedActivityPanel overview={loginOverview.data} />
+      ) : (
+        <PanelError title="Privileged activity" error={loginOverview.error!} />
+      )}
+
+      {staffUsers.data ? (
+        <>
+          <SessionControlPanel users={staffUsers.data} />
+          <ImpersonationPanel staff={staffUsers.data} />
+        </>
+      ) : (
+        <PanelError title="Account controls" error={staffUsers.error!} />
+      )}
     </div>
   );
 }

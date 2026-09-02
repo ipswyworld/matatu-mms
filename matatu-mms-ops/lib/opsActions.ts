@@ -43,7 +43,13 @@ export interface ActionDescriptor {
 
 export const ACTION_CLASS_META: Record<
   ActionClass,
-  { label: string; chip: string; requiresReason: boolean; requiresTypedConfirm: boolean }
+  {
+    label: string;
+    chip: string;
+    requiresReason: boolean;
+    requiresTypedConfirm: boolean;
+    requiresReauth?: boolean;
+  }
 > = {
   routine: {
     label: "Routine",
@@ -58,14 +64,19 @@ export const ACTION_CLASS_META: Record<
     requiresTypedConfirm: false,
   },
   critical: {
-    // Not yet used: Critical actions arrive in Phase 5, deliberately after
-    // the approval and re-authentication machinery that makes them safe.
-    // Declared now so the classification is complete and the renderer does
-    // not need changing when they land.
+    // Typed confirmation, a reason, AND step-up re-authentication.
+    //
+    // Two-person approval was the original design. It was dropped because
+    // this console is internal and everyone with access is trusted, so
+    // requiring a second approver would mostly mean nobody is reachable at
+    // 3am — a control that cannot be used during an incident is not a
+    // safety measure. Re-auth defends the threat that actually remains: a
+    // session left open on an unlocked laptop, or a stolen cookie.
     label: "Critical",
     chip: "bg-county-red/10 text-county-red",
     requiresReason: true,
     requiresTypedConfirm: true,
+    requiresReauth: true,
   },
 };
 
@@ -199,6 +210,45 @@ export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
   },
 
   // --- Impersonation ------------------------------------------------------
+  // --- Critical tier (Phase 5) -------------------------------------------
+  "maintenance.enable": {
+    id: "maintenance.enable",
+    label: "Enable maintenance mode",
+    actionClass: "critical",
+    affectedScope: "Every public request, cluster-wide",
+    reversible: true,
+    reversalHint: "Disable maintenance mode.",
+    detail:
+      'Scope "public" leaves staff endpoints reachable so the people handling the incident can keep working. Scope "all" is a genuine full stop. The ops control plane is always exempt, so this can always be turned back off.',
+  },
+  "maintenance.disable": {
+    id: "maintenance.disable",
+    label: "Disable maintenance mode",
+    actionClass: "critical",
+    affectedScope: "Restores service cluster-wide",
+    reversible: true,
+    reversalHint: "Enable maintenance mode again.",
+  },
+  "killSwitch.toggle": {
+    id: "killSwitch.toggle",
+    label: "Toggle kill switch",
+    actionClass: "critical",
+    affectedScope: "One capability, disabled for every user cluster-wide",
+    reversible: true,
+    reversalHint: "Toggle the switch back.",
+    detail:
+      "A load-shedding lever, not a feature flag: it turns an expensive capability off during an incident. Users of that feature will see it stop working.",
+  },
+  "sessions.revokeAll": {
+    id: "sessions.revokeAll",
+    label: "Revoke all sessions",
+    actionClass: "critical",
+    affectedScope: "Every account in the system, including your own",
+    reversible: false,
+    detail:
+      "Signs out every user everywhere. Your own session is revoked too — exempting it would leave one live session behind during a compromise response, and would defeat the action entirely if your account is the compromised one. You will need to sign in again.",
+  },
+
   "impersonate.start": {
     id: "impersonate.start",
     label: "Impersonate",

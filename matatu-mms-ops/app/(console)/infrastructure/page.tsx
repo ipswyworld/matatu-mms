@@ -5,6 +5,7 @@ import { getRenderServiceMatrix } from "@/lib/render";
 import ServiceHealthMatrix from "@/components/ServiceHealthMatrix";
 import AlertingSummary from "@/components/AlertingSummary";
 import OperatorOnboardingLauncher from "@/components/OperatorOnboardingLauncher";
+import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Infrastructure | Ops Console" };
 export const dynamic = "force-dynamic";
@@ -29,7 +30,10 @@ function StatusBadge({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; 
 }
 
 export default async function InfrastructurePage() {
-  const [health, renderServices] = await Promise.all([getSystemHealth(), getRenderServiceMatrix()]);
+  const [health, renderServices] = await Promise.all([
+    settle(getSystemHealth()),
+    settle(getRenderServiceMatrix()),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -41,63 +45,77 @@ export default async function InfrastructurePage() {
         </p>
       </div>
 
-      <ServiceHealthMatrix services={renderServices} />
+      {renderServices.data ? (
+        <ServiceHealthMatrix services={renderServices.data} />
+      ) : (
+        <PanelError title="Service health matrix" error={renderServices.error!} />
+      )}
 
       <AlertingSummary />
 
-      <div className="card p-5 space-y-4">
-        <div>
-          <h3 className="font-bold text-sm text-county-black">Security Configuration</h3>
-          <p className="text-xs text-black/50 mt-0.5">Whether each secret was explicitly set, never its value.</p>
-        </div>
-        <div className="grid sm:grid-cols-3 gap-3">
-          <div className="p-3 rounded-lg border border-black/10 bg-black/[0.01] flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-county-black">SECRET_KEY</span>
-            <StatusBadge ok={health.config.secretKeyConfigured} okLabel="SET" badLabel="AUTO-GENERATED" />
-          </div>
-          <div className="p-3 rounded-lg border border-black/10 bg-black/[0.01] flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-county-black">NAIROBIPAY_CALLBACK_SECRET</span>
-            <StatusBadge ok={health.config.nairobiPayCallbackSecretConfigured} okLabel="SET" badLabel="AUTO-GENERATED" />
-          </div>
-          <div className="p-3 rounded-lg border border-black/10 bg-black/[0.01] flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-county-black">SENTRY_DSN</span>
-            <StatusBadge ok={health.config.sentryConfigured} okLabel="SET" badLabel="NOT SET" />
-          </div>
-        </div>
-        {(!health.config.secretKeyConfigured || !health.config.nairobiPayCallbackSecretConfigured) && (
-          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Auto-generated secrets are regenerated on every restart, invalidating existing sessions and tokens. Set
-            these explicitly before deploying.
-          </p>
-        )}
-      </div>
-
-      <div className="card p-5 space-y-4">
-        <div>
-          <h3 className="font-bold text-sm text-county-black">Access Control Policies (RBAC + ABAC)</h3>
-          <p className="text-xs text-black/50 mt-0.5">
-            Role permissions live in the code&apos;s permission matrix. These are the additional per-record rules
-            layered on top.
-          </p>
-        </div>
-        <div className="space-y-2.5">
-          {health.abacPolicies.map((p) => (
-            <div key={p.id} className="p-3 rounded-lg border border-black/10 bg-black/[0.01]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-mono text-[11px] font-bold text-county-green">{p.id}</span>
-                <div className="flex gap-1.5 flex-wrap">
-                  {p.appliesToRoles.map((r) => (
-                    <span key={r} className="badge bg-black/5 text-black/60 text-[9px] font-bold">
-                      {r}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <p className="text-xs text-black/70 mt-1.5">{p.description}</p>
+      {health.data ? (
+        <>
+          <div className="card p-5 space-y-4">
+            <div>
+              <h3 className="font-bold text-sm text-county-black">Security Configuration</h3>
+              <p className="text-xs text-black/50 mt-0.5">Whether each secret was explicitly set, never its value.</p>
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg border border-black/10 bg-black/[0.01] flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-county-black">SECRET_KEY</span>
+                <StatusBadge ok={health.data.config.secretKeyConfigured} okLabel="SET" badLabel="AUTO-GENERATED" />
+              </div>
+              <div className="p-3 rounded-lg border border-black/10 bg-black/[0.01] flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-county-black">NAIROBIPAY_CALLBACK_SECRET</span>
+                <StatusBadge
+                  ok={health.data.config.nairobiPayCallbackSecretConfigured}
+                  okLabel="SET"
+                  badLabel="AUTO-GENERATED"
+                />
+              </div>
+              <div className="p-3 rounded-lg border border-black/10 bg-black/[0.01] flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-county-black">SENTRY_DSN</span>
+                <StatusBadge ok={health.data.config.sentryConfigured} okLabel="SET" badLabel="NOT SET" />
+              </div>
+            </div>
+            {(!health.data.config.secretKeyConfigured || !health.data.config.nairobiPayCallbackSecretConfigured) && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Auto-generated secrets are regenerated on every restart, invalidating existing sessions and tokens.
+                Set these explicitly before deploying.
+              </p>
+            )}
+          </div>
+
+          <div className="card p-5 space-y-4">
+            <div>
+              <h3 className="font-bold text-sm text-county-black">Access Control Policies (RBAC + ABAC)</h3>
+              <p className="text-xs text-black/50 mt-0.5">
+                Role permissions live in the code&apos;s permission matrix. These are the additional per-record rules
+                layered on top.
+              </p>
+            </div>
+            <div className="space-y-2.5">
+              {health.data.abacPolicies.map((p) => (
+                <div key={p.id} className="p-3 rounded-lg border border-black/10 bg-black/[0.01]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-[11px] font-bold text-county-green">{p.id}</span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {p.appliesToRoles.map((r) => (
+                        <span key={r} className="badge bg-black/5 text-black/60 text-[9px] font-bold">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-black/70 mt-1.5">{p.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <PanelError title="System health" error={health.error!} />
+      )}
 
       <div className="card p-5 space-y-4">
         <div>
@@ -108,7 +126,11 @@ export default async function InfrastructurePage() {
           </p>
         </div>
         {GRAFANA_EMBED_URL ? (
-          <iframe src={GRAFANA_EMBED_URL} title="Grafana dashboards" className="w-full h-[600px] rounded-lg border border-black/10" />
+          <iframe
+            src={GRAFANA_EMBED_URL}
+            title="Grafana dashboards"
+            className="w-full h-[600px] rounded-lg border border-black/10"
+          />
         ) : (
           <p className="text-[11px] text-black/50 bg-black/[0.02] border border-black/10 rounded-lg px-3 py-2.5">
             Not configured — set <span className="font-mono font-semibold">GRAFANA_EMBED_URL</span> for this service

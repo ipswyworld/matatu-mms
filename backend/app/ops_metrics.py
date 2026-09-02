@@ -15,12 +15,30 @@ traffic spike costs no extra memory, at the cost of p95 becoming an estimate
 over a sample rather than an exact figure. For an operations dashboard that
 is the correct trade.
 """
+import asyncio
+import json
+import logging
+import os
+import socket
 import time
 from collections import deque
 from typing import Deque, Dict, List, Optional
 
+logger = logging.getLogger("app.ops_metrics")
+
 WINDOW_SECONDS = 300           # 5 minutes of history
 MAX_SAMPLES_PER_BUCKET = 100   # caps memory under load; p95 becomes sampled
+
+# Cross-process publication (Phase 4). A split control-plane process serves
+# no user traffic of its own, so without this the overview would report
+# zero requests while the app processes were saturated. Each process
+# publishes its own rolling snapshot under a short TTL; the console
+# aggregates whatever is currently alive, which also gives a correct
+# cluster-wide view once there is more than one replica.
+PUBLISH_KEY_PREFIX = "ops:metrics:"
+PUBLISH_TTL_SECONDS = 20
+PUBLISH_INTERVAL_SECONDS = 5
+INSTANCE_ID = f"{socket.gethostname()}:{os.getpid()}"
 
 
 class _Bucket:
@@ -119,3 +137,117 @@ class RequestMetrics:
 
 
 metrics = RequestMetrics()
+
+_publish_task: Optional[asyncio.Task] = None
+
+
+async def publish_snapshot() -> None:
+    """Publishes this process's rolling window to Redis under a short TTL,
+    so a replica that dies drops out of the aggregate instead of lingering."""
+    from app.realtime import get_redis
+    try:
+        r = await get_redis()
+        payload = {
+            "instance": INSTANCE_ID,
+            "metrics": metrics.snapshot(60),
+            "series": metrics.series(60),
+            "recentErrors": metrics.recent_errors()[:20],
+        }
+        await r.set(f"{PUBLISH_KEY_PREFIX}{INSTANCE_ID}", json.dumps(payload), ex=PUBLISH_TTL_SECONDS)
+    except Exception as e:
+        logger.debug("Could not publish metrics snapshot: %s", e)
+
+
+async def aggregate_cluster() -> Dict[str, object]:
+    """Merges every live process's published window into one view.
+
+    Counts sum cleanly. Percentiles do not — merging p95s is not
+    mathematically valid — so the worst p95 across instances is reported
+    and labelled as such. For an operations dashboard, "the slowest replica
+    is at 900ms" is the useful and honest answer; a fabricated blended
+    figure would be neither.
+    """
+    from app.realtime import get_redis
+
+    instances: List[dict] = []
+    try:
+        r = await get_redis()
+        for key in await r.keys(f"{PUBLISH_KEY_PREFIX}*"):
+            raw = await r.get(key)
+            if raw:
+                instances.append(json.loads(raw))
+    except Exception as e:
+        logger.debug("Could not read cluster metrics: %s", e)
+
+    # Always include this process, even if Redis is unreachable — a console
+    # that shows nothing because Redis is down is useless precisely then.
+    if not any(i.get("instance") == INSTANCE_ID for i in instances):
+        instances.append({
+            "instance": INSTANCE_ID,
+            "metrics": metrics.snapshot(60),
+            "series": metrics.series(60),
+            "recentErrors": metrics.recent_errors()[:20],
+        })
+
+    total = sum(i["metrics"]["totalRequests"] for i in instances)
+    errors = sum(i["metrics"]["errorCount"] for i in instances)
+    server_errors = sum(i["metrics"]["serverErrorCount"] for i in instances)
+
+    def worst(field: str) -> Optional[float]:
+        values = [i["metrics"].get(field) for i in instances if i["metrics"].get(field) is not None]
+        return max(values) if values else None
+
+    # Series are per-second and aligned on wall-clock seconds, so they sum.
+    series_by_t: Dict[int, dict] = {}
+    for inst in instances:
+        for point in inst.get("series", []):
+            acc = series_by_t.setdefault(point["t"], {"t": point["t"], "requests": 0, "errors": 0})
+            acc["requests"] += point["requests"]
+            acc["errors"] += point["errors"]
+
+    recent: List[dict] = []
+    for inst in instances:
+        recent.extend(inst.get("recentErrors", []))
+    recent.sort(key=lambda e: e.get("at", 0), reverse=True)
+
+    return {
+        "metrics": {
+            "windowSeconds": 60,
+            "requestsPerSecond": round(total / 60, 2),
+            "totalRequests": total,
+            "errorCount": errors,
+            "serverErrorCount": server_errors,
+            "errorRate": round(errors / total, 4) if total else 0.0,
+            "p50Ms": worst("p50Ms"),
+            "p95Ms": worst("p95Ms"),
+            "p99Ms": worst("p99Ms"),
+            "latencyIsWorstInstance": len(instances) > 1,
+            "instanceCount": len(instances),
+        },
+        "series": [series_by_t[t] for t in sorted(series_by_t)],
+        "recentErrors": recent[:50],
+    }
+
+
+async def _publish_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(PUBLISH_INTERVAL_SECONDS)
+            await publish_snapshot()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug("Metrics publish skipped: %s", e)
+
+
+def start_publish_task() -> None:
+    global _publish_task
+    if _publish_task is None:
+        _publish_task = asyncio.create_task(_publish_loop())
+
+
+def stop_publish_task() -> None:
+    global _publish_task
+    if _publish_task is not None:
+        _publish_task.cancel()
+        _publish_task = None

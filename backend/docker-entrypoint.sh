@@ -24,4 +24,21 @@ esac
 # was silently rate-limiting the entire user base as if it were one
 # person, not each visitor individually. This was a real production bug,
 # not a tuning choice.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+# APP_ROLE selects which process this container runs. Both roles share the
+# same image and codebase (Ops Console Rebuild Spec §3.1 Path A) — the split
+# is a deployment decision, not a separate service to build and version.
+#
+#   api            (default) the public API, workers and broadcasters
+#   control-plane  ops console endpoints only, no public ingress
+#
+# The control plane exists so an operator can still act when the main API is
+# saturated: its own process, own event loop, own DB connection pool.
+case "${APP_ROLE:-api}" in
+  control-plane)
+    echo "Starting OPS CONTROL PLANE (app.control_plane:app)..."
+    exec uvicorn app.control_plane:app --host 0.0.0.0 --port "${PORT:-8001}" --proxy-headers --forwarded-allow-ips='*'
+    ;;
+  *)
+    exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips='*'
+    ;;
+esac

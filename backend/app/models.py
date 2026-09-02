@@ -663,6 +663,31 @@ class RateLimitOverride(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class SystemControl(Base):
+    """Maintenance mode and feature kill switches (Ops Console Rebuild Spec
+    §21.3, Critical tier).
+
+    Separate from FeatureFlag deliberately: a feature flag is a product
+    decision about whether a capability is on, while these are incident
+    levers for shedding load or taking the system out of service. They are
+    Critical-classified and require re-authentication to change, which a
+    feature flag does not.
+
+    See app/ops_controls.py for the key namespace ("maintenance_mode",
+    "killswitch:<feature>") and the read path.
+    """
+    __tablename__ = "system_controls"
+
+    key = Column(String, primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=False)
+    # JSON blob for anything the control needs beyond on/off — the
+    # maintenance scope and operator message live here.
+    value = Column(Text, nullable=True)
+    reason = Column(String, nullable=True)
+    updated_by = Column(String, ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
 class Zone(Base):
     __tablename__ = "zones"
 

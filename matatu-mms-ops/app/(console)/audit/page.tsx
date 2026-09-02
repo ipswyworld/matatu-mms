@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { getAuditLogsPage, getStaffUsers } from "@/lib/data";
 import AuditLogViewer from "@/components/AuditLogViewer";
+import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Audit | Ops Console" };
 export const dynamic = "force-dynamic";
 
 export default async function AuditPage() {
-  const [auditPage, staffUsers] = await Promise.all([getAuditLogsPage(), getStaffUsers()]);
+  const [auditPage, staffUsers] = await Promise.all([
+    settle(getAuditLogsPage()),
+    settle(getStaffUsers()),
+  ]);
 
   return (
     <div className="space-y-5">
@@ -18,7 +22,15 @@ export default async function AuditPage() {
         </p>
       </div>
 
-      <AuditLogViewer initialLogs={auditPage.logs} initialCursor={auditPage.nextCursor} users={staffUsers} />
+      {auditPage.data ? (
+        <AuditLogViewer
+          initialLogs={auditPage.data.logs}
+          initialCursor={auditPage.data.nextCursor}
+          users={staffUsers.data ?? []}
+        />
+      ) : (
+        <PanelError title="Audit trail" error={auditPage.error!} />
+      )}
     </div>
   );
 }
