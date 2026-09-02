@@ -8,7 +8,12 @@ load_dotenv()
 
 logger = logging.getLogger("app.config")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./mms.db")
+# Secrets resolve through app/secrets_provider.py: environment first,
+# then Infisical when configured, then the default. A no-op passthrough
+# to os.getenv unless INFISICAL_TOKEN is set (Readiness List §4).
+from app import secrets_provider
+
+DATABASE_URL = secrets_provider.get("DATABASE_URL", "sqlite+aiosqlite:///./mms.db")
 # Hosted Postgres providers (Render, Heroku, Railway, Neon...) hand out a
 # bare "postgresql://" or "postgres://" connection string. SQLAlchemy's
 # create_async_engine needs an explicit async driver suffix — without it,
@@ -20,16 +25,16 @@ if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+REDIS_URL = secrets_provider.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 # Recorded before the auto-generated fallbacks below overwrite these — the
 # /system console needs to know whether a secret was actually configured
 # without ever seeing the secret's value itself.
-SECRET_KEY_IS_CONFIGURED = bool(os.getenv("SECRET_KEY"))
-NAIROBIPAY_CALLBACK_SECRET_IS_CONFIGURED = bool(os.getenv("NAIROBIPAY_CALLBACK_SECRET"))
-SENTRY_DSN = os.getenv("SENTRY_DSN")
+SECRET_KEY_IS_CONFIGURED = bool(secrets_provider.get("SECRET_KEY"))
+NAIROBIPAY_CALLBACK_SECRET_IS_CONFIGURED = bool(secrets_provider.get("NAIROBIPAY_CALLBACK_SECRET"))
+SENTRY_DSN = secrets_provider.get("SENTRY_DSN")
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = secrets_provider.get("SECRET_KEY")
 if not SECRET_KEY:
     # No hardcoded fallback — a fixed default secret checked into source is
     # itself the vulnerability (anyone reading the repo can forge valid
@@ -67,7 +72,7 @@ TERMS_VERSION = os.getenv("TERMS_VERSION", "2026-07-25")
 # not a fine marked paid. Same random-per-process fallback pattern as
 # SECRET_KEY: works with zero setup locally, forces a real value before
 # deployment (and before NairobiPay's real API is wired in).
-NAIROBIPAY_CALLBACK_SECRET = os.getenv("NAIROBIPAY_CALLBACK_SECRET")
+NAIROBIPAY_CALLBACK_SECRET = secrets_provider.get("NAIROBIPAY_CALLBACK_SECRET")
 if not NAIROBIPAY_CALLBACK_SECRET:
     NAIROBIPAY_CALLBACK_SECRET = secrets.token_urlsafe(24)
     logger.warning(
@@ -85,8 +90,8 @@ if not NAIROBIPAY_CALLBACK_SECRET:
 # real deployment over to Africa's Talking (the standard Kenyan SMS
 # gateway); the send_sms() call site is the only place that needs to change
 # for a different provider.
-AFRICASTALKING_USERNAME = os.getenv("AFRICASTALKING_USERNAME")
-AFRICASTALKING_API_KEY = os.getenv("AFRICASTALKING_API_KEY")
+AFRICASTALKING_USERNAME = secrets_provider.get("AFRICASTALKING_USERNAME")
+AFRICASTALKING_API_KEY = secrets_provider.get("AFRICASTALKING_API_KEY")
 SMS_SENDER_ID = os.getenv("SMS_SENDER_ID")  # optional registered short code / sender name
 
 # Object storage for uploaded files (verification documents, scene/crime
@@ -97,11 +102,11 @@ SMS_SENDER_ID = os.getenv("SMS_SENDER_ID")  # optional registered short code / s
 # Backblaze B2, MinIO...) before a deployment that needs uploads to survive
 # redeploys. S3_ENDPOINT_URL stays unset for real AWS S3; set it for any
 # S3-compatible alternative (e.g. R2's account-specific endpoint).
-S3_BUCKET = os.getenv("S3_BUCKET")
-S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+S3_BUCKET = secrets_provider.get("S3_BUCKET")
+S3_ENDPOINT_URL = secrets_provider.get("S3_ENDPOINT_URL")
 S3_REGION = os.getenv("S3_REGION", "auto")
-S3_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY_ID")
-S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY")
+S3_ACCESS_KEY_ID = secrets_provider.get("S3_ACCESS_KEY_ID")
+S3_SECRET_ACCESS_KEY = secrets_provider.get("S3_SECRET_ACCESS_KEY")
 # The base URL files are served back from — a public-read bucket's own
 # endpoint, or a CDN/custom domain in front of it. Uploaded files here have
 # never been access-controlled (the local-disk path is a plain unauthenticated
@@ -134,4 +139,4 @@ PUBLIC_FRONTEND_URL = os.getenv("PUBLIC_FRONTEND_URL", "http://localhost:3001")
 # without that quota being exposed to anyone who opens devtools. Unset is a
 # supported, graceful state (same as NAIROBIPAY/AFRICASTALKING above) — the
 # crowdsourced half of the Live Updates feed keeps working on its own.
-TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY")
+TOMTOM_API_KEY = secrets_provider.get("TOMTOM_API_KEY")

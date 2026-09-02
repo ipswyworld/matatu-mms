@@ -144,6 +144,52 @@ jobs:
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
 
+  security-scan:
+    name: Dependency + container vulnerability scan
+    runs-on: ubuntu-latest
+    # Advisory, not blocking (Readiness List §4). A newly-disclosed CVE in a
+    # transitive dependency should not stop an unrelated hotfix from
+    # shipping — especially for a system where the hotfix may itself be the
+    # incident response. Findings surface in the job summary and are
+    # triaged deliberately rather than by whoever is blocked at the time.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan Python dependencies
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: backend/requirements.txt
+          # Fails the step (not the workflow, see continue-on-error) so the
+          # result is visible in the checks list rather than silently green.
+          summary: true
+
+      - name: Scan Node dependencies
+        run: |
+          for app in matatu-mms matatu-mms-public matatu-mms-ops; do
+            echo "::group::npm audit — $app"
+            (cd "$app" && npm audit --audit-level=high) || true
+            echo "::endgroup::"
+          done
+
+      - name: Build backend image for scanning
+        run: docker build -t mms-backend:scan ./backend
+
+      - name: Scan backend image for OS/library CVEs
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: mms-backend:scan
+          format: table
+          severity: HIGH,CRITICAL
+          # Base-image CVEs with no fix available are noise on every run —
+          # report only what can actually be acted on.
+          ignore-unfixed: true
+
+      - name: Scan repository for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   postgres-integration:
     name: Postgres/PostGIS integration + migration checks
     runs-on: ubuntu-latest

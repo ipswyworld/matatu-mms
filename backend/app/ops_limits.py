@@ -38,6 +38,11 @@ REFRESH_INTERVAL_SECONDS = 10
 # cannot itself change how the system behaves.
 DEFAULTS: Dict[str, str] = {
     "auth_login": "100/minute",
+    # Failed sign-ins tolerated against ONE account before it is temporarily
+    # locked, regardless of source IP (app/login_throttle.py). The period is
+    # the memory window, not a rate: 10/hour means ten failures within a
+    # 15-minute-to-an-hour window, cleared by any successful sign-in.
+    "auth_login_per_account": "10/hour",
     "auth_register": "15/minute",
     "auth_refresh": "30/minute",
     "auth_verify_mfa": "20/minute",
@@ -53,6 +58,7 @@ DEFAULTS: Dict[str, str] = {
 # operator changing a number knows what it actually governs.
 DESCRIPTIONS: Dict[str, str] = {
     "auth_login": "Sign-in attempts per IP. Raising this weakens brute-force protection.",
+    "auth_login_per_account": "Failed sign-ins against one account before it locks, from any IP. Defends credential stuffing spread across many sources.",
     "auth_register": "New account registrations per IP.",
     "auth_refresh": "Token refreshes per IP. Clients refresh proactively before expiry.",
     "auth_verify_mfa": "MFA code submissions per IP.",

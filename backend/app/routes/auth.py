@@ -24,7 +24,7 @@ from app.schemas import (
 from app.auth import verify_password, create_access_token, get_current_user, get_password_hash, oauth2_scheme, requires_permission
 from app.config import SESSION_COOKIE_NAME, TERMS_VERSION, PUBLIC_FRONTEND_URL, REMEMBER_ME_EXPIRE_DAYS, SECRET_KEY, ALGORITHM
 from app.rate_limit import limiter
-from app import ops_limits
+from app import login_throttle, ops_limits
 from app.sms import send_sms
 from app.rbac import ADMIN_TIER_ROLES
 from app.audit import stage_audit_log
@@ -179,6 +179,28 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     # actually matches is the account that logs in — no separate "are you
     # the driver or conductor" step needed.
     identifier = credentials.email
+
+    # Per-account throttle (app/login_throttle.py), complementing the per-IP
+    # limiter above. The per-IP limit cannot see credential stuffing spread
+    # across many source addresses, and it penalises everyone behind a shared
+    # NAT for one attacker; this bounds attempts against a single account
+    # wherever they originate. Checked before the password comparison so a
+    # locked account costs no bcrypt work.
+    if await login_throttle.is_locked(identifier):
+        retry_after = await login_throttle.retry_after_seconds(identifier)
+        await _record_login_event(
+            db, request, event_type="LOGIN_FAILED", user_id=None,
+            email=identifier, reason="account_throttled",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Too many failed sign-in attempts for this account. "
+                "Please wait a few minutes and try again, or reset your password."
+            ),
+            headers={"Retry-After": str(retry_after or login_throttle.WINDOW_SECONDS)},
+        )
+
     result = await db.execute(
         select(User).where(
             or_(
@@ -197,6 +219,7 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
             break
 
     if not user:
+        await login_throttle.record_failure(identifier)
         await _record_login_event(
             db, request, event_type="LOGIN_FAILED", user_id=None,
             email=identifier, reason="invalid_credentials",
@@ -206,6 +229,10 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
             detail="Invalid login details or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Authenticated: clear the counter so a user who mistyped a few times
+    # is not left penalised at exactly the moment they got it right.
+    await login_throttle.clear(identifier)
 
     if user.is_active is False:
         await _record_login_event(
