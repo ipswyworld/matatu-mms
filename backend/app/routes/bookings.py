@@ -15,6 +15,7 @@ from app.audit import stage_audit_log
 from app.abac import enforce_own_record, enforce_own_sacco, sacco_scope_query, is_own_record
 from app.rate_limit import limiter
 from app import ops_limits
+from app.idempotency import IdempotencyContext, idempotency
 
 router = APIRouter(prefix="/api/bookings", tags=["Passenger Bookings"])
 
@@ -153,7 +154,16 @@ async def create_booking(
     payload: BookingCreate,
     current_user: User = Depends(requires_permission("book_ticket")),
     db: AsyncSession = Depends(get_db),
+    idem: IdempotencyContext = Depends(idempotency),
 ):
+    # Replay protection (app/idempotency.py). A passenger on a flaky mobile
+    # connection whose request times out will retry, and without this the
+    # retry books and charges for a second set of seats. Opt-in per call:
+    # a client that sends no Idempotency-Key behaves exactly as before.
+    replayed = await idem.replay()
+    if replayed is not None:
+        return replayed
+
     matatu_result = await db.execute(select(Matatu).where(Matatu.id == payload.matatu_id))
     matatu = matatu_result.scalars().first()
     if not matatu:
@@ -216,4 +226,4 @@ async def create_booking(
         "user_id": current_user.id,
     })
 
-    return _to_response(saved)
+    return await idem.record(_to_response(saved).model_dump(mode="json"))

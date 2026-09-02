@@ -663,6 +663,32 @@ class RateLimitOverride(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class IdempotencyRecord(Base):
+    """Recorded responses for replayed requests (app/idempotency.py).
+
+    Exists because Kenyan mobile networks retry constantly and clients
+    retry on their own: without this, one tap becomes two bookings and a
+    redelivered payment callback credits a fine twice.
+
+    Only successful responses are stored — replaying a key after a failure
+    must genuinely retry, or a transient 500 would poison that key forever.
+    Rows are purged after app/idempotency.py's retention window.
+    """
+    __tablename__ = "idempotency_records"
+
+    # The client-supplied key. Primary key, so a concurrent duplicate insert
+    # fails at the database rather than racing to two executions.
+    key = Column(String, primary_key=True)
+    # Who supplied it, best-effort, for debugging and abuse investigation.
+    actor_id = Column(String, nullable=True)
+    endpoint = Column(String, nullable=False)
+    # SHA-256 of the request body: lets a replay be checked for being the
+    # same operation without retaining the original payload.
+    request_fingerprint = Column(String, nullable=False)
+    response_body = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+
 class SystemControl(Base):
     """Maintenance mode and feature kill switches (Ops Console Rebuild Spec
     §21.3, Critical tier).
