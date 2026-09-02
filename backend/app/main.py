@@ -72,6 +72,8 @@ from app.routes.uploads import router as uploads_router
 from app.routes.feature_flags import router as feature_flags_router
 from app.routes.jobs import router as jobs_router
 from app.routes.control import router as control_router
+from app.routes.oauth import router as oauth_router
+from app.routes.partner import router as partner_router
 from app.realtime import close_redis
 
 # Structured JSON logging — queryable by a log aggregator (Loki/ELK) once
@@ -325,6 +327,11 @@ app.include_router(jobs_router)
 # the /api/control prefix is what lets it be lifted into its own uvicorn
 # entrypoint later (Spec §3.1 Path A) without any client change.
 app.include_router(control_router)
+# Partner API (Readiness List §14) — OAuth2 client-credentials plus the
+# versioned /api/v1 surface. Versioned from the first release because
+# Sacco integrators will not upgrade on our schedule.
+app.include_router(oauth_router)
+app.include_router(partner_router)
 
 # Serves uploaded verification/onboarding documents when app/storage.py is
 # in local-disk mode (dev, or the self-hosted docker-compose stack's

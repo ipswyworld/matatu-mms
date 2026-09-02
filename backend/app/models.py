@@ -663,6 +663,54 @@ class RateLimitOverride(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class ApiClient(Base):
+    """A machine principal for the partner API (Readiness List §14).
+
+    Deliberately NOT a row in `users`. Modelling an integration as a fake
+    user account wrecks the audit trail (every action attributed to a person
+    who did not perform it) and grants it a human's whole role instead of a
+    narrow scope. See app/api_clients.py.
+    """
+    __tablename__ = "api_clients"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    # Public identifier, safe to log and to show in the console.
+    client_id = Column(String, unique=True, nullable=False, index=True)
+    # SHA-256 of the secret — see api_clients.hash_secret for why not bcrypt.
+    # The plaintext secret is shown once at creation and never stored.
+    client_secret_hash = Column(String, nullable=False)
+
+    # Owning Sacco. Populated for partner integrations, null for a
+    # first-party internal system. This is what the existing ABAC rules
+    # scope against, via effective_role below.
+    sacco_id = Column(String, ForeignKey("saccos.id"), nullable=True)
+    # What this client presents as to app/abac.py. A Sacco integration is
+    # SACCO_OPERATOR, so it is confined to its own Sacco by exactly the
+    # rules that govern human operators.
+    effective_role = Column(String, nullable=False, default="SACCO_OPERATOR")
+
+    # JSON list of scope strings from api_clients.SCOPES.
+    scopes = Column(Text, nullable=False, default="[]")
+    quota_tier = Column(String, nullable=False, default="partner")
+
+    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    # Revocation is a timestamp rather than a delete, so a compromised
+    # client's history stays auditable after its access is cut.
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_reason = Column(String, nullable=True)
+
+    def scope_list(self) -> list:
+        import json
+        try:
+            value = json.loads(self.scopes or "[]")
+            return value if isinstance(value, list) else []
+        except (TypeError, ValueError):
+            return []
+
+
 class IdempotencyRecord(Base):
     """Recorded responses for replayed requests (app/idempotency.py).
 

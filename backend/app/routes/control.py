@@ -24,6 +24,7 @@ import datetime
 import json
 import logging
 import time
+import uuid
 from typing import List, Optional
 
 from arq.constants import default_queue_name, in_progress_key_prefix, result_key_prefix
@@ -42,6 +43,7 @@ from app.database import engine, get_db
 from app.models import RateLimitOverride, User, WebhookLog, WebhookSubscription
 from app.ops_metrics import metrics
 from app.realtime import get_redis
+from app import api_clients
 from app import mfa as mfa_lib
 from app import ops_breakers, ops_controls, ops_limits, ops_metrics, ops_reauth
 
@@ -649,6 +651,170 @@ async def unlock_user(
     )
     await db.commit()
     return {"userId": user_id, "isActive": True}
+
+
+# --------------------------------------------------------------------------
+# Partner API clients (Readiness List §14)
+# --------------------------------------------------------------------------
+
+class ApiClientCreateBody(ReasonBody):
+    name: str = Field(min_length=2, max_length=120)
+    sacco_id: Optional[str] = None
+    scopes: List[str] = Field(default_factory=list)
+    quota_tier: str = "partner"
+    effective_role: str = "SACCO_OPERATOR"
+
+
+@router.get("/api-clients")
+async def list_api_clients(
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import ApiClient
+    from app.quota import current_usage
+
+    rows = (await db.execute(select(ApiClient).order_by(ApiClient.created_at.desc()))).scalars().all()
+    out = []
+    for c in rows:
+        usage = await current_usage(c.client_id, c.quota_tier)
+        out.append({
+            "id": c.id,
+            "name": c.name,
+            "clientId": c.client_id,
+            "saccoId": c.sacco_id,
+            "effectiveRole": c.effective_role,
+            "scopes": c.scope_list(),
+            "quotaTier": c.quota_tier,
+            "createdAt": c.created_at.isoformat() if c.created_at else None,
+            "lastUsedAt": c.last_used_at.isoformat() if c.last_used_at else None,
+            "revokedAt": c.revoked_at.isoformat() if c.revoked_at else None,
+            "revokedReason": c.revoked_reason,
+            "active": c.revoked_at is None,
+            "usage": usage,
+        })
+    return out
+
+
+@router.get("/api-clients/scopes")
+async def list_api_scopes(
+    current_user: User = Depends(requires_permission("view_system_health")),
+):
+    return {"scopes": api_clients.all_scopes(), "quotaTiers": api_clients.QUOTA_TIERS}
+
+
+@router.post("/api-clients", status_code=201)
+async def create_api_client(
+    body: ApiClientCreateBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Issues partner credentials.
+
+    The plaintext secret is returned exactly once, here, and never stored —
+    only its hash is. If it is lost, the correct recovery is to revoke the
+    client and issue a new one, which is also what should happen if it
+    leaked, so there is no "show me the secret again" path by design.
+    """
+    from app.models import ApiClient, Sacco
+
+    try:
+        api_clients.validate_scopes(body.scopes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if body.quota_tier not in api_clients.QUOTA_TIERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown quota tier. Valid: {', '.join(api_clients.QUOTA_TIERS)}",
+        )
+
+    # A Sacco-scoped client with no Sacco would be scoped to nothing by
+    # ABAC and silently return empty results, which reads as a broken
+    # integration rather than a misconfiguration. Fail loudly instead.
+    if body.effective_role == "SACCO_OPERATOR" and not body.sacco_id:
+        raise HTTPException(
+            status_code=400,
+            detail="A SACCO_OPERATOR client must be bound to a sacco_id, or it can see nothing.",
+        )
+
+    if body.sacco_id:
+        sacco = (await db.execute(select(Sacco).where(Sacco.id == body.sacco_id))).scalars().first()
+        if sacco is None:
+            raise HTTPException(status_code=404, detail="No Sacco with that id")
+
+    client_id, client_secret = api_clients.generate_credentials()
+    record = ApiClient(
+        id=f"apc-{uuid.uuid4().hex[:10]}",
+        name=body.name,
+        client_id=client_id,
+        client_secret_hash=api_clients.hash_secret(client_secret),
+        sacco_id=body.sacco_id,
+        effective_role=body.effective_role,
+        scopes=json.dumps(body.scopes),
+        quota_tier=body.quota_tier,
+        created_by=current_user.id,
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(record)
+
+    stage_audit_log(
+        db, resource_type="api_client", resource_id=client_id, action="CREATE",
+        user_id=current_user.id,
+        new_values={
+            "name": body.name, "saccoId": body.sacco_id, "scopes": body.scopes,
+            "quotaTier": body.quota_tier, "reason": body.reason,
+        },
+    )
+    await db.commit()
+
+    return {
+        "id": record.id,
+        "name": record.name,
+        "clientId": client_id,
+        # Shown once. Never retrievable again.
+        "clientSecret": client_secret,
+        "saccoId": record.sacco_id,
+        "scopes": body.scopes,
+        "quotaTier": record.quota_tier,
+        "warning": "Copy this secret now — it is not stored and cannot be shown again.",
+    }
+
+
+@router.post("/api-clients/{client_id}/revoke")
+async def revoke_api_client(
+    client_id: str,
+    body: ReasonBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cuts off a client immediately.
+
+    Revocation is a timestamp rather than a delete: a compromised client's
+    history has to stay auditable after its access is cut. Existing tokens
+    stop working at once because app/principals.py re-checks the record on
+    every request rather than trusting the token's lifetime.
+    """
+    from app.models import ApiClient
+
+    record = (
+        await db.execute(select(ApiClient).where(ApiClient.client_id == client_id))
+    ).scalars().first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="No API client with that id")
+    if record.revoked_at is not None:
+        raise HTTPException(status_code=400, detail="That client is already revoked")
+
+    record.revoked_at = datetime.datetime.now(datetime.timezone.utc)
+    record.revoked_reason = body.reason
+
+    stage_audit_log(
+        db, resource_type="api_client", resource_id=client_id, action="REVOKE",
+        user_id=current_user.id,
+        new_values={"name": record.name, "reason": body.reason},
+    )
+    await db.commit()
+    logger.warning("API client %s revoked by %s: %s", client_id, current_user.id, body.reason)
+    return {"clientId": client_id, "revoked": True}
 
 
 # --------------------------------------------------------------------------

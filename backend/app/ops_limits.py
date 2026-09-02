@@ -50,6 +50,10 @@ DEFAULTS: Dict[str, str] = {
     "auth_reset_password": "20/minute",
     "auth_forgot_password_phone": "10/minute",
     "auth_reset_password_phone": "20/minute",
+    # Token exchange for the partner API. Tight: a client fetches a token
+    # once an hour, so anything above this is a misbehaving integration
+    # or credential probing.
+    "oauth_token": "20/minute",
     "bookings_create": "20/minute",
     "payments_callback": "60/minute",
 }
@@ -66,6 +70,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "auth_reset_password": "Password-reset completions per IP.",
     "auth_forgot_password_phone": "Phone-based password-reset OTP requests per IP.",
     "auth_reset_password_phone": "Phone-based password-reset completions per IP.",
+    "oauth_token": "Partner API token exchanges per IP.",
     "bookings_create": "Seat bookings per IP.",
     "payments_callback": "NairobiPay callback deliveries per IP.",
 }
