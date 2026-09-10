@@ -557,6 +557,667 @@ sanity-check that every discipline has actually had a say.
 
 ---
 
+**A note on sourcing for the sections below.** The system already carries
+several standalone audit documents from earlier work —
+`ARCHITECTURE_DECISIONS.md`, `CD_PIPELINE_STATUS.md`,
+`TENANT_ISOLATION_AUDIT.md`, `RUNBOOKS.md`, `SERVICE_EXTRACTION_READINESS.md`,
+`NTSA_IRMS_INTEGRATION_CHECKLIST.md`, and an early-stage `SYSTEM_AUDIT.md`.
+Where a role below draws on one of those, it's cited by name rather than
+repeated wholesale. **`SYSTEM_AUDIT.md` is historical**: it was written
+against an earlier version of this codebase (SQLite as the default,
+M-Pesa, no git repo) and its three P0 findings — the unauthenticated
+payment callback, the unauthenticated crew GPS WebSocket, and a plaintext
+password fallback — were checked directly against the current code for
+this review and are **all three already fixed** (HMAC-verified NairobiPay
+callback in `routes/payments.py`; JWT-authenticated, ownership-checked
+crew WebSocket in `routes/telemetry.py`; `_verify_password_sync` fails
+closed on a malformed hash, no plaintext path). Treat that document as a
+snapshot of where the project started, not its current state.
+
+## 16. Software Architect
+
+**Would sign off on:**
+- The modular-monolith call in `ARCHITECTURE_DECISIONS.md` §2 — explicit
+  module boundaries (licensing, fleet, enforcement, revenue, routing,
+  bookings) inside one deployable, with two carve-outs already identified
+  by their actual differentiating trait (telemetry's write-heavy/lossy
+  profile vs. the business app's request-driven/lossless one) rather than
+  a generic "let's do microservices" instinct. This is the right call at
+  current team size, made for the right reason, and written down instead
+  of assumed.
+- The ABAC/RBAC engine's reuse for machine principals (§7 above) as a
+  concrete example of the architecture actually paying off: a new
+  principal type slotted in with zero changes to the authorization core.
+
+**Would ask for, and why:**
+- **Follow through on the two named carve-outs** (telemetry ingest,
+  real-time WebSocket gateway) — `SERVICE_EXTRACTION_READINESS.md` has
+  already mapped the module boundaries an extraction would use; the
+  document exists, the extraction doesn't yet. Worth a date, not just a
+  plan.
+- **A living architecture decision record (ADR) practice**, not one large
+  document. `ARCHITECTURE_DECISIONS.md` is thorough but monolithic;
+  splitting future decisions into one-ADR-per-decision makes it possible
+  to see when a call was made and revisit it without re-reading the whole
+  file.
+
+---
+
+## 17. DevOps Engineer
+
+**Would sign off on:**
+- `CD_PIPELINE_STATUS.md`'s honest built-vs-blocked split: image build/
+  scan/push to `ghcr.io` with git-SHA tags is real and running in CI;
+  blue/green mechanics (`docker-compose.canary.yml`, `nginx.canary.conf`,
+  `scripts/canary-promote.sh`) are genuinely runnable today, including a
+  health-gated weight shift and zero-downtime WebSocket handling — not
+  aspirational YAML.
+- The document says plainly what's blocked and why (no second Render
+  environment to call "staging," no orchestrator yet) rather than papering
+  over the gap by pointing "staging" at the same service production uses.
+
+**Would ask for, and why:**
+- **This is the same ArgoCD/blue-green ask already in §4 (Platform
+  Engineering), from the operating side of it**: the canary scripts exist
+  but currently target a self-hosted `docker-compose` stack, not the
+  Render deployment actually running production. Either stand up the
+  Kubernetes path the manifests describe (unblocking real blue/green) or
+  explicitly scope canary promotion to the self-hosted target and say so.
+- **A staging environment**, called out in `CD_PIPELINE_STATUS.md` itself
+  as blocked on a billing decision (a second Render service/environment),
+  not a code change — worth escalating as exactly that: a decision to
+  make, not an engineering task waiting on someone.
+
+---
+
+## 18. Site Reliability Engineer (SRE)
+
+**Would sign off on:**
+- `RUNBOOKS.md`'s dependency fallback matrix and four incident runbooks
+  (backend won't start after a deploy, webhook deliveries failing for one
+  Sacco, DB pool exhausted, live map stopped updating) — written from
+  actual failure modes this project has hit, not generic templates.
+- The circuit-breaker registry (`app/ops_breakers.py`) built on top of
+  `app/resilience.py`, with manual operator overrides (force-open,
+  force-closed) surfaced in the ops console rather than only visible in
+  logs.
+
+**Would ask for, and why:**
+- **The circuit breaker's own caveat, taken seriously**:
+  `ARCHITECTURE_DECISIONS.md` §4.3 already flags that breaker state is
+  per-process and resets on restart, meaning it will not mean what it
+  appears to mean once running multi-replica. This is a known, written-down
+  limitation, not a surprise — worth prioritizing before replica count
+  goes above one for real.
+- **SLOs with actual error budgets**, not just alerting rules
+  (`alertmanager/alertmanager.yml` exists — worth confirming it's wired to
+  a defined SLO, not just raw thresholds).
+- **A disaster-recovery drill**, not just a runbook read-through — the
+  Postgres-expiry deadline (Cross-Cutting Theme #1) is exactly the kind of
+  event a runbook should have already been rehearsed against.
+
+---
+
+## 19. Cloud Infrastructure Engineer
+
+**Would sign off on:**
+- Multi-cloud-agnostic Kubernetes manifests already exist
+  (`infra/kubernetes/`) alongside the current Render-based deployment,
+  meaning a future move off Render isn't a rewrite.
+- `docker-compose.yml` / `docker-compose.canary.yml` giving a fully local,
+  runnable stack for development that mirrors production's container
+  boundaries.
+
+**Would ask for, and why:**
+- **Same ask as Platform Engineering (§4) and DBA (§9), from the
+  infrastructure-cost angle**: Terraform for what's currently
+  Render-dashboard-clicked, and moving off free-tier Postgres before
+  2026-09-14. Three roles converging here independently (see Cross-Cutting
+  Theme #5) is the signal, not the repetition.
+- **A named cloud-cost owner.** Nothing in this review currently traces
+  infrastructure spend to a person or a budget line — worth deciding who
+  answers "why did the bill change" before it's asked under pressure.
+
+---
+
+## 20. Distributed Systems Engineer
+
+**Would sign off on:**
+- The event-backbone fix already designed in `ARCHITECTURE_DECISIONS.md`
+  §4: Redis Streams (not pub/sub, specifically for persistence/consumer-
+  groups/replay) plus a real task queue (ARQ) with retries and a
+  dead-letter path, replacing the original fire-and-forget
+  `asyncio.create_task` dispatcher that silently lost events on a process
+  restart.
+- The idempotency layer (`app/idempotency.py`) and database-enforced
+  uniqueness constraints (§9) as the two correct primitives for a system
+  that will eventually run multiple replicas — verified, not assumed,
+  that a duplicate insert fails at the Postgres level.
+
+**Would ask for, and why:**
+- **The WebSocket gateway carve-out** (`ARCHITECTURE_DECISIONS.md` §2.3)
+  is the single most consequential distributed-systems gap on file today:
+  live connections are held in-process, so *every deploy currently drops
+  every passenger's live map*. This is written down and understood, not
+  hidden — worth being the very next carve-out attempted, ahead of
+  telemetry ingest, since it affects every deploy today rather than only
+  at higher fleet volume.
+- **Explicit consistency documentation** for what's eventually consistent
+  (breaker overrides, rate-limit overrides — both already documented as
+  bounded-lag-via-Redis-polling in their own docstrings) versus what's
+  strongly consistent (ledger postings, booking seat assignment) so a
+  future engineer doesn't assume uniform guarantees across the system.
+
+---
+
+## 21. API / Integration Engineer
+
+**Would sign off on:**
+- The OAuth2 client-credentials pattern for partner integrations
+  (`app/api_clients.py`, `app/routes/oauth.py`) reusing the human ABAC
+  engine unmodified via `ApiClientPrincipal` — a real integration surface,
+  not a stub.
+- Idempotency-Key support on write endpoints, which is exactly what a
+  serious API integrator needs to safely retry.
+
+**Would ask for, and why:**
+- **A published, versioned OpenAPI contract** — this is the same ask
+  already on file under Backend Development (§7) and Full-Stack (§8);
+  worth this role's endorsement specifically because partner integrators
+  are the audience who actually consumes it, and a hand-diffed contract
+  breaks trust the moment a field silently changes shape.
+- **`NTSA_IRMS_INTEGRATION_CHECKLIST.md` is honest about being blocked on
+  an external party** (NTSA access, not yet granted) — worth keeping that
+  framing explicit to investors/stakeholders so "vehicle positioning" isn't
+  read as a code gap when it's actually an access gap.
+- **Webhook delivery guarantees documented for partners**, not just
+  internally — `RUNBOOKS.md`'s "webhook deliveries failing for one Sacco"
+  runbook exists for internal ops; a partner-facing version of "what
+  happens if your endpoint is down" (retry count, backoff, replay window)
+  doesn't yet.
+
+---
+
+## 22. Mobile Engineer
+
+Deferred with the platform, per the dedicated section below. This role's
+one addition: **browser geolocation cannot reliably track a backgrounded
+web app** (`ARCHITECTURE_DECISIONS.md` §5.2) — this is the concrete,
+named reason the crew app's offline/background-tracking need is deferred
+to a native phase rather than stretched further inside the current PWA.
+Worth stating plainly so "why not just improve the PWA further" has a
+documented answer instead of an implied one.
+
+---
+
+## 23. Security Engineer
+
+**Would sign off on:**
+- Everything already verified in the dedicated Security Checklist above,
+  plus the specific, hands-on confirmation this session that the three
+  historical P0s in `SYSTEM_AUDIT.md` are fixed in current code (see the
+  sourcing note above) — a security engineer's job is exactly this kind
+  of "prove it against the live code, not the last audit" discipline.
+- The circuit breaker's manual-override design (`app/resilience.py`) using
+  a separate `override` field rather than mutating `state` directly — an
+  operator forcing a breaker open doesn't silently erase its failure
+  history, which matters when reconstructing an incident afterward.
+
+**Would ask for, and why:**
+- The five concrete gaps already flagged in the checklist (#12, #16/#27,
+  #23, #24, #31) are this role's actual backlog — repeating them here
+  would just be noise; see that table for specifics and owners.
+
+---
+
+## 24. DevSecOps Engineer
+
+**Would sign off on:**
+- Security scanning wired into CI as a real, running gate
+  (`pip-audit`, Trivy, `gitleaks`), deliberately advisory rather than
+  blocking, with the reasoning stated in the pipeline's own comments — a
+  DevSecOps program that documents *why* a control is shaped the way it is
+  tends to survive the next person touching it.
+- Trivy image scanning on the same build that pushes to `ghcr.io`
+  (`CD_PIPELINE_STATUS.md`) — the scan runs where the artifact is actually
+  produced, not as a separate disconnected job.
+
+**Would ask for, and why:**
+- **A path from advisory to blocking for at least critical/high CVEs**,
+  once the team has enough throughput to triage findings same-day — today
+  every scan result is informational only, with no floor.
+- **Secrets scanning coverage for the git-secrets near-miss class of bug**
+  found and fixed this session (the missing `matatu-mms-ops` `.gitignore`
+  section) — `gitleaks` in CI catches a secret that gets committed; it
+  doesn't catch a `.gitignore` gap that makes committing one likely. Worth
+  a periodic `.gitignore`-completeness check per app as a small, cheap
+  addition.
+
+---
+
+## 25. Identity & Access Management Engineer
+
+**Would sign off on:**
+- A single, centralized authorization engine (`app/rbac.py`) that every
+  principal type — human staff, Sacco operators, and now API clients — is
+  checked against identically, with no parallel or bolted-on permission
+  path.
+- MFA, session revocation, and step-up re-authentication already gating
+  Critical-tier ops actions (§10) — a real step-up model, not just a login
+  MFA checkbox.
+- JWT-based auth used consistently for both the HTTP API and the
+  WebSocket layer (the crew telemetry socket decodes the same JWT via
+  `pyjwt.decode`, not a separate scheme) — one token format, one place it's
+  verified.
+
+**Would ask for, and why:**
+- **Session revocation on password change** — already identified as a
+  confirmed gap in the Security Checklist (#24) — is exactly this role's
+  responsibility to close: a password reset should invalidate every
+  session issued under the old credential, and today it doesn't.
+- **Token scope/audience claims for API clients**, so a compromised
+  partner credential is provably limited to what that partner was actually
+  granted, visible in the token itself rather than only enforced at
+  request time.
+
+---
+
+## 26. Privacy Engineer
+
+**Would sign off on:**
+- The DPA data-subject rights implementation (`app/data_rights.py`) —
+  export and erasure via stable one-way pseudonymization rather than hard
+  deletion, so cross-referenced records still correlate after erasure —
+  and the fact that a **real PII leak in this exact path was found and
+  fixed** this session (a wrong-key consent lookup left a subject's actual
+  phone number behind after "successful" erasure), found by actually
+  running the function, not by reading the code.
+
+**Would ask for, and why:**
+- **A data inventory / data map**: what personal data is collected, where
+  it's stored, how long it's retained, and who can access it — the
+  erasure mechanism is solid, but nothing in this review enumerates what
+  it needs to reach across every table.
+- **Retention policy tied to actual purpose**, not just the 90-day GPS
+  retention window already decided for evidentiary reasons
+  (`a3d6e9b7c284` migration) — other PII-bearing tables don't yet have a
+  stated retention rationale.
+
+---
+
+## 27. GIS / Geospatial Engineer
+
+**Would sign off on:**
+- PostGIS adopted deliberately (`ARCHITECTURE_DECISIONS.md` §1.2) with a
+  clean division of labor already specified: PostGIS for server-side
+  storage/query (nearest-stage lookup, route-corridor containment),
+  TomTom/MapLibre for client-side rendering, connected only through
+  GeoJSON — no tooling lock-in between the two.
+- Route variants and direction modeled as first-class data (not naming
+  convention) directly from the Bus Route Network report's own evidence
+  (the "Routing on Return Journey Thro CBD" column proving inbound/outbound
+  asymmetry) — the data model follows the source document's actual
+  structure rather than a simplifying assumption.
+- Route-adherence monitoring designed as a buffered-polygon containment
+  test with a GiST index (§1.6) — cheap at scale, and the right primitive
+  for the problem rather than a manual distance calculation.
+
+**Would ask for, and why:**
+- **Confirm the PostGIS migration and adherence buffers are actually
+  applied against production**, not just decided — `alembic/versions/
+  311917b90975_enable_postgis_extension.py` exists; worth the same
+  verify-against-real-Postgres discipline already applied to TimescaleDB
+  (§9) rather than assuming it ran cleanly.
+- **A stated data-freshness policy for the BRN route geometry itself** —
+  §1.3 already flags that displayed route numbers are provisional pending
+  a permanent NMA-wide scheme; worth a mechanism for updating geometry
+  when that scheme lands, rather than a one-time import.
+
+---
+
+## 28. Real-Time Systems Engineer
+
+**Would sign off on:**
+- The crew GPS WebSocket is authenticated and ownership-checked
+  end-to-end (`routes/telemetry.py`: JWT decode, role check, Sacco-
+  ownership check on the target matatu) — verified directly this session,
+  and a real fix from the state `SYSTEM_AUDIT.md` originally found it in
+  (unauthenticated, spoofable).
+- SSE (not WebSocket) deliberately chosen for the ops console's live feed
+  specifically because that feed is one-directional (§ Ops Console
+  Rebuild, referenced in §6/§8 above) — the right protocol for the actual
+  data flow, not a default reach.
+
+**Would ask for, and why:**
+- **This is the same WebSocket-gateway carve-out already flagged by
+  Distributed Systems (§20) and named directly in
+  `ARCHITECTURE_DECISIONS.md` §2.3**: live connections are held in-process
+  today, so every deploy drops every passenger's live map. Worth this
+  role's explicit sign-off that it's the top real-time priority, ranked
+  above telemetry-ingest extraction, because it degrades the live product
+  on every single deploy rather than only at higher fleet volume.
+- **Redis-backed fan-out for the gateway once split out**, per the same
+  section's proposed fix — business logic can then ship continuously
+  without interrupting anyone's live map.
+
+---
+
+## 29. Performance Engineer
+
+**Would sign off on:**
+- Bundle performance budgets enforced in CI on gzip-measured size, with a
+  documented correction (an earlier version measured raw disk size and
+  would have failed every route on day one) — a performance gate that was
+  actually validated to measure the right thing, not assumed to.
+- Postgres full-text search (GIN indexes) replacing `ILIKE` specifically
+  because the latter degrades linearly and would become unusable in the
+  low hundreds of thousands of rows — a performance decision made ahead of
+  the pain, not after.
+
+**Would ask for, and why:**
+- **PgBouncer / connection pooling**, already flagged by DBA (§9) — worth
+  this role's addition that it's a performance ceiling, not just a
+  connection-count housekeeping item: async FastAPI across replicas
+  exhausts raw Postgres connections well before CPU or memory become the
+  bottleneck.
+- **A load test against the actual telemetry write path** (3,500 buses at
+  a 5-second ping ≈ 700 writes/sec, per `ARCHITECTURE_DECISIONS.md` §2.2)
+  — the number is calculated, not yet measured against a running system.
+
+---
+
+## 30. Resilience Engineer
+
+**Would sign off on:**
+- A real circuit breaker with CLOSED/OPEN/HALF-OPEN states and a manual
+  operator override, now given cross-process *visibility* via Redis
+  (`app/ops_breakers.py`) even though the breaker state itself correctly
+  stays per-process (§4.3's own reasoning: a shared tripped state would
+  let one replica's bad luck block every healthy replica).
+- `RUNBOOKS.md`'s dependency fallback matrix — what happens when each
+  external dependency (Postgres, Redis, TomTom, NairobiPay, NTSA) is
+  unavailable is written down per-dependency, not left to be improvised
+  during an actual incident.
+
+**Would ask for, and why:**
+- **The same multi-replica caveat SRE (§18) and Distributed Systems (§20)
+  already flagged**: today's resilience primitives (breaker, retry) are
+  correct for a single process and will silently under-protect once
+  replica count goes above one. This role's specific ask: prioritize
+  making breaker *state* (not just overrides) cross-process-aware before
+  scaling replicas, rather than discovering the gap during an incident.
+- **Chaos-testing the documented runbooks** — a runbook that has never
+  been executed against a deliberately broken dependency is a hypothesis,
+  not a verified procedure.
+
+---
+
+## 31. Release / Build Engineer
+
+**Would sign off on:**
+- Immutable, git-SHA-tagged image builds pushed to `ghcr.io` using the
+  repo's built-in `GITHUB_TOKEN` — no separate registry secret to manage,
+  one less credential to rotate or leak.
+- The canary-promotion script (`scripts/canary-promote.sh`) is genuinely
+  runnable today, not aspirational: health-gated weight shifts, instant
+  rollback to 0%, and explicitly verified to handle WebSockets without
+  dropping connections during a shift.
+
+**Would ask for, and why:**
+- **A manual-approval gate before production**, which `CD_PIPELINE_STATUS.md`
+  itself notes is "genuinely just a repo-settings toggle" (GitHub
+  Environments with required reviewers) once there's a real production
+  deploy job to gate — currently blocked on the staging/orchestrator
+  decision, not on effort.
+- **A rollback runbook tied to the release process itself**, not just the
+  general incident runbooks — "which git SHA was last known-good, and how
+  do we get back to it in one command" should be answerable without
+  reconstructing it live.
+
+---
+
+## 32. Developer Experience Engineer
+
+**Would sign off on:**
+- A working `docker-compose.yml` that stands up the full local stack, and
+  a documented Postgres verification harness (`backend/README-VERIFY.md`
+  + `verify_postgres.py`) with a clear one-line invocation for exercising
+  Postgres-only code paths locally.
+- The `APP_ROLE` pattern meaning a developer runs one codebase locally and
+  gets both the API and control-plane behavior by env var, rather than
+  needing two checkouts.
+
+**Would ask for, and why:**
+- **A single onboarding doc** — `README.md` exists, but the review turned
+  up a dozen standalone root-level audit/decision documents
+  (`ARCHITECTURE_DECISIONS.md`, `SYSTEM_AUDIT.md`, `RUNBOOKS.md`,
+  `TENANT_ISOLATION_AUDIT.md`, `CD_PIPELINE_STATUS.md`,
+  `SERVICE_EXTRACTION_READINESS.md`,
+  `NTSA_IRMS_INTEGRATION_CHECKLIST.md`, this one) with no index pointing a
+  new engineer at which one to read first, or which are current versus
+  historical (`SYSTEM_AUDIT.md` specifically, per the sourcing note
+  above). A short `DOCS.md` index costs little and prevents someone
+  treating a historical audit as current status.
+- **Seed data that exercises every role** for local testing — worth
+  confirming `seed.py` covers the full role matrix, not just enough to
+  boot.
+
+---
+
+## 33. ML Engineer
+
+**Not applicable today — stated plainly rather than left silent.** Grepped
+the backend for the usual footprint of a shipped ML system (`tensorflow`,
+`torch`, `sklearn`, a serialized model file) — none exists. Nothing in
+this system currently makes a prediction; it records, scores against
+fixed rules (fines, fares), and reports. That's a legitimate current
+state, not a gap, but worth stating explicitly so "why isn't there an ML
+roadmap" has an honest answer: there's no ML system yet to have an
+engineer for.
+
+**Would ask for, if this becomes relevant:** the demand-intelligence
+dashboard (OD matrix, boarding heatmap, crowdsourced condition reports —
+§1 Data Analyst) is the most plausible first real ML use case (demand
+forecasting, route optimization) once enough historical volume exists to
+train against.
+
+---
+
+## 34. MLOps Engineer
+
+**Not applicable today**, for the same reason as §33 — there is no model
+to version, deploy, or monitor for drift. Worth naming what MLOps
+infrastructure *would* reuse when the day comes: the existing ARQ task
+queue (§4.2) for batch scoring jobs, the ops console's action-safety
+framework for gating a model rollout the same way a Critical-tier system
+action is gated today, and the CI pipeline's image-build/scan/push chain
+for packaging a model-serving container. Nothing new needs inventing at
+that point except the model itself.
+
+---
+
+## 35. Computer Vision Engineer
+
+**Not applicable today.** No image or video pipeline exists in this
+system beyond ordinary file uploads (Sacco documents, per §16 of the
+Security Checklist) — no license-plate recognition, no crowd counting, no
+CCTV integration. If this becomes a future want (e.g., automated plate
+recognition for enforcement), the upload-validation gaps already
+identified in the Security Checklist (#16/#27 — no size limit, no type
+whitelist) would need closing *before* that pipeline exists, not after,
+since a CV pipeline is a much higher-value target for a malicious upload
+than a document store is.
+
+---
+
+## 36. Data Architect
+
+**Would sign off on:**
+- The data-layer decisions already made deliberately in
+  `ARCHITECTURE_DECISIONS.md` §3 — PostGIS and TimescaleDB coexisting in
+  one Postgres engine (rather than two separate specialized stores),
+  chosen specifically because they're both Postgres extensions and avoid
+  a second system to operate.
+- Money modeled as `Numeric`, never `Float`, end-to-end from column type
+  through the ledger to the API response (§9 DBA) — a schema-level
+  decision that prevents an entire class of downstream bug rather than
+  catching it in application code.
+
+**Would ask for, and why:**
+- **The read-replica-for-reporting decision** (already converged on
+  independently by Data Analyst, Big Data, and DBA — Cross-Cutting Theme
+  #2) is fundamentally a data-architecture decision about workload
+  separation; worth this role owning the actual schema/replication design
+  rather than it staying a recurring ask with no owner.
+- **A documented logical data model** (entities, ownership, module
+  boundaries) matching the module boundaries already named in
+  `ARCHITECTURE_DECISIONS.md` §2.1 — the boundaries are decided in prose;
+  an actual ER-level diagram per module doesn't yet exist.
+
+---
+
+## 37. Data Governance Lead
+
+**Would sign off on:**
+- Audit logging with before/after values already covers 10+ route files
+  (§10), giving governance a real, queryable record of who changed what —
+  the raw material governance needs already exists rather than needing to
+  be retrofitted.
+- DPA data-subject rights (export/erasure) as a concrete, working
+  governance control, not a policy document with no implementation behind
+  it.
+
+**Would ask for, and why:**
+- **A data classification scheme** (public / internal / restricted / PII)
+  applied consistently across tables — nothing in this review currently
+  labels which columns are sensitive in a way tooling could enforce
+  automatically, rather than relying on every engineer remembering by
+  hand.
+- **This is the same data-inventory ask as Privacy Engineering (§26)**,
+  from the governance-ownership side: someone needs to be accountable for
+  the inventory existing and staying current, not just for it being
+  produced once.
+
+---
+
+## 38. Data Quality Engineer
+
+**Would sign off on:**
+- The ledger's trial balance is a genuine, automatic data-quality check —
+  confirmed to sum to exactly `0.00` against real Postgres, not just
+  assumed consistent (§7, §9).
+- Database-enforced uniqueness (idempotency keys, duplicate-insert
+  rejection verified at the Postgres level, not just in application code)
+  as a real data-integrity backstop rather than a convention that could
+  silently be bypassed.
+
+**Would ask for, and why:**
+- **Data quality checks beyond the ledger** — the trial-balance invariant
+  is excellent but narrow; nothing currently checks for orphaned records
+  (a booking referencing a deleted matatu), out-of-range values, or
+  referential drift across the wider schema on an ongoing basis.
+- **Automated data quality monitoring**, not just constraints enforced at
+  write time — a scheduled job that reports anomalies (e.g., a fine with
+  a negative amount that somehow got past validation) catches the class of
+  bug that slips past both `Numeric` typing and Pydantic validation.
+
+---
+
+## 39. BI Developer
+
+**Would sign off on:**
+- Structured, queryable data already exists for the reports a BI tool
+  would build against: the ledger, the audit log, the messaging spend
+  summary (§1), and the demand-intelligence dashboard's underlying OD
+  matrix — none of it locked inside a report-only view with no
+  underlying table.
+
+**Would ask for, and why:**
+- **This is the same read-replica ask as Data Analyst/Big Data/DBA/Data
+  Architect (Cross-Cutting Theme #2)**, from the tooling side: a BI tool
+  (Metabase, Superset, or similar) needs a connection target that isn't
+  the transactional primary, and none exists yet.
+- **A documented semantic layer** (what "active user," "on-time," and
+  "revenue" mean precisely) before multiple dashboards each define these
+  terms slightly differently and start disagreeing with each other.
+
+---
+
+## 40. Analytics Engineer
+
+**Would sign off on:**
+- Full-text search, the OD matrix, and the messaging spend log are all
+  already modeled as queryable structured data rather than raw logs
+  needing parsing at query time — the right shape for building
+  transformation layers on top of.
+
+**Would ask for, and why:**
+- **dbt**, already named as a future want by Big Data (§3) once there's
+  more than one scheduled transformation job — this role's specific
+  addition: start the dbt project structure *now*, even with a single
+  model, so the practice (version-controlled SQL transformations, tested
+  assumptions) exists before the ad hoc cron scripts multiply, rather than
+  retrofitting it after they have.
+
+---
+
+## 41. Data Steward
+
+**Would sign off on:**
+- A clear technical owner already exists for the most sensitive data path
+  in the system (DPA erasure/export, `app/data_rights.py`) — and that
+  path has already been exercised for real, catching a real leak (§26),
+  which is exactly the kind of stewardship a document alone can't provide.
+
+**Would ask for, and why:**
+- **Named per-table ownership**, not just a technical implementation.
+  Stewardship is an accountability role as much as a technical one:
+  someone should be the named point of contact for "who do I ask about
+  what's in the `users` table," independent of who wrote the migration.
+  Nothing in this review currently assigns that.
+
+---
+
+## 42. Statistician
+
+**Would sign off on:**
+- Crew-logged headcounts as a real ridership proxy rather than an
+  estimated one (§11 Researchers) — a statistician would call this out
+  specifically as a rare case of a transit system having ground-truth
+  ridership data from day one instead of needing to infer it from ticket
+  sales or fare-gate counts.
+
+**Would ask for, and why:**
+- **Confidence intervals and sampling bias documented on every derived
+  metric that comes from crowdsourced input** (condition reports, demand
+  signals) — a crowdsourced signal is not a census, and nothing in the
+  demand-intelligence dashboard currently states its own margin of error
+  or who is systematically over/under-represented in who reports.
+- **A stated methodology for the OD matrix's construction** (how origin-
+  destination pairs are inferred from the underlying booking/GPS data)
+  reviewable independent of the dashboard that presents it.
+
+---
+
+## 43. Operations Research Specialist
+
+**Would sign off on:**
+- Route-adherence monitoring modeled as a geometric containment problem
+  with a defined tolerance window (§27 GIS) — the right formal framing for
+  an optimization/OR discipline to eventually build scheduling or
+  dispatch logic on top of.
+
+**Would ask for, and why:**
+- **This system currently has no optimization layer at all** — routing,
+  dispatch, and fare-stage assignment are all operator-declared, not
+  computed. That's an appropriate scope boundary today (§1.3's provisional
+  route numbers imply the underlying network itself is still stabilizing,
+  and optimizing against a moving target is premature) but worth naming as
+  a deliberately deferred discipline rather than an oversight, with the
+  BRN route network's eventual stabilization as the trigger to revisit.
+
+---
+
 ## Mobile Apps — Deferred for Now, With a Plug-and-Play Path
 
 Native mobile apps are explicitly **off the table for now**. Not because
@@ -693,6 +1354,17 @@ usually where the real priority is.*
    against production or real Postgres, not by code review alone. Worth
    preserving as a stated practice rather than losing it under time
    pressure later.
+
+7. **Every deploy currently drops every passenger's live map.** Raised
+   independently by Software Architect, Distributed Systems Engineer, and
+   Real-Time Systems Engineer, all pointing at the same named, undone
+   architecture decision (`ARCHITECTURE_DECISIONS.md` §2.3: the WebSocket
+   gateway holds live connections in-process instead of being split out
+   with Redis-backed fan-out). Unlike most items in this document, this
+   one degrades the live product on *every single deploy today*, not only
+   at higher fleet volume — three engineering disciplines converging on
+   "do this one first, ahead of the telemetry carve-out" is worth treating
+   as a priority signal, not a coincidence.
 
 ---
 
