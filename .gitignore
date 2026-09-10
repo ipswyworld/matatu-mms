@@ -1,5 +1,12 @@
 # Secrets — never commit real values
 .env
+# Backstop for every app's .env.local, present or future — the per-app
+# entries below existed for two of three frontend apps and NOT the ops
+# app, which sat one `git add .` away from committing its real
+# OPS_SESSION_SECRET. A single wildcard here means a fourth app can never
+# reintroduce the same gap.
+**/.env.local
+**/.env*.local
 nginx/certs/*.key
 nginx/certs/*.pem
 
@@ -25,6 +32,14 @@ matatu-mms-public/.next/
 matatu-mms-public/.env.local
 matatu-mms-public/*.log
 matatu-mms-public/tsconfig.tsbuildinfo
+
+# Frontend — ops app (was entirely missing: no node_modules, .next, or
+# .env.local exclusion existed for this app at all)
+matatu-mms-ops/node_modules/
+matatu-mms-ops/.next/
+matatu-mms-ops/.env.local
+matatu-mms-ops/*.log
+matatu-mms-ops/tsconfig.tsbuildinfo
 
 # OS/editor
 .DS_Store
