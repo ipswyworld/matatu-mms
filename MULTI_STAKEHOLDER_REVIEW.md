@@ -1218,6 +1218,134 @@ than a document store is.
 
 ---
 
+## 44. Customer Support Operations
+
+**Would sign off on:**
+- The technical prerequisite for real support work already exists:
+  impersonation ("login as") with mandatory audit is built
+  (`ImpersonationPanel` in the ops console, §Ops Centre Rebuild above) —
+  the single highest-value tool a support team needs for "can you see what
+  I'm seeing" is already there, not still a request.
+- Generic, non-enumerating error responses (§Security Checklist #26) mean
+  support can safely ask "what's your registered phone number" without
+  that becoming an account-enumeration risk on the support side either.
+
+**Would ask for, and why:**
+- **There is no support ticketing or workflow at all.** Grepped the whole
+  repo for a helpdesk/ticketing pattern — nothing exists beyond a static
+  "Contact Us" link in the footer. Impersonation without a ticketing
+  system around it means "screen-share to see what you're seeing" has no
+  record of why it happened, no queue, and no resolution tracking — the
+  audit log captures *that* an impersonation happened, not *why* a citizen
+  called in the first place.
+- **A defined escalation path for payment and enforcement disputes**
+  specifically — these are the two categories most likely to generate a
+  support contact for a system that both takes money and issues fines,
+  and neither currently has a stated resolution SLA or an owner outside
+  engineering.
+- **A support-facing view of common failure modes already known to
+  engineering** — the free-tier cold-start "can't connect" error (this
+  session's own trigger for investigating it) is exactly the kind of thing
+  a support agent should have a canned, accurate answer for instead of
+  escalating every occurrence as a fresh incident.
+
+---
+
+## 45. Localization / Translation QA
+
+**Would sign off on:**
+- Real English/Swahili translation exists and is intentionally scoped,
+  not superficial — `matatu-mms-public/lib/i18n.ts`'s own comment states
+  it covers "shared app chrome (sidebar, header, footer) and the
+  highest-traffic public pages (login)... rather than every string in the
+  app," which is an honest, deliberate scoping decision rather than an
+  abandoned attempt at full coverage.
+- The language toggle and persistence (`LanguageProvider.tsx`,
+  `LanguageToggle.tsx`, `nccg_lang` storage key) is a real, working
+  mechanism, not a cosmetic switch with no effect.
+
+**Would ask for, and why:**
+- **No native Swahili speaker's review is evidenced anywhere in this
+  project.** The 57-line dictionary's translations may be linguistically
+  correct, but nothing in the repo indicates they were checked by a fluent
+  reviewer rather than machine-translated — worth a real QA pass before
+  this is a citizen's first impression of a government service in their
+  own language.
+- **The staff app maintains a *separate* copy of this dictionary**
+  (`i18n.ts`'s own comment: "county staff strings live in the separate
+  staff app's own copy of this file") — the exact same duplication risk
+  already flagged for `PageBanner.tsx`/`NotificationBell.tsx` (§6 Frontend
+  Development), just not yet caught drifting. Worth the same CI `diff`
+  guard, or consolidating both into one shared dictionary.
+- **Coverage stops well short of the app**: the dictionary explicitly
+  excludes booking flows, fine details, enforcement forms, and anything
+  past login/chrome. For citizens who read Swahili more comfortably than
+  English, the parts of the app with the most legal/financial consequence
+  (a fine, a booking confirmation) are exactly the parts currently
+  English-only. Worth prioritizing translation coverage by *consequence*,
+  not by page-traffic alone.
+- **No language selection for SMS/USSD** — `ARCHITECTURE_DECISIONS.md`
+  §1.7 already commits to USSD/SMS as a first-class access channel
+  specifically for riders without a smartphone; nothing in this review
+  found a language preference carried through to that channel, and a
+  USSD-only user is also the user least likely to be comfortable toggling
+  a web UI language switch in the first place.
+
+---
+
+## 46. Field Operations & Enablement
+
+Distinct from "The Public" (§13, passengers/citizens as external users):
+this is the internal field workforce — crew, drivers, and enforcement
+officers — whose devices, connectivity, and training this system depends
+on operationally, not just technically.
+
+**Would sign off on:**
+- The "On Patrol" toggle (`OnPatrolToggle.tsx`) is a deliberately
+  opt-in, foreground GPS broadcast for enforcement officers, with a
+  documented reasoning comment for *why* it's opt-in rather than
+  continuous background tracking, and a real product-safety choice
+  embedded in the code: no simulated-fallback position. If the device GPS
+  fix isn't available, it shows "GPS unavailable" and broadcasts nothing,
+  specifically because a faked officer location could actively mislead a
+  commander about where someone actually is — the crew app's demo-vehicle
+  GPS is allowed a simulated fallback; an officer's real safety-relevant
+  position is not, and the code treats those two cases differently on
+  purpose.
+- The crew and enforcement portals are real, working surfaces
+  (`CrewPortalClient.tsx`, `EnforcementSceneForm.tsx`), not stubs standing
+  in for a future native app.
+
+**Would ask for, and why:**
+- **Offline-tolerant operation is a named, accepted gap, not an
+  oversight** — `ARCHITECTURE_DECISIONS.md` §1.8 explicitly defers it to
+  the native mobile phase, because "connectivity along these corridors is
+  unreliable" and a browser tab can't queue-and-sync the way a native app
+  can. This is the single biggest field-usability risk in the system
+  today: an officer or crew member losing connectivity mid-shift currently
+  has no documented fallback beyond "wait for signal," and that gap has an
+  owner (native mobile, deferred per §Mobile Apps above) but no interim
+  mitigation.
+- **Device provisioning is undecided.** Nothing in this review states
+  whether officers/crew use personal phones (BYOD) or county-issued
+  devices — this materially changes the security posture (§Security
+  Checklist), battery/GPS reliability assumptions behind `OnPatrolToggle`,
+  and who's responsible when a device is lost with an active session on
+  it.
+- **No field training or change-management plan is referenced anywhere**
+  in this project's documents. A digital enforcement and crew-tracking
+  system is a real workflow change for officers used to paper citations —
+  worth a named rollout/training owner before wider deployment, not an
+  assumption that the UI is self-explanatory.
+- **Browser geolocation's hard limits** (`ARCHITECTURE_DECISIONS.md` §5.2
+  — cannot reliably track a backgrounded web app) apply identically to
+  `OnPatrolToggle`: an officer who backgrounds the browser to answer a
+  call or check a map app elsewhere loses tracking silently. Worth a
+  visible on-screen warning when this happens, not just a known
+  architectural limitation.
+
+---
+
 ## Ops Centre Rebuild — Cross-Team Discussion
 
 Triggered by the decision to move the deployment to a new free Render
