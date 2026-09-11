@@ -1614,26 +1614,26 @@ usually where the real priority is.*
 This document is 46 roles' worth of findings and asks, which is
 deliberately organized by *who is looking*, not by *when to do it*. That
 makes it easy to argue with any one finding and hard to answer "what do
-we actually do Monday morning." This section is that answer — every item
-below cites the section it came from rather than re-arguing it, and
-phases are ordered by **urgency and dependency**, not by role or by how
-the document above is organized.
+we actually do Monday morning." **This section is comprehensive, not a
+highlights reel**: every "Would ask for, and why" item from every section
+above (plus the Security Checklist, Ops Centre Rebuild, and Mobile Apps
+sections) is placed in exactly one phase below, citing back to its
+source rather than re-arguing it. Where multiple roles asked for the same
+thing, every citing section is listed once, at the phase where it's
+sequenced. Phases are ordered by **urgency and dependency**, not by role
+or by document order.
 
 ### Phase 0 — This week (hard deadline: 3 days as of 2026-09-11)
 
-1. **Resolve the Postgres expiry before 2026-09-14.** (§9 DBA,
-   Cross-Cutting Theme #1) Either the new-Render-account migration
-   completes with a verified data migration before this date, or a
-   verified backup of the current database is taken independently of the
-   migration timeline. **Do not let "we're migrating anyway" become the
-   backup plan** — if the migration slips past the 14th and there's no
-   separate backup, the database is gone with no undo. This is the one
-   item in the whole document that fails silently and permanently if
-   missed.
-2. **Rotate the Render API key already flagged compromised** (§10
-   Security) — do this regardless of migration timing; it was exposed in
-   conversation history days ago and every day it stays live is
-   unnecessary exposure.
+1. **Resolve the Postgres expiry before 2026-09-14.** (§9, Cross-Cutting
+   Theme #1) Either the new-Render-account migration completes with a
+   verified data migration before this date, or a verified backup is
+   taken independently of the migration timeline. **Do not let "we're
+   migrating anyway" become the backup plan** — this is the one item in
+   the whole document that fails silently and permanently if missed.
+2. **Rotate the Render API key already flagged compromised** (§10) — it
+   was exposed in conversation history days ago; every day it stays live
+   is unnecessary exposure, independent of migration timing.
 
 ### Phase 1 — Alongside the Render account migration (§Ops Centre Rebuild)
 
@@ -1645,88 +1645,266 @@ change, the new Postgres instance's fresh 30-day clock written down the
 day it's created, and `verify_postgres.py` run against it before calling
 the migration done.
 
-### Phase 2 — Independent security fixes (no architecture change needed)
+### Phase 2 — Independent fixes, no architecture change needed
 
-These five are flagged in the Security Checklist as concrete, standalone
-gaps — none depends on another, so they can be split across whoever has
-capacity rather than sequenced:
+Nothing here depends on anything else in this list — split across
+whoever has capacity rather than sequencing:
 
-- Bot/CAPTCHA protection on login, registration, password reset (#12)
-- File upload size limit + content-type/extension whitelist (#16, #27)
-- CSRF token mechanism (#23)
-- Session revocation on password change (#24)
-- Least-privilege Postgres role instead of the default broad one (#31)
+- Bot/CAPTCHA protection on login, registration, password reset (Security
+  Checklist #12)
+- File upload size limit + content-type/extension whitelist (Security
+  Checklist #16, #27)
+- CSRF token mechanism (Security Checklist #23)
+- Session revocation on password change (Security Checklist #24, §25 IAM
+  Engineer independently asks for the same fix)
+- Least-privilege Postgres role instead of the default broad one
+  (Security Checklist #31)
+- Token scope/audience claims for API clients, so a compromised partner
+  credential is provably limited to what it was granted (§25)
+- A periodic `.gitignore`-completeness check per app — `gitleaks` catches
+  a committed secret, not the gap that made committing one likely (§24)
+- A lint rule for the static-file exemption pattern that already caused
+  the `webmanifest`/`/offline` redirect bug once (§6)
+- Fix the regression suite's non-idempotency against a persistent
+  database before it's safe to run in CI against shared Postgres (§7,
+  also blocks §15's CI-integrated Postgres testing ask)
+- A rollback runbook tied to the release process itself — "which git SHA
+  was last known-good, one command back" (§31)
+- A single onboarding doc / `DOCS.md` index across the dozen standalone
+  root-level audit documents, distinguishing current from historical
+  (§32)
+- Seed data confirmed to exercise the full role matrix, not just enough
+  to boot (§32)
 
-### Phase 3 — The top real-time and reporting-load priorities
+### Phase 3 — Top real-time and data-infrastructure priorities
 
 1. **The WebSocket gateway carve-out** (Cross-Cutting Theme #7) — ranked
-   above the telemetry carve-out specifically because it degrades the
-   live product on *every deploy today*, not only at higher volume. Three
-   independent roles (§16, §20, §28) converged on doing this first.
+   first because it degrades the live product on *every deploy today*.
+   Three independent roles converged on this (§16, §20, §28), including
+   the Redis-backed fan-out design for the split-out gateway (§20, §28).
 2. **A read replica for reporting** (Cross-Cutting Theme #2) — raised
-   independently by four roles (§1, §3, §9, §36); this also unblocks the
-   read-only DB browser already scoped for the ops console (§Ops Centre
-   Rebuild) and the BI/analytics tooling asked for in §39/§40.
+   independently by six roles (§1, §3, §9, §19, §36, §39); unblocks the
+   read-only DB browser (§Ops Centre Rebuild) and a BI tool connection
+   target (§39, §40).
 3. **PgBouncer / connection pooling** (§9, §29) — before Kubernetes
-   autoscaling multiplies backend pod count and multiplies raw Postgres
-   connections with it.
+   autoscaling multiplies backend pod count along with raw Postgres
+   connections.
+4. **The telemetry ingest carve-out** (§16, mapped in
+   `SERVICE_EXTRACTION_READINESS.md`) — sequenced after the WebSocket
+   gateway per §16/§20/§28's explicit ranking.
+5. **A Timescale-licensed Postgres** (self-hosted or Timescale Cloud),
+   replacing Render's Apache build once telemetry volume justifies it
+   (§3).
+6. **Multi-replica-aware circuit breaker state** — today's breaker/retry
+   primitives are correct for one process and will silently under-protect
+   above replica count 1; prioritize before scaling replicas, not after
+   an incident reveals the gap (§18, §20, §30).
+7. **Explicit consistency documentation** — which parts of the system are
+   eventually consistent (breaker/rate-limit overrides) versus strongly
+   consistent (ledger postings, seat assignment), so a future engineer
+   doesn't assume uniform guarantees (§20).
+8. **SLOs with real error budgets**, confirming `alertmanager.yml` is
+   wired to defined SLOs rather than raw thresholds (§18).
+9. **A disaster-recovery drill** rehearsing the runbooks against the
+   Postgres-expiry-shaped scenario, not just a read-through (§18); pair
+   with **chaos-testing the runbooks** against a deliberately broken
+   dependency (§30).
+10. **A documented, drilled incident-response runbook** synthesizing the
+    ad hoc diagnostic steps already used this session (a failed deploy, a
+    PII leak, a proxy-IP bug) into a standing procedure (§10).
+11. **A living ADR practice** — one-ADR-per-decision going forward,
+    rather than the single monolithic `ARCHITECTURE_DECISIONS.md` (§16).
 
 ### Phase 4 — Ops console: the two remaining named gaps (§Ops Centre Rebuild)
 
-1. Service/software catalog — cheap, and a natural byproduct of the
-   account-migration audit work in Phase 1; capture that audit as this
-   screen instead of doing it once and losing it.
-2. Read-only database browser — sequence after Phase 3's read replica
-   lands, since it's meant to point at that replica, not the primary.
+1. Service/software catalog — a natural byproduct of the account-migration
+   audit work in Phase 1; capture that audit as this screen.
+2. Read-only database browser — sequence after Phase 3's read replica,
+   since it's meant to point at that replica, not the primary.
 
-### Phase 5 — CD maturity, once Phase 3's carve-outs create something to deploy independently
+### Phase 5 — CD and infrastructure maturity, once Phase 3 creates something to deploy independently
 
-1. Decide the staging/orchestrator question (§4, §17, §31) — this is
-   named in `CD_PIPELINE_STATUS.md` as a blocked *decision*, not blocked
+1. Decide the staging/orchestrator question (§4, §17, §31) — named in
+   `CD_PIPELINE_STATUS.md` as a blocked *decision*, not blocked
    engineering work.
-2. ArgoCD + blue-green (§4) once that decision is made — the canary
+2. Actually apply the Kubernetes manifests against a real API server —
+   "the YAML is correct" and "the cluster comes up clean" are different
+   claims (§4).
+3. ArgoCD + blue-green (§4, §17) once the above lands — the canary
    mechanics already exist and are runnable (`scripts/canary-promote.sh`)
    against the self-hosted docker-compose target; wiring them to a real
    orchestrator is the remaining step.
-3. Terraform for infrastructure-as-code (§4, §19), so "what's running in
+4. A manual-approval gate before production — a GitHub Environments
+   repo-settings toggle once there's a real deploy job to gate (§31).
+5. Terraform for infrastructure-as-code (§4, §19), so "what's running in
    production" stops living in one person's head.
+6. Per-service path filters in CI/CD — a single-file commit currently
+   triggers a full rebuild of all four services (§4).
+7. A named cloud-cost owner, so "why did the bill change" has an answer
+   before it's asked under pressure (§19).
+8. Real network isolation for the ops control plane (no public ingress),
+   not just the application-layer CIDR gate (§5, Cross-Cutting Theme #3).
+9. A real WAF beyond Cloudflare's free-tier default, and a DDoS
+   review/load-test at the network layer (§5).
+10. A monitored assertion confirming Render's `X-Forwarded-For` ordering
+    going forward, so a future upstream change can't silently reintroduce
+    the proxy-IP bug already fixed (§5).
+11. A load test against the actual telemetry write path (~700 writes/sec
+    calculated, never measured against a running system) (§29).
 
-### Phase 6 — Organizational owners to name (not engineering work)
+### Phase 6 — API contracts and cross-cutting developer-facing work
 
-None of these are code changes; each needs a person or team named as
-owner before the next steps make sense:
+- A published, versioned OpenAPI contract, not just FastAPI's
+  auto-generated schema — asked independently by Backend (§7),
+  Full-Stack (§8), and API/Integration Engineering (§21), which is also
+  the audience most affected by an undocumented breaking change.
+- Shared type generation between frontend and backend (e.g.
+  `openapi-typescript`) to remove hand-kept-in-sync drift (§8).
+- A single source of truth for design tokens across the three Next.js
+  apps (§8).
+- Finish auditing the `Decimal` migration for any remaining `float` money
+  fields (§7).
+- Background job observability — a historical view of ARQ failure rates
+  over time, not just current queue state (§7).
+- Webhook delivery guarantees documented for partners specifically (retry
+  count, backoff, replay window), not just the internal runbook (§21).
+- Keep `NTSA_IRMS_INTEGRATION_CHECKLIST.md`'s framing explicit to
+  stakeholders — vehicle positioning is blocked on external access, not a
+  code gap (§21).
+
+### Phase 7 — Frontend, UX, and accessibility
+
+- WCAG 2.1 AA accessibility audit (§6, §12, Cross-Cutting Theme #4) —
+  raised independently from the implementation side and the human-outcome
+  side.
+- A component library / design system, formalized once a third app needs
+  a currently-duplicated component (§6).
+- Real E2E tests (Playwright/Cypress) — the PWA middleware bug is exactly
+  what a permanent smoke test would have caught (§6).
+- Usability testing with real passengers and crew on real lower-end
+  Android devices over real Kenyan mobile data — nothing has been tested
+  with an actual target user yet (§12).
+- A first-run onboarding flow — the apps assume familiarity with "stage,"
+  "Sacco," "BRN route" that a first-time passenger doesn't have (§12).
+- Empty-state design for list views, beyond a plain "no records" line
+  (§12).
+- A public status page, so "is it down or just me" has a real answer
+  during an outage (§13) — directly relevant to this session's own
+  cold-start investigation.
+- Plain-language fare/fine explanations answering "why is this fine
+  KES 3,500" directly in the UI (§13).
+- An SMS-based fallback for feature-phone users or unreliable data
+  connections (§13; §45 additionally flags this channel currently carries
+  no language preference).
+- Fix the reliability *perception* problem alongside the infrastructure
+  fix — a citizen hitting a cold-start error reasonably assumes the whole
+  system is broken (§13).
+
+### Phase 8 — Data and analytics maturity
+
+- A data classification scheme (public/internal/restricted/PII) applied
+  consistently across tables (§37).
+- A data inventory/map — what's collected, where, retention, who can
+  access it (§26, §37 — same ask from Privacy Engineering and Data
+  Governance independently).
+- A retention policy tied to actual purpose for PII-bearing tables beyond
+  the already-justified 90-day GPS window (§26).
+- Data quality checks beyond the ledger's trial balance — orphaned
+  records, out-of-range values, referential drift — plus automated,
+  ongoing monitoring rather than write-time-only constraints (§38).
+- A documented logical data model / ER diagram per module, matching the
+  boundaries already named in prose (§36).
+- Named per-table data stewardship — an accountable point of contact
+  independent of who wrote the migration (§41).
+- A metrics dictionary resolving field-name drift (`fine_amount_kes` vs
+  `amount_kes`) and a documented semantic layer so multiple dashboards
+  don't quietly disagree on what "active user" or "on-time" means (§1,
+  §39).
+- Scheduled exports (CSV/Sheets) for county finance and compliance
+  reporting (§1).
+- Start the dbt project structure now, with a single model, rather than
+  waiting for ad hoc transformation scripts to multiply (§3, §40).
+- Confidence intervals and a stated methodology documented on every
+  metric derived from crowdsourced input, including the OD matrix's own
+  construction (§42).
+
+### Phase 9 — Business and organizational documentation (not code)
+
+- A clear unit-economics view and an actual budget dashboard extending
+  the existing SMS spend-tracking (§14).
+- A concrete compliance roadmap (DPA formalization, eventual SOC2-style
+  posture) with dates (§14).
+- A clearly articulated revenue model document — the ledger has the
+  mechanics; the business explanation doesn't exist yet (§14).
+- A named path to countrywide expansion, given the data model is
+  deliberately Nairobi-only today (§14).
+- Actually run the k6 load-test scenarios at least once locally — written
+  and never executed (§15).
+- Visual regression testing for the three frontends, given how much UI
+  work has happened with only manual before/after screenshots as the
+  record (§15).
+
+### Phase 10 — Organizational owners to name (not engineering work)
 
 - Legal/Compliance review of enforcement liability and evidentiary
-  chain-of-custody (§44 area, raised in conversation)
+  chain-of-custody (raised in conversation, adjacent to §44).
 - The Oregon hosting-region data-residency question under Kenya's Data
-  Protection Act (raised in conversation — worth a Legal/Compliance
-  answer before treating it as settled either way)
-- Support ticketing/workflow ownership (§44)
-- A native Swahili speaker's translation review (§45)
-- Field device provisioning (BYOD vs. county-issued) and a training/
-  change-management plan for officers and crew (§46)
+  Protection Act (raised in conversation) — worth a Legal/Compliance
+  answer before treating it as settled either way.
+- Support ticketing/workflow ownership, plus a defined escalation path
+  for payment and enforcement disputes specifically, plus a support-facing
+  known-issues doc (starting with the free-tier cold-start error) (§44).
+- A native Swahili speaker's translation review; syncing the staff and
+  public apps' currently-separate i18n dictionaries the same way
+  `PageBanner`/`NotificationBell` are synced; prioritizing translation
+  coverage by consequence (fines, bookings) rather than page-traffic
+  alone (§45).
+- Field device provisioning (BYOD vs. county-issued) and a field
+  training/change-management plan for officers and crew — a real
+  workflow change from paper citations, with no named owner today (§46).
+- An interim mitigation (even just a visible on-screen warning) for
+  `OnPatrolToggle`'s silent tracking loss when an officer backgrounds the
+  browser, ahead of the native-mobile fix for offline tolerance generally
+  (§46).
 
-### Phase 7 — Deferred by design, not forgotten
+### Phase 11 — Deferred by design, gated on volume or a future decision, not forgotten
 
-Explicitly *not* scheduled — each has a stated trigger for when to
-revisit, not a "someday":
+Each of these has a stated trigger for when to revisit — not a "someday":
 
 - **Redpanda** — only once Redis Streams actually hits a real limit
-  (§3); confirmed this is a replacement path, not something to run
-  alongside Redis Streams.
+  (§3); a replacement path, not something to run alongside Redis Streams.
 - **Native mobile apps** — deferred with a documented plug-and-play path
   (§Mobile Apps); revisit once the three web apps and backend are settled
   enough to build against without a moving target.
-- **ML/MLOps/Computer Vision** (§33-35) — no system exists yet to
-  justify these disciplines; the demand-intelligence dashboard is the
-  most plausible first real use case once enough historical volume
-  exists.
-- **A real penetration test and WCAG 2.1 AA accessibility audit** (§10,
-  Cross-Cutting Theme #4) — both explicitly "before any countrywide
+- **ML/MLOps/Computer Vision** (§33-35) — no system exists yet to justify
+  these disciplines; the demand-intelligence dashboard is the most
+  plausible first real use case once enough historical volume exists.
+- **A real penetration test** (§10) — explicitly "before any countrywide
   launch," not before the current demo stage.
-- **dbt/Airflow** (§3, §40) — once there's more than one scheduled
-  transformation job; start the project structure with a single model
-  rather than waiting for the ad hoc scripts to multiply first.
+- **Move integrity detection from fixed thresholds to a learned model**
+  (§2) — once enough labelled history exists; the current constants are
+  reasoned-about, not broken.
+- **A feature store** (§2) — once fare-demand forecasting and fraud
+  detection exist as more than one-off signal derivations.
+- **An experimentation framework (A/B testing)** (§2) — before touching
+  fare policy or route changes at scale, not before there's a policy to
+  test variants of.
+- **A distinct research-data API tier and open, versioned aggregate
+  exports** for approved researchers (§11) — a real, named gap, but one
+  that needs an access-policy decision (aggregation thresholds,
+  re-identification review) before it's an engineering task.
+- **Anonymized historical data access for model training**, separate from
+  the individual-subject DPA erasure/export path (§2) — same dependency
+  as the research-data tier above.
+- **Cohort and retention analysis on ridership** (§1) — the tables
+  support it structurally; nothing computes it yet because real usage
+  volume doesn't exist yet to analyze.
+- **A data-freshness mechanism for BRN route geometry** (§27) — triggered
+  by the permanent NMA-wide route-numbering scheme landing, not before.
+- **Confirm the PostGIS migration and adherence buffers are actually
+  applied against production** (§27) — worth doing opportunistically
+  alongside Phase 1's `verify_postgres.py` re-run on the new database,
+  rather than as a separately scheduled task.
 
 ---
 
