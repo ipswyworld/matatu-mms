@@ -1609,5 +1609,126 @@ usually where the real priority is.*
 
 ---
 
+## Phased Roadmap — Turning This Review Into an Order of Work
+
+This document is 46 roles' worth of findings and asks, which is
+deliberately organized by *who is looking*, not by *when to do it*. That
+makes it easy to argue with any one finding and hard to answer "what do
+we actually do Monday morning." This section is that answer — every item
+below cites the section it came from rather than re-arguing it, and
+phases are ordered by **urgency and dependency**, not by role or by how
+the document above is organized.
+
+### Phase 0 — This week (hard deadline: 3 days as of 2026-09-11)
+
+1. **Resolve the Postgres expiry before 2026-09-14.** (§9 DBA,
+   Cross-Cutting Theme #1) Either the new-Render-account migration
+   completes with a verified data migration before this date, or a
+   verified backup of the current database is taken independently of the
+   migration timeline. **Do not let "we're migrating anyway" become the
+   backup plan** — if the migration slips past the 14th and there's no
+   separate backup, the database is gone with no undo. This is the one
+   item in the whole document that fails silently and permanently if
+   missed.
+2. **Rotate the Render API key already flagged compromised** (§10
+   Security) — do this regardless of migration timing; it was exposed in
+   conversation history days ago and every day it stays live is
+   unnecessary exposure.
+
+### Phase 1 — Alongside the Render account migration (§Ops Centre Rebuild)
+
+Everything already itemized per-team in that section: fresh secrets
+issued through Infisical (not copied `.env.local` files), new NairobiPay
+callback secret and JWT signing key issued fresh rather than carried
+over, every hardcoded URL/CORS/redirect entry audited for the account
+change, the new Postgres instance's fresh 30-day clock written down the
+day it's created, and `verify_postgres.py` run against it before calling
+the migration done.
+
+### Phase 2 — Independent security fixes (no architecture change needed)
+
+These five are flagged in the Security Checklist as concrete, standalone
+gaps — none depends on another, so they can be split across whoever has
+capacity rather than sequenced:
+
+- Bot/CAPTCHA protection on login, registration, password reset (#12)
+- File upload size limit + content-type/extension whitelist (#16, #27)
+- CSRF token mechanism (#23)
+- Session revocation on password change (#24)
+- Least-privilege Postgres role instead of the default broad one (#31)
+
+### Phase 3 — The top real-time and reporting-load priorities
+
+1. **The WebSocket gateway carve-out** (Cross-Cutting Theme #7) — ranked
+   above the telemetry carve-out specifically because it degrades the
+   live product on *every deploy today*, not only at higher volume. Three
+   independent roles (§16, §20, §28) converged on doing this first.
+2. **A read replica for reporting** (Cross-Cutting Theme #2) — raised
+   independently by four roles (§1, §3, §9, §36); this also unblocks the
+   read-only DB browser already scoped for the ops console (§Ops Centre
+   Rebuild) and the BI/analytics tooling asked for in §39/§40.
+3. **PgBouncer / connection pooling** (§9, §29) — before Kubernetes
+   autoscaling multiplies backend pod count and multiplies raw Postgres
+   connections with it.
+
+### Phase 4 — Ops console: the two remaining named gaps (§Ops Centre Rebuild)
+
+1. Service/software catalog — cheap, and a natural byproduct of the
+   account-migration audit work in Phase 1; capture that audit as this
+   screen instead of doing it once and losing it.
+2. Read-only database browser — sequence after Phase 3's read replica
+   lands, since it's meant to point at that replica, not the primary.
+
+### Phase 5 — CD maturity, once Phase 3's carve-outs create something to deploy independently
+
+1. Decide the staging/orchestrator question (§4, §17, §31) — this is
+   named in `CD_PIPELINE_STATUS.md` as a blocked *decision*, not blocked
+   engineering work.
+2. ArgoCD + blue-green (§4) once that decision is made — the canary
+   mechanics already exist and are runnable (`scripts/canary-promote.sh`)
+   against the self-hosted docker-compose target; wiring them to a real
+   orchestrator is the remaining step.
+3. Terraform for infrastructure-as-code (§4, §19), so "what's running in
+   production" stops living in one person's head.
+
+### Phase 6 — Organizational owners to name (not engineering work)
+
+None of these are code changes; each needs a person or team named as
+owner before the next steps make sense:
+
+- Legal/Compliance review of enforcement liability and evidentiary
+  chain-of-custody (§44 area, raised in conversation)
+- The Oregon hosting-region data-residency question under Kenya's Data
+  Protection Act (raised in conversation — worth a Legal/Compliance
+  answer before treating it as settled either way)
+- Support ticketing/workflow ownership (§44)
+- A native Swahili speaker's translation review (§45)
+- Field device provisioning (BYOD vs. county-issued) and a training/
+  change-management plan for officers and crew (§46)
+
+### Phase 7 — Deferred by design, not forgotten
+
+Explicitly *not* scheduled — each has a stated trigger for when to
+revisit, not a "someday":
+
+- **Redpanda** — only once Redis Streams actually hits a real limit
+  (§3); confirmed this is a replacement path, not something to run
+  alongside Redis Streams.
+- **Native mobile apps** — deferred with a documented plug-and-play path
+  (§Mobile Apps); revisit once the three web apps and backend are settled
+  enough to build against without a moving target.
+- **ML/MLOps/Computer Vision** (§33-35) — no system exists yet to
+  justify these disciplines; the demand-intelligence dashboard is the
+  most plausible first real use case once enough historical volume
+  exists.
+- **A real penetration test and WCAG 2.1 AA accessibility audit** (§10,
+  Cross-Cutting Theme #4) — both explicitly "before any countrywide
+  launch," not before the current demo stage.
+- **dbt/Airflow** (§3, §40) — once there's more than one scheduled
+  transformation job; start the project structure with a single model
+  rather than waiting for the ad hoc scripts to multiply first.
+
+---
+
 *Corrections, disagreements, and additions welcome directly in this file —
 it's meant to be edited, not treated as a finished report.*
