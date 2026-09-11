@@ -1218,6 +1218,107 @@ than a document store is.
 
 ---
 
+## Ops Centre Rebuild — Cross-Team Discussion
+
+Triggered by the decision to move the deployment to a new free Render
+account. Before assuming this means designing the ops console from zero,
+it's worth being honest about where it actually stands: **most of the
+previously-written `OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md` is already
+built**, not still on a backlog. Checked directly against the running
+`matatu-mms-ops` app for this review, not assumed from the spec document
+alone.
+
+### What already exists (verified against the actual routes and components)
+
+| Spec item | Status | Where |
+|---|---|---|
+| Service health matrix + deploy/GitHub view | **Built** | `infrastructure/page.tsx` — `ServiceHealthMatrix`, `getRenderServiceMatrix` |
+| Audit log viewer (read-only) | **Built** | `audit/page.tsx` — `AuditLogViewer` |
+| Tier-1 CRUD: feature flags, rate limits, incident/system controls | **Built** | `config/page.tsx` — `FeatureFlagsPanel`, `RateLimitsPanel`, `SystemControlsPanel` |
+| Circuit breaker visibility + manual override | **Built** | `integrations/page.tsx` — `CircuitBreakerPanel`, backed by `app/ops_breakers.py` |
+| Webhook delivery visibility | **Built** | `integrations/page.tsx` — `WebhookDeliveriesPanel` |
+| Background job/queue control (retry, dead-letter, pause) | **Built** | `jobs/page.tsx` — `JobQueuePanel` confirmed to include retry/dead-letter/pause, not just a visibility list |
+| Auth-event audit + login metadata capture | **Built** | `sessions/page.tsx` — `PrivilegedActivityPanel`, `getLoginOverview` — closes the exact gap `SYSTEM_AUDIT.md` §2.1 originally flagged |
+| Cross-account "who's logged in" + privileged-activity view | **Built** | `sessions/page.tsx` |
+| Impersonation ("login as") with mandatory audit | **Built** | `sessions/page.tsx` — `ImpersonationPanel`, backed by impersonation fields in `auth.py`/`models.py`/`schemas.py` |
+| Per-user Activity tab (staff portal, not ops) | **Built** | `matatu-mms/app/(app)/users/page.tsx`, `EditUserModal.tsx` |
+| Golden-path wizard for Tier-2 entities (new-Sacco onboarding) | **Built** | `infrastructure/page.tsx` — `OperatorOnboardingLauncher` |
+| IP allowlist visibility | **Partial** | Render's own per-service `ipAllowList` is surfaced in `ServiceHealthMatrix`/`lib/render.ts` — this reads Render's config, it isn't yet an editable Tier-1 CRUD screen for the app's own access rules |
+| Service/software catalog (owner, repo, deployed SHA, dependencies) | **Not built** | Named in the spec (§A.3) as a cheap win derivable from the Render API — genuinely still missing |
+| Read-only database browser (pointed at a read replica, DB-role-enforced `SELECT`-only) | **Not built** | Named in the spec (§A.3) — depends on the read-replica ask already converged on independently by four roles (Cross-Cutting Theme #2), so sequencing this after that lands is reasonable, not neglect |
+
+**The honest framing for "what should be rebuilt": this isn't a rebuild
+from zero — it's closing two named, still-open gaps (service catalog,
+read-only DB browser), plus everything below that the Render-account
+migration itself surfaces as new work.**
+
+### What the move to a new Render account specifically requires — per team
+
+- **Platform Engineering / DevOps:** this is the moment to fix the exact
+  class of mistake found and fixed earlier in this review — provision the
+  new account's secrets fresh through Infisical, never by copy-pasting
+  the old account's `.env.local` files across. Re-verify every app's
+  `.gitignore` coverage on the new account's first commit cycle rather
+  than assuming the fix already made (the `**/.env*.local` backstop) is
+  the only thing standing between a fresh mistake and a repeat leak.
+- **Security / IAM:** treat this migration as the forcing function to
+  finally rotate the Render API key already flagged for rotation earlier
+  in this review (§10) — a new account is a clean point to issue an
+  entirely new key rather than carrying the compromised one over. Same
+  logic for the NairobiPay callback secret and the JWT signing key: issue
+  new values on the new account, don't migrate the old ones.
+- **Network Engineering:** every app's public URL changes
+  (`*.onrender.com` subdomains are account-scoped). This touches CORS
+  allowlists, the three frontends' redirect/callback URLs, any hardcoded
+  URL in `render.yaml` / `nginx/nginx.conf`, and Cloudflare DNS if a
+  custom domain sits in front — audit these explicitly rather than
+  discovering a broken redirect after cutover the way the current session
+  started (a "can't connect" report on the *old* account was the trigger
+  for this whole conversation).
+- **Database Management / DBA:** a new account almost certainly means a
+  new free-tier Postgres instance, which means a **new 30-day expiry
+  clock** — write the new date down the moment the database is created,
+  don't let Cross-Cutting Theme #1 quietly repeat itself on the new
+  account. Re-run `verify_postgres.py` against it before calling the
+  migration done — the same discipline that caught the TimescaleDB
+  Apache-license issue the first time applies again to an instance that
+  hasn't been touched yet.
+- **SRE / Resilience Engineering:** circuit breaker and rate-limit state
+  (both already documented as in-process/Redis-backed, not durable) reset
+  clean on the new account — correct behavior, but worth confirming
+  nothing in the ops console assumes historical breaker/incident state
+  survives the move.
+- **Release / Build Engineer:** CI's image push target (`ghcr.io`) is
+  unaffected by the Render account change, but Render's own deploy hooks
+  and any account-scoped API tokens used by automation need updating —
+  audit `.github/workflows/ci.yml` and `render.yaml` for anything
+  referencing the old account's service IDs.
+- **Developer Experience Engineer:** update `README.md`, `DEPLOYMENT.md`,
+  and the dashboard URLs already listed by name in this document (they
+  will silently go stale for anyone who bookmarked the old ones) once the
+  new account's services are live.
+- **Frontend / Backend:** confirm the free-tier cold-start behavior
+  (Cross-Cutting Theme #5, and the direct trigger for this section) is
+  understood to persist on the new account too — a new account does not
+  remove the free-tier ceiling, only resets the deadline clock on the
+  database. If a keep-warm ping or a paid-tier upgrade is planned, decide
+  it as part of this migration rather than as a follow-up after the same
+  "can't connect" report recurs.
+
+### The two remaining real feature gaps, worth closing during this migration window
+
+1. **Service/software catalog** — cheap, and a natural fit for exactly
+   this moment: the migration already requires re-auditing every service's
+   Render configuration, repo link, and current deployed SHA by hand: capture
+   that audit as the catalog screen instead of doing the work once and
+   losing it.
+2. **Read-only database browser** — sequence after the read-replica
+   decision (Cross-Cutting Theme #2), but worth deciding *now*, while a
+   fresh database is being provisioned anyway, whether the replica gets
+   stood up at the same time rather than as a separate later migration.
+
+---
+
 ## Mobile Apps — Deferred for Now, With a Plug-and-Play Path
 
 Native mobile apps are explicitly **off the table for now**. Not because
