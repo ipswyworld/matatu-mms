@@ -122,6 +122,18 @@ sanity-check that every discipline has actually had a say.
   three frontends and a backend already. Not needed today; worth deciding
   *now*, in writing, so the eventual migration is "swap the connection
   string" rather than a fresh six-way broker bake-off under pressure.
+  **Clarification worth stating explicitly, since it's a natural
+  question**: this is a *replacement* path, not an *add-both* path.
+  Redpanda and Redis Streams solve the same problem (a durable, replayable
+  event log with consumer groups) — they don't integrate with or enhance
+  each other, and there's no version of "use both" that adds capability
+  rather than just operating two separate broker systems for overlapping
+  use cases. Running both before Redis Streams has actually hit a real
+  limit would itself be the premature engineering this bullet argues
+  against. If a specific future scenario ever justifies splitting
+  workloads across two brokers (e.g., very high-volume telemetry on one,
+  everything else on the other), that's worth its own dedicated review
+  when it comes up — not a default "more is better" move today.
 - **dbt or Airflow** once there's more than one scheduled transformation
   job, to avoid ad hoc cron scripts multiplying silently.
 
