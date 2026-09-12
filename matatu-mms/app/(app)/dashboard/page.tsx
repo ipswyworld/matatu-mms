@@ -431,6 +431,15 @@ export default async function DashboardPage() {
             color="#B4232C"
             valueFormat="currency"
           />
+          {/* Fourth cell of this 2x2 grid — the Sacco-operator branch above
+              already pairs the fines trend with a bookings trend; the admin
+              view was missing this second chart, leaving the cell empty. */}
+          <TrendChart
+            metric="bookings"
+            title="Passenger demand over time"
+            countUnit="bookings"
+            color="#0F5132"
+          />
         </div>
 
         <ActivityFeed
