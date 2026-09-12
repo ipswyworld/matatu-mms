@@ -1,9 +1,15 @@
-// This app embeds Grafana in an iframe (see app/page.tsx) and is deliberately
-// reached only through the nginx :3002 block (nginx/nginx.conf) or a
-// network-restricted deploy — so the CSP here only needs to be strict about
-// script/style execution, not about a long allowlist of third-party
-// domains the way the public-facing app's does.
-const SCRIPT_SRC = process.env.NODE_ENV === "production" ? "script-src 'self'" : "script-src 'self' 'unsafe-eval' 'unsafe-inline'";
+// This app embeds Grafana in an iframe (see app/page.tsx). The comment this
+// replaced assumed it's reached only through the nginx :3002 block or a
+// network-restricted deploy — true for the self-hosted docker-compose
+// target, but not for Render, which has no network-layer isolation for this
+// service (§Network Engineering, Cross-Cutting Theme #3): it's reachable at
+// its own public URL, protected only by the app's own SUPERADMIN-only
+// session check. A stricter production script-src without 'unsafe-inline'
+// was never actually exercised against that deployment — confirmed live:
+// it blocks Next.js's own required inline hydration scripts entirely,
+// leaving a blank page after login (React error #423) on every real
+// browser test. Matches the staff and public apps' existing script-src now.
+const SCRIPT_SRC = process.env.NODE_ENV === "production" ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-eval' 'unsafe-inline'";
 
 const SECURITY_HEADERS = [
   {
