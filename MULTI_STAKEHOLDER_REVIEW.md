@@ -1432,6 +1432,29 @@ disruption for a change that the evidence says will not happen.
    `style-src https://unpkg.com` CSP allowance as the only available fix.
    Verified after: live TomTom traffic feed (real Nairobi road incidents,
    not placeholder data) renders with zero console errors.
+4. **The ops console couldn't render at all after login — blank page,
+   every time.** Its production CSP omitted `'unsafe-inline'` from
+   `script-src` entirely (unlike the staff and public apps, which both
+   already include it), blocking Next.js's own required inline hydration
+   scripts. The comment justifying the stricter policy assumed nginx
+   network-layer isolation that doesn't exist on the actual Render
+   deployment — this app is reachable at its own public URL there,
+   protected only by its own SUPERADMIN session check (§Network
+   Engineering, Cross-Cutting Theme #3). Never caught until this session's
+   first real browser login to the console — prior verification of this
+   app was entirely code-inspection-based (§Ops Centre Rebuild's own
+   table above). Fixed by matching the other two apps' `script-src`.
+5. **A separate, secondary hydration-mismatch bug surfaced once #4 was
+   fixed and the page could render at all**:
+   `useOpsStream`'s `lastEventAt` state was seeded with
+   `useState(initial ? Date.now() : null)` — calling `Date.now()` as a
+   `useState` initializer runs it once during the server render and again
+   during client hydration, producing two different timestamps and
+   React errors #418/#423/#425 on every load. Fixed by seeding `null`
+   (matching what the server actually renders) and setting the real
+   timestamp only inside `useEffect`, which never runs during SSR.
+   Verified after: zero console errors, live "updated HH:MM:SS" badge
+   updates correctly.
 
 ### What already exists (verified against the actual routes and components)
 
