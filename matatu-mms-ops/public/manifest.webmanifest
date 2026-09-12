@@ -1,0 +1,28 @@
+{
+  "name": "Matatu MMS — Ops Console",
+  "short_name": "Matatu Ops",
+  "description": "Superadmin-only infrastructure and access-control console for the Nairobi City County Matatu Management System.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF6E5",
+  "theme_color": "#0F5132",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
