@@ -52,6 +52,11 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
+    // Next's generated metadata-file routes (app/opengraph-image.tsx etc.)
+    // serve at this exact path with no file extension, so the regex below
+    // never matches it — confirmed live: it redirected to "/" before this
+    // explicit exemption was added.
+    pathname === "/opengraph-image" ||
     /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|json|webmanifest|woff2?|ttf)$/i.test(pathname)
   ) {
     return NextResponse.next();
