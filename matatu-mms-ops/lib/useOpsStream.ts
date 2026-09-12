@@ -22,10 +22,19 @@ export type StreamStatus = "connecting" | "live" | "reconnecting" | "failed";
 export function useOpsStream(initial: OpsSnapshot | null) {
   const [snapshot, setSnapshot] = useState<OpsSnapshot | null>(initial);
   const [status, setStatus] = useState<StreamStatus>("connecting");
-  const [lastEventAt, setLastEventAt] = useState<number | null>(initial ? Date.now() : null);
+  // Seeded null, not Date.now(): calling Date.now() as a useState initializer
+  // runs it once during the server render and again during client hydration,
+  // producing two different timestamps and a React hydration-mismatch error
+  // (#418/#423/#425) on every load. Setting the real value only inside the
+  // effect below — which never runs during SSR — guarantees the server
+  // output and the first client render agree (both null; StreamBadge
+  // already renders nothing until lastEventAt is set).
+  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
   const failuresRef = useRef(0);
 
   useEffect(() => {
+    if (initial) setLastEventAt(Date.now());
+
     let source: EventSource | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
