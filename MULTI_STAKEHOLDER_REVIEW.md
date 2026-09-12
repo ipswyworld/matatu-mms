@@ -1529,6 +1529,31 @@ image return correct content types on all three apps, `robots.txt` and
 `sitemap.xml` resolve to the real deployed domain, and a full login +
 health sweep across all four services confirmed nothing regressed.
 
+### Two real dashboard bugs found from a user-supplied screenshot — 2026-09-12
+
+Both raised directly from an actual screenshot of the live admin
+dashboard, not found by code review:
+
+1. **Donut legend labels truncating to unreadable fragments** —
+   "Active/Flagged/Impounded/Decommissioned" rendered as "Act.../
+   Fla.../Imp.../Dec..." on the Fleet Compliance card, confirmed
+   reproducible at normal desktop width, not just a narrow-viewport edge
+   case. `components/widgets/StatusBreakdown.tsx`'s legend label used
+   `flex-1 truncate` with too little room beside the fixed-width donut,
+   count, and percentage columns. Fixed by letting the label wrap instead
+   — a label cut to "Dec..." tells the reader nothing, and there's
+   vertical room to spare.
+2. **A literal empty grid cell on the admin dashboard** — the 2×2 grid
+   pairing Fleet Compliance, Fine Revenue, and a fines-trend chart had
+   only 3 cards, leaving the 4th cell blank. Found by reading the same
+   file's Sacco-operator branch a few lines above, which already
+   correctly pairs the fines trend with a passenger-demand/bookings trend
+   chart in that exact slot — the admin view was simply missing the
+   second chart. `TrendChart` self-fetches its own data from a `metric`
+   prop, so mirroring it required no other server-side changes. Verified
+   live: real data point ("1 bookings · 100") now renders in the
+   previously-empty cell.
+
 ### What already exists (verified against the actual routes and components)
 
 | Spec item | Status | Where |
