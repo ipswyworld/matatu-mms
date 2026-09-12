@@ -26,11 +26,15 @@ async function readVerifiedRole(request: NextRequest): Promise<string | null> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // `webmanifest` and `txt` were both missing — confirmed live: fetching
+  // /manifest.webmanifest or /robots.txt unauthenticated 307-redirected to
+  // /login instead of serving the file, the same silent-PWA-break class of
+  // bug already found and fixed in the public app's middleware.
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/api/health" ||
-    /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|woff2?|ttf)$/i.test(pathname)
+    /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|webmanifest|woff2?|ttf)$/i.test(pathname)
   ) {
     return NextResponse.next();
   }

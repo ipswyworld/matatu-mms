@@ -57,10 +57,14 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Next.js internals + any static file in /public (identified by file extension)
+  //
+  // `webmanifest` was missing here too (see the public app's middleware for
+  // the exact failure mode this causes: a silent, unnoticed PWA-install
+  // break) — added along with the new manifest.webmanifest this app now has.
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
-    /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|woff2?|ttf)$/i.test(pathname)
+    /\.(png|jpg|jpeg|svg|webp|gif|ico|css|js|txt|xml|json|webmanifest|woff2?|ttf)$/i.test(pathname)
   ) {
     return NextResponse.next();
   }
