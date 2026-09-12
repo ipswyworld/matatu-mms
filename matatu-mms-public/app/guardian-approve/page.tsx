@@ -7,7 +7,7 @@ import Link from "next/link";
 import { CheckCircle2, ShieldCheck, ArrowLeft } from "lucide-react";
 import PublicFooter from "@/components/PublicFooter";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 // No login required — a guardian has no account of their own. The token
 // is the only credential; GET first (just shows the two names, doesn't

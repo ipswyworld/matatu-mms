@@ -6,7 +6,7 @@ import type { TomTomMap as TomTomMapType } from "@tomtom-org/maps-sdk/map";
 import type { Marker as MaplibreMarker } from "maplibre-gl";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 const TOMTOM_API_KEY = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
 
 // [36.7,-1.44] .. [37.1,-1.1] roughly bounds Nairobi; used only as the

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Radio, AlertTriangle, CloudRain, Car, Siren, Construction, ShieldAlert, HelpCircle } from "lucide-react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 const POLL_MS = 30000;
 
 interface RouteAlert {
