@@ -1392,6 +1392,36 @@ the clean name caused a real backend outage mid-attempt. Revisit clean
 naming later, without repeating that risk under time pressure; nothing
 about the suffix affects security or function.
 
+**Two real bugs found and fixed during post-migration verification**
+(both confirmed live via actual browser login, not just API checks):
+
+1. **Redis unreachable on the new account.** The *internal* connection
+   string Render's own API returned wasn't actually reachable (TCP
+   connection refused) — this broke every rate-limited endpoint,
+   including login itself, with a 500. Switched to the external TLS
+   connection string and opened that Redis instance's own IP allowlist
+   (same empty-by-default pattern already seen on the new Postgres
+   instance). Root cause of the "system is starting up" message reported
+   after the migration — genuinely was Redis, not just free-tier cold
+   start.
+2. **`NEXT_PUBLIC_API_URL` vs `NEXT_PUBLIC_BACKEND_URL` — a pre-existing
+   bug, not caused by the migration.** `LiveConditions.tsx`,
+   `guardian-approve/page.tsx`, and `LiveUpdatesModal.tsx` all read a
+   variable name that `render.yaml` and every other component never
+   actually set, silently falling back to `http://127.0.0.1:8000` in
+   production — blocked by CSP, so these three live-data widgets never
+   showed real data even on the old account. Renamed all three to the
+   variable name used everywhere else.
+3. **CSP blocked the TomTom Maps SDK's own forced CSS load.** Confirmed
+   directly once a real TomTom key was set: `TomTomMap`'s constructor
+   calls a private `ensureMapLibreCSSLoaded()` with no public opt-out,
+   unconditionally injecting `maplibre-gl.css` from `unpkg.com` even
+   though `layout.tsx` already imports that identical stylesheet locally.
+   Not something app code triggers or can prevent — added a scoped
+   `style-src https://unpkg.com` CSP allowance as the only available fix.
+   Verified after: live TomTom traffic feed (real Nairobi road incidents,
+   not placeholder data) renders with zero console errors.
+
 ### What already exists (verified against the actual routes and components)
 
 | Spec item | Status | Where |
