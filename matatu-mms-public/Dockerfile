@@ -14,9 +14,16 @@ COPY . .
 ARG NEXT_PUBLIC_BACKEND_URL
 ARG NEXT_PUBLIC_WS_URL
 ARG NEXT_PUBLIC_TOMTOM_API_KEY
+ARG NEXT_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_TOMTOM_API_KEY=$NEXT_PUBLIC_TOMTOM_API_KEY
+# Used by robots.ts, sitemap.ts, and metadataBase for absolute URLs (link
+# previews, OG images, sitemap entries) — confirmed live: without this ARG
+# declaration the build silently bakes in the http://localhost:3000
+# fallback despite the Render env var being set correctly, the same
+# ARG-vs-runtime-env gap already documented above for the other three.
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 # BACKEND_URL (no NEXT_PUBLIC_ prefix) is read server-side at request time by
 # Server Components/Actions, not baked in — a dummy value here only lets the
 # build's static analysis pass; the real value is supplied at runtime below.
