@@ -1475,6 +1475,60 @@ disruption for a change that the evidence says will not happen.
    single-key `PUT /env-vars/{key}` endpoint, or fetch and resend the
    complete existing set.
 
+### Production meta-assets added — 2026-09-12
+
+Raised directly: none of the three apps had favicons, app icons, a
+PWA manifest (staff/ops), OG images, `robots.txt`, or a sitemap. Checked
+directly before assuming — confirmed all missing except the public app's
+existing (but broken) manifest. Implemented across all three, per-app
+rather than one-size-fits-all:
+
+- **Real icon assets** (`favicon.ico`, `icon.png`, `apple-icon.png`, 192/512
+  manifest icons) generated from the actual Nairobi City County crest via
+  PIL, not placeholder art.
+- **A genuine pre-existing bug fixed along the way**: the public app's
+  manifest declared its `nairobi-crest.jpg` (actually 224×225) as both a
+  192×192 and 512×512 icon — Chrome's install-ability checks very likely
+  silently rejected this, meaning the PWA install prompt this project
+  already built has probably been quietly non-functional since it shipped.
+- **Staff app + ops console**: new `manifest.webmanifest` for a proper
+  home-screen icon/theme-color (no service worker — that stays
+  public-app-only, matching the existing intentional PWA design), `noindex`
+  robots metadata + `robots.ts` disallowing all crawlers (the ops console
+  especially, given it's reachable at a public URL with no network
+  isolation on this deployment — Cross-Cutting Theme #3), a dynamic OG
+  image for the staff app (skipped for ops, which should never be
+  link-shared).
+- **Public app**: permissive `robots.ts` (excludes `/api/` and the two
+  token-carrying pages, `reset-password` and `guardian-approve`),
+  `sitemap.ts` covering the genuinely public content pages, a dynamic OG
+  image for link previews (fine payment links, booking confirmations).
+
+**Three more real bugs found via live verification, not assumed working
+once the code was written:**
+1. Both the staff and ops middleware blocked their own new
+   `manifest.webmanifest` (and ops's `robots.txt`) — the static-file
+   extension allowlist was missing `webmanifest` (both) and `txt` (ops).
+   Same bug class as the public app's earlier PWA-install break, just not
+   yet found in these two apps because nothing had tried to fetch these
+   paths before.
+2. `/opengraph-image` (Next's generated metadata-file route) has no file
+   extension, so the same extension-based middleware exemption couldn't
+   match it — it 307-redirected to the sign-in page in both apps until an
+   explicit path exemption was added.
+3. `NEXT_PUBLIC_SITE_URL` was set correctly as a Render env var but never
+   reached the actual build: neither Dockerfile declared it as a build
+   `ARG`, so `robots.txt` and `sitemap.xml` kept emitting
+   `http://localhost:3000` even after a forced fresh redeploy. Same
+   ARG-vs-runtime-env gap already documented in both Dockerfiles for
+   `NEXT_PUBLIC_BACKEND_URL`/`WS_URL`/`TOMTOM_API_KEY` — this variable
+   simply predates those comments and was never added alongside them.
+
+All verified live end-to-end after each fix: favicon/icon/manifest/OG
+image return correct content types on all three apps, `robots.txt` and
+`sitemap.xml` resolve to the real deployed domain, and a full login +
+health sweep across all four services confirmed nothing regressed.
+
 ### What already exists (verified against the actual routes and components)
 
 | Spec item | Status | Where |
