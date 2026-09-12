@@ -45,7 +45,13 @@ const SECURITY_HEADERS = [
     value: [
       "default-src 'self'",
       SCRIPT_SRC,
-      "style-src 'self' 'unsafe-inline'",
+      // unpkg.com: the TomTom Maps SDK's TomTomMap constructor calls a
+      // private ensureMapLibreCSSLoaded() unconditionally, with no public
+      // option to skip it — it always injects maplibre-gl.css from unpkg
+      // even though layout.tsx already imports that exact stylesheet
+      // locally. No app code triggers this fetch; it can't be worked
+      // around from our side, only allowed.
+      "style-src 'self' 'unsafe-inline' https://unpkg.com",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       CONNECT_SRC,
