@@ -141,11 +141,13 @@ function DonutBody({ segments, total, centerMetricLabel, totalUnitLabel }: { seg
         {segments.map((seg) => {
           const pct = total > 0 ? Math.round((seg.value / total) * 100) : 0;
           return (
-            <li key={seg.key} className="flex items-center gap-3">
-              <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
-              <span className="text-sm font-semibold text-county-ink/80 flex-1 truncate">{seg.label}</span>
-              <span className="text-sm font-black tabular-nums text-county-ink">{seg.value}</span>
-              <span className="text-[11px] font-bold text-county-ink/40 tabular-nums w-9 text-right">{pct}%</span>
+            <li key={seg.key} className="flex items-start gap-3">
+              <span className="h-2.5 w-2.5 rounded-sm shrink-0 mt-1" style={{ backgroundColor: seg.color }} />
+              {/* Wraps rather than truncates: a label cut to "Dec..." tells
+                  the reader nothing, and there's vertical room to spare. */}
+              <span className="text-sm font-semibold text-county-ink/80 flex-1">{seg.label}</span>
+              <span className="text-sm font-black tabular-nums text-county-ink shrink-0">{seg.value}</span>
+              <span className="text-[11px] font-bold text-county-ink/40 tabular-nums w-9 text-right shrink-0">{pct}%</span>
             </li>
           );
         })}
