@@ -1378,19 +1378,30 @@ planned. Final live URLs:
 | App | URL |
 |---|---|
 | Staff app | `https://matatu-mms.onrender.com` |
-| Public app | `https://matatu-mms-public-new.onrender.com` |
-| Ops console | `https://matatu-mms-ops-new.onrender.com` |
-| Backend | `https://matatu-mms-backend-mhn5.onrender.com` |
+| Public app | `https://matatu-mms-public-r8lk.onrender.com` |
+| Ops console | `https://matatu-mms-ops-pdop.onrender.com` |
+| Backend | `https://matatu-mms-backend-77ox.onrender.com` |
 
 All data verified matching the old database exactly (row-for-row cross-check
 against a full backup taken before migration), all secrets issued fresh
 (none copied from the old, previously-flagged-compromised account), old
-account fully decommissioned. The `-new`/`-mhn5` suffixes are cosmetic —
-Render holds a deleted service's exact subdomain in an undocumented
-cooldown period before it's reusable, confirmed directly when reclaiming
-the clean name caused a real backend outage mid-attempt. Revisit clean
-naming later, without repeating that risk under time pressure; nothing
-about the suffix affects security or function.
+account fully decommissioned.
+
+**On the URL suffixes — settled, not still open.** Four independent
+delete-and-recreate attempts across this review (backend twice, public
+app once, ops console once, each separated by real time — tens of
+minutes to over an hour apart) **never once** recovered the clean
+subdomain; every attempt landed a different random suffix instead.
+That's strong enough evidence to treat this as a **permanent** Render
+behavior — once a subdomain has been used and the service deleted, it
+does not become available again — rather than a temporary cooldown worth
+retrying later. Each attempt also caused a brief real outage on the
+service being renamed (env vars had to be restored and every
+cross-referencing service updated and redeployed before service was
+fully back). Recommendation: stop attempting this. The suffix is
+cosmetic — verified via full login + dashboard + data checks after every
+single attempt — and further tries trade a real, if brief, production
+disruption for a change that the evidence says will not happen.
 
 **Two real bugs found and fixed during post-migration verification**
 (both confirmed live via actual browser login, not just API checks):
