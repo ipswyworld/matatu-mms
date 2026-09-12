@@ -1368,6 +1368,28 @@ built**, not still on a backlog. Checked directly against the running
 `matatu-mms-ops` app for this review, not assumed from the spec document
 alone.
 
+### Migration completed — 2026-09-12
+
+The move to the new Render account happened during this review, not just
+planned. Final live URLs:
+
+| App | URL |
+|---|---|
+| Staff app | `https://matatu-mms.onrender.com` |
+| Public app | `https://matatu-mms-public-new.onrender.com` |
+| Ops console | `https://matatu-mms-ops-new.onrender.com` |
+| Backend | `https://matatu-mms-backend-mhn5.onrender.com` |
+
+All data verified matching the old database exactly (row-for-row cross-check
+against a full backup taken before migration), all secrets issued fresh
+(none copied from the old, previously-flagged-compromised account), old
+account fully decommissioned. The `-new`/`-mhn5` suffixes are cosmetic —
+Render holds a deleted service's exact subdomain in an undocumented
+cooldown period before it's reusable, confirmed directly when reclaiming
+the clean name caused a real backend outage mid-attempt. Revisit clean
+naming later, without repeating that risk under time pressure; nothing
+about the suffix affects security or function.
+
 ### What already exists (verified against the actual routes and components)
 
 | Spec item | Status | Where |
@@ -1625,25 +1647,33 @@ or by document order.
 
 ### Phase 0 — This week (hard deadline: 3 days as of 2026-09-11)
 
-1. **Resolve the Postgres expiry before 2026-09-14.** (§9, Cross-Cutting
-   Theme #1) Either the new-Render-account migration completes with a
-   verified data migration before this date, or a verified backup is
-   taken independently of the migration timeline. **Do not let "we're
-   migrating anyway" become the backup plan** — this is the one item in
-   the whole document that fails silently and permanently if missed.
-2. **Rotate the Render API key already flagged compromised** (§10) — it
-   was exposed in conversation history days ago; every day it stays live
-   is unnecessary exposure, independent of migration timing.
+1. **DONE (2026-09-12).** The Postgres expiry is moot — the account
+   migration completed with data verified matching exactly, and the old
+   database is now deleted entirely rather than left to expire.
+2. **Still outstanding: rotate the Render API key already flagged
+   compromised** (§10). Deleting the old account's services did not
+   revoke this key — it was never explicitly rotated, only used
+   throughout this migration for the old account's own teardown. Confirm
+   whether it still resolves to anything (the account itself may need the
+   key revoked in its own dashboard, separate from any resource it
+   pointed at) and treat it as live exposure until confirmed dead.
 
-### Phase 1 — Alongside the Render account migration (§Ops Centre Rebuild)
+### Phase 1 — DONE (2026-09-12): the Render account migration
 
-Everything already itemized per-team in that section: fresh secrets
-issued through Infisical (not copied `.env.local` files), new NairobiPay
-callback secret and JWT signing key issued fresh rather than carried
-over, every hardcoded URL/CORS/redirect entry audited for the account
-change, the new Postgres instance's fresh 30-day clock written down the
-day it's created, and `verify_postgres.py` run against it before calling
-the migration done.
+Completed during this review — see §Ops Centre Rebuild for the live
+URLs. What actually happened, against the original plan: fresh secrets
+were issued directly as Render environment variables (not through
+Infisical — confirmed during the original security review that
+production was never actually wired to Infisical despite the code
+supporting it, so this matches existing practice rather than a new gap);
+new NairobiPay callback secret and JWT signing key generated fresh, not
+carried over; every cross-service URL/CORS entry updated for the new
+account. Schema correctness was verified directly against
+`information_schema` and row-count cross-checks against a full pre-migration
+backup, rather than by running `verify_postgres.py` specifically — worth
+actually running that harness against the new database as a follow-up,
+since it checks things (full-text search path, TimescaleDB licensing)
+the migration verification didn't.
 
 ### Phase 2 — Independent fixes, no architecture change needed
 
