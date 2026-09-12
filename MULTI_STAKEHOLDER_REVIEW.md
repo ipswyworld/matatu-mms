@@ -393,10 +393,12 @@ sanity-check that every discipline has actually had a say.
   system-wide session revoke).
 
 **Would ask for, and why:**
-- **Rotate the Render API key used during this review immediately.** It
-  was shared in-session for diagnostic purposes and is now part of this
-  conversation's history — treat it as compromised on principle even
-  though it was only used for read/diagnostic calls.
+- ~~Rotate the Render API key used during this review immediately.~~
+  **Done (2026-09-12)** — revoked in the old account's dashboard, confirmed
+  dead (returns `401 Unauthorized`). It had since been used for the
+  account migration's teardown work, not just the original read/diagnostic
+  calls, but by the time it was revoked the old account held nothing left
+  to protect.
 - **A real penetration test** before any countrywide launch — internal
   review, however thorough, is a different exercise from an external
   adversarial one.
@@ -1650,13 +1652,12 @@ or by document order.
 1. **DONE (2026-09-12).** The Postgres expiry is moot — the account
    migration completed with data verified matching exactly, and the old
    database is now deleted entirely rather than left to expire.
-2. **Still outstanding: rotate the Render API key already flagged
-   compromised** (§10). Deleting the old account's services did not
-   revoke this key — it was never explicitly rotated, only used
-   throughout this migration for the old account's own teardown. Confirm
-   whether it still resolves to anything (the account itself may need the
-   key revoked in its own dashboard, separate from any resource it
-   pointed at) and treat it as live exposure until confirmed dead.
+2. **DONE (2026-09-12).** The Render API key flagged compromised (§10) is
+   revoked — confirmed directly, the key now returns `401 Unauthorized`
+   against the Render API. Revocation had to be done manually in the old
+   account's dashboard; no API endpoint exists for a key to manage or
+   revoke itself (a reasonable design — a leaked key shouldn't be usable
+   to mint or revoke keys).
 
 ### Phase 1 — DONE (2026-09-12): the Render account migration
 
