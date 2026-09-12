@@ -1455,6 +1455,25 @@ disruption for a change that the evidence says will not happen.
    timestamp only inside `useEffect`, which never runs during SSR.
    Verified after: zero console errors, live "updated HH:MM:SS" badge
    updates correctly.
+6. **A real self-inflicted security regression, found and fixed during
+   this same final verification pass.** During the rename attempts
+   (§ above), a bulk `PUT /env-vars` call with only 3 keys was used on
+   the staff and public apps — this endpoint **replaces the entire env
+   var set**, not merges into it, silently wiping `SESSION_SECRET` (both
+   apps) and `NEXT_PUBLIC_TOMTOM_API_KEY` (public app). For a window of
+   time, both frontends ran with no session-signing secret set, which
+   `lib/sessionSign.ts`'s own comments say falls back to a hardcoded
+   dev-only default — every session cookie issued in that window was
+   signed with a key checked into git. Found by systematically re-checking
+   every service's env vars against the known-good list after the rename
+   attempts, not by a symptom surfacing on its own. Fixed by restoring
+   both values via single-key `PUT` calls (the safe form of this API) and
+   redeploying — which correctly invalidated every session signed with the
+   fallback key, forcing re-login rather than leaving them valid.
+   **Lesson for next time operating this API**: never use the bulk
+   `PUT /env-vars` endpoint with a partial key list; always use the
+   single-key `PUT /env-vars/{key}` endpoint, or fetch and resend the
+   complete existing set.
 
 ### What already exists (verified against the actual routes and components)
 
