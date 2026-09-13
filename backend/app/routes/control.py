@@ -239,6 +239,7 @@ async def _collect_snapshot() -> dict:
         "breakers": await ops_breakers.snapshot_cluster(),
         "rateLimits": list(ops_limits.current_limits().values()),
         "recentErrors": aggregate["recentErrors"],
+        "recentClientErrors": aggregate["recentClientErrors"],
         "controls": controls,
         "worstStatus": worst,
     }

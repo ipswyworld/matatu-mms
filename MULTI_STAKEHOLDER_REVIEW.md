@@ -1702,6 +1702,53 @@ migration itself surfaces as new work.**
    fresh database is being provisioned anyway, whether the replica gets
    stood up at the same time rather than as a separate later migration.
 
+### Frontend crashes now surface live in the ops console — 2026-09-13
+
+Raised directly: a user hitting the staff or public app's "System error"
+crash page (`app/error.tsx`) should be visible in the ops console
+immediately, not discovered later or only if someone happens to check
+Sentry. Investigated and closed this session, not just scoped:
+
+**What was found, before fixing anything:** `error.tsx` in both
+`matatu-mms` and `matatu-mms-public` told the user "this has been logged"
+but only ran `console.error()` — a real gap between the copy's promise and
+what the code did. The root-layout counterpart, `global-error.tsx`, did
+call `Sentry.captureException()`, but Sentry itself is wired-not-initialized
+in this deployment (no `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` set anywhere),
+so that call silently went nowhere either. And even with a DSN set, Sentry
+has no path into the ops console on its own — that would need Sentry's own
+alerting/webhook integration configured separately, which doesn't exist.
+So today, a crash was invisible everywhere except a user's own screen.
+
+**What was built:** a new, deliberately thin, unauthenticated endpoint,
+`POST /api/client-errors` (`backend/app/routes/client_errors.py`,
+rate-limited per IP via the existing live-adjustable-limits framework,
+`app/ops_limits.py` "client_error_report") that all four crash boundaries
+(`error.tsx` + `global-error.tsx`, both apps) now call alongside their
+existing `console.error`/`Sentry.captureException`. Reports land in a
+new `recentClientErrors` deque in `app/ops_metrics.py`, published and
+aggregated across replicas the same way the existing 5xx `recentErrors`
+already are, and threaded into `_collect_snapshot()` — meaning it rides
+the ops console's existing 3-second SSE snapshot poll with no new
+plumbing, and renders in a new "Frontend crashes" card in
+`OverviewLive.tsx` right beside the existing "Recent server errors" card.
+Verified end-to-end (not just wired): posted a synthetic crash report
+directly against the running backend and confirmed it flows through
+`aggregate_cluster()` into the exact shape the ops console reads.
+
+**Deliberately not attempted here:** this is a visibility feed, not a
+Sentry replacement — no stack symbolication, no issue grouping/dedup, no
+release correlation, and (matching the existing "Recent server errors"
+card's behavior) it does not flip the overview's `worstStatus` to
+"degraded." It also does not page or notify an operator who doesn't have
+the console open — per the earlier Ops Centre research this session, no
+inbound-alerting mechanism exists anywhere yet (the "Critical tier"
+framework only gates *outbound* operator actions); "immediately visible
+to someone watching the console" and "actively alerted" are different
+requirements, and only the first is solved here. Actually turning on
+Sentry (setting a real DSN) remains a separate, still-open item — this
+fix does not depend on that happening and is not a reason to skip it.
+
 ---
 
 ## Mobile Apps — Approved to Build, Public + Enforcement First (Scheduled: Final Phase)

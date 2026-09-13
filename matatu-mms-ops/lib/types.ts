@@ -180,6 +180,18 @@ export interface RecentError {
   durationMs: number;
 }
 
+/** A browser-side crash (Next.js error.tsx/global-error.tsx boundary),
+ *  reported by backend/app/routes/client_errors.py — distinct from
+ *  RecentError above, which is only ever a backend 5xx response. */
+export interface RecentClientError {
+  at: number;
+  app: string;
+  message: string;
+  url: string;
+  digest: string | null;
+  stack: string | null;
+}
+
 export interface WebhookDelivery {
   id: number;
   subscriptionId: number;
@@ -221,6 +233,7 @@ export interface OpsSnapshot {
   breakers: CircuitBreakerState[];
   rateLimits: RateLimitState[];
   recentErrors: RecentError[];
+  recentClientErrors: RecentClientError[];
   controls: SystemControls;
   worstStatus: DependencyStatus;
 }

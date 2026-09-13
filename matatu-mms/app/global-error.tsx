@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import * as Sentry from "@sentry/nextjs";
+import { reportClientError } from "@/lib/reportClientError";
 
 // Only global-error.tsx can catch a crash in the root layout itself
 // (error.tsx can't — it renders inside that same layout). It needs its own
@@ -10,6 +11,7 @@ import * as Sentry from "@sentry/nextjs";
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     Sentry.captureException(error);
+    reportClientError(error);
   }, [error]);
 
   return (

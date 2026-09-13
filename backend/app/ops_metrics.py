@@ -56,6 +56,11 @@ class RequestMetrics:
     def __init__(self) -> None:
         self._buckets: Deque[_Bucket] = deque(maxlen=WINDOW_SECONDS)
         self._recent_errors: Deque[dict] = deque(maxlen=50)
+        # Browser-side crashes (Next.js error.tsx/global-error.tsx boundaries)
+        # never generate an HTTP request this process handles, so they can't
+        # flow through record() above like a 5xx does — routes/client_errors.py
+        # appends here directly instead.
+        self._recent_client_errors: Deque[dict] = deque(maxlen=50)
 
     def _current_bucket(self) -> _Bucket:
         now = int(time.time())
@@ -135,6 +140,22 @@ class RequestMetrics:
     def recent_errors(self) -> List[dict]:
         return list(reversed(self._recent_errors))
 
+    def record_client_error(self, *, app: str, message: str, url: str, digest: Optional[str] = None, stack: Optional[str] = None) -> None:
+        self._recent_client_errors.append({
+            "at": time.time(),
+            "app": app,
+            "message": message[:500],
+            "url": url[:500],
+            "digest": digest,
+            # Truncated: this is an incident-feed entry, not a debugger — the
+            # digest/Sentry event (once a DSN is configured) is where the
+            # full trace lives.
+            "stack": stack[:2000] if stack else None,
+        })
+
+    def recent_client_errors(self) -> List[dict]:
+        return list(reversed(self._recent_client_errors))
+
 
 metrics = RequestMetrics()
 
@@ -152,6 +173,7 @@ async def publish_snapshot() -> None:
             "metrics": metrics.snapshot(60),
             "series": metrics.series(60),
             "recentErrors": metrics.recent_errors()[:20],
+            "recentClientErrors": metrics.recent_client_errors()[:20],
         }
         await r.set(f"{PUBLISH_KEY_PREFIX}{INSTANCE_ID}", json.dumps(payload), ex=PUBLISH_TTL_SECONDS)
     except Exception as e:
@@ -187,6 +209,7 @@ async def aggregate_cluster() -> Dict[str, object]:
             "metrics": metrics.snapshot(60),
             "series": metrics.series(60),
             "recentErrors": metrics.recent_errors()[:20],
+            "recentClientErrors": metrics.recent_client_errors()[:20],
         })
 
     total = sum(i["metrics"]["totalRequests"] for i in instances)
@@ -210,6 +233,11 @@ async def aggregate_cluster() -> Dict[str, object]:
         recent.extend(inst.get("recentErrors", []))
     recent.sort(key=lambda e: e.get("at", 0), reverse=True)
 
+    recent_client: List[dict] = []
+    for inst in instances:
+        recent_client.extend(inst.get("recentClientErrors", []))
+    recent_client.sort(key=lambda e: e.get("at", 0), reverse=True)
+
     return {
         "metrics": {
             "windowSeconds": 60,
@@ -226,6 +254,7 @@ async def aggregate_cluster() -> Dict[str, object]:
         },
         "series": [series_by_t[t] for t in sorted(series_by_t)],
         "recentErrors": recent[:50],
+        "recentClientErrors": recent_client[:50],
     }
 
 

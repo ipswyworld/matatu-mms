@@ -76,6 +76,11 @@ DEFAULTS: Dict[str, str] = {
     "oauth_token": "20/minute",
     "bookings_create": "20/minute",
     "payments_callback": "60/minute",
+    # Frontend crash reports — unauthenticated (a crashed app may not have a
+    # valid session), so this is the only thing standing between a client
+    # error boundary and someone hammering the ops console's incident feed
+    # with fabricated crashes.
+    "client_error_report": "20/minute",
 }
 
 # Human-readable description per scope, surfaced in the ops console so an
@@ -93,6 +98,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "oauth_token": "Partner API token exchanges per IP.",
     "bookings_create": "Seat bookings per IP.",
     "payments_callback": "NairobiPay callback deliveries per IP.",
+    "client_error_report": "Frontend crash reports per IP.",
 }
 
 _cache: Dict[str, str] = dict(DEFAULTS)

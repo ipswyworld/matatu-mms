@@ -136,6 +136,31 @@ export default function OverviewLive({ initial }: { initial: OpsSnapshot | null 
           </div>
         )}
       </div>
+
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-sm text-county-black">Frontend crashes</h3>
+          <span className="text-[10px] font-bold text-black/40">BROWSER-SIDE</span>
+        </div>
+        {snapshot.recentClientErrors.length === 0 ? (
+          <p className="text-xs text-black/40 italic">No frontend crashes recorded in this window.</p>
+        ) : (
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {snapshot.recentClientErrors.map((e, i) => (
+              <div key={`${e.at}-${i}`} className="flex items-start justify-between gap-3 text-[11px] py-1.5 border-b border-black/5 last:border-0">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="badge bg-county-red/10 text-county-red text-[9px] font-extrabold shrink-0">{e.app}</span>
+                    <span className="font-mono text-black/70 truncate">{e.message}</span>
+                  </div>
+                  <span className="block text-black/40 truncate mt-0.5">{e.url}</span>
+                </div>
+                <span className="text-black/40 shrink-0">{new Date(e.at * 1000).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
