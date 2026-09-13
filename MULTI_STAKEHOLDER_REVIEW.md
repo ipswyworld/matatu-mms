@@ -1749,6 +1749,49 @@ requirements, and only the first is solved here. Actually turning on
 Sentry (setting a real DSN) remains a separate, still-open item — this
 fix does not depend on that happening and is not a reason to skip it.
 
+### "Enforcement Officer" and "Arresting Officer" are two unrelated roles, and the login screen doesn't say so — 2026-09-13
+
+Found while directly verifying the enforcement login flow this session,
+not theorized: the staff app's login page (`app/login/page.tsx`) lists
+demo accounts for **"Enforcement Officer"** (`enforcement@nairobi.go.ke`,
+role `ENFORCEMENT`) and **"Arresting Officer"**
+(`arresting.officer@nairobi.go.ke`, role `ARRESTING_OFFICER`) back to
+back, with nothing indicating these aren't two ranks in the same
+workflow — they're **two structurally separate systems that don't talk
+to each other**:
+
+- `ENFORCEMENT` is the older, direct-fine-issuance role
+  (`issue_fine`/`view_fines` permissions) — no access to the
+  arrest→release case system at all. Logging in as this role and hitting
+  `GET /api/enforcement/cases` correctly returns `403 view_enforcement_cases`
+  — not a bug, just a different, disjoint permission set (`app/rbac.py`
+  lines 113-126).
+- `ARRESTING_OFFICER` (plus `RELEASING_OFFICER`, `ENFORCEMENT_COMMANDER`)
+  is the actual case-filing workflow — file case → impound/release
+  decision → dispute/resolve — and the one the "On Patrol" GPS toggle,
+  beat assignments, and everything discussed in §Mobile Apps for the
+  future enforcement app are built around.
+
+**Why this matters beyond a naming quibble:** picking the first
+plausible-sounding demo account ("Enforcement Officer") to test "the
+enforcement flow" is the natural thing to do, and it silently tests the
+wrong, older system — which is exactly what happened during this
+session's own verification pass before catching it. If a real officer
+onboarding, a QA tester, or the future mobile-app build team makes the
+same reasonable assumption, they'll conclude the case-filing system is
+broken (403s everywhere) when the actual issue is having signed in as
+the wrong role entirely.
+
+**Recommended, cheap fix:** disambiguate the two labels on the login
+page and demo-accounts list — e.g. "Enforcement Officer (fines —
+legacy)" vs. "Arresting Officer (case workflow)" — or, more durably,
+resolve which of the two is meant to be the system's actual
+enforcement-officer role going forward and deprecate the other, rather
+than carrying two same-domain roles with overlapping names indefinitely.
+Worth resolving *before* the mobile enforcement app build starts (§Mobile
+Apps), so that build targets the correct role from day one instead of
+inheriting this ambiguity into a second surface.
+
 ---
 
 ## Mobile Apps — Approved to Build, Public + Enforcement First (Scheduled: Final Phase)
@@ -2090,6 +2133,13 @@ whoever has capacity rather than sequencing:
   (§32)
 - Seed data confirmed to exercise the full role matrix, not just enough
   to boot (§32)
+- Disambiguate the `ENFORCEMENT` vs. `ARRESTING_OFFICER` role labels on
+  the login/demo-accounts screen, or decide which is canonical and
+  deprecate the other — found live, this session, by picking the
+  wrong-but-reasonable-sounding one while verifying the enforcement
+  flow (§Ops Centre Rebuild). Cheap, and worth landing before the
+  enforcement mobile app build (§Mobile Apps) inherits the same
+  ambiguity onto a second surface.
 
 ### Phase 3 — Top real-time and data-infrastructure priorities
 
