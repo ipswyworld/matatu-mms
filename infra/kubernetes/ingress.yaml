@@ -1,0 +1,85 @@
+# TLS termination and routing (Readiness List §1) — referenced by
+# README.md but not written until the Argo CD wiring needed a real target.
+#
+# Assumes an ingress-nginx controller is already installed on the cluster
+# (the most common baseline; swap the ingressClassName below if the target
+# cluster uses something else — GKE's own controller, Traefik, etc.) and
+# that `mms-tls` is populated by whatever the cluster uses for certificates
+# (cert-manager's ClusterIssuer is the common choice, deliberately not
+# wired here — provisioning a CA/ACME account is a cluster-level decision
+# for whoever stands up the target cluster, not something to assume from
+# this repo).
+#
+# The control plane (control-plane-and-worker.yaml) is deliberately absent
+# from every rule below — it has no Service this Ingress could even route
+# to (ClusterIP only), which is the actual enforcement of "not on the
+# public internet", not just an omission here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mms-ingress
+  namespace: matatu-mms
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # The backend already sets its own security headers (X-Content-Type-
+    # Options, X-Frame-Options, HSTS — app/main.py) — nothing duplicated
+    # here for that reason. Client-max-body-size raised for the Sacco
+    # document upload path (Security Checklist #16/#27 already flags this
+    # endpoint as needing its own size limit; this is the transport-level
+    # ceiling above it, not a substitute for that fix).
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+    # WebSocket support (telemetry, notifications) needs a long read
+    # timeout — the default 60s would drop an idle-but-open connection.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - matatu.nairobi.go.ke
+        - book.matatu.nairobi.go.ke
+        - ops.matatu.nairobi.go.ke
+        - api.matatu.nairobi.go.ke
+      secretName: mms-tls
+  rules:
+    - host: matatu.nairobi.go.ke
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mms-frontend
+                port: { name: http }
+    - host: book.matatu.nairobi.go.ke
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mms-frontend-public
+                port: { name: http }
+    - host: ops.matatu.nairobi.go.ke
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mms-frontend-ops
+                port: { name: http }
+    # The API backend is public on its own subdomain because the three
+    # frontends' browser-side code calls it directly (NEXT_PUBLIC_BACKEND_URL/
+    # NEXT_PUBLIC_WS_URL, baked in at build time — see backend.yaml and
+    # .github/workflows/ci.yml) for anything that isn't a Server Action, so
+    # it cannot be ClusterIP-only the way the control plane is.
+    - host: api.matatu.nairobi.go.ke
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mms-backend
+                port: { name: http }

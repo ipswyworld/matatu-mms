@@ -2,6 +2,9 @@
 #
 # Both exist as separate Deployments for reasons the single-process Render
 # deploy could not accommodate. Not applied anywhere today.
+#
+# Image paths fixed to match .github/workflows/ci.yml's actual publish
+# path (see backend.yaml's header comment for the full explanation).
 ---
 # The control plane runs the same image under APP_ROLE=control-plane
 # (backend/docker-entrypoint.sh). Its own process, event loop and DB pool,
@@ -31,9 +34,11 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: control-plane
-          image: ghcr.io/ipswyworld/matatu-mms-backend:latest
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
           ports:
             - name: http
               containerPort: 8001
@@ -115,9 +120,11 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: worker
-          image: ghcr.io/ipswyworld/matatu-mms-backend:latest
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
           command: ["python", "-m", "arq", "app.worker.WorkerSettings"]
           env:
             - name: DATABASE_URL
@@ -149,17 +156,27 @@ metadata:
   name: mms-migrate
   namespace: matatu-mms
   annotations:
-    # Run before the app rollout when applied via Helm/Argo.
-    "helm.sh/hook": pre-upgrade,pre-install
-    "helm.sh/hook-weight": "-5"
+    # This is deployed via Argo CD sourcing this directory through
+    # Kustomize (infra/argocd/), not a Helm chart — Argo only honours
+    # helm.sh/hook annotations for a Helm-sourced Application, so that
+    # annotation (this Job's original form) was silently inert under the
+    # actual deployment path. argocd.argoproj.io/hook is the native
+    # equivalent: PreSync runs this Job, and waits for it to succeed,
+    # before syncing the Deployments below — same intent (migrate before
+    # rollout), correct mechanism for how this is actually deployed.
+    "argocd.argoproj.io/hook": PreSync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation
+    "argocd.argoproj.io/sync-wave": "-5"
 spec:
   backoffLimit: 2
   template:
     spec:
       restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: migrate
-          image: ghcr.io/ipswyworld/matatu-mms-backend:latest
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
           command: ["alembic", "upgrade", "head"]
           env:
             - name: DATABASE_URL

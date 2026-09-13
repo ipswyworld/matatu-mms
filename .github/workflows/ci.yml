@@ -319,12 +319,16 @@ jobs:
         include:
           - name: backend
             context: backend
+            siteUrl: ""
           - name: frontend
             context: matatu-mms
+            siteUrl: "https://matatu.nairobi.go.ke"
           - name: frontend-public
             context: matatu-mms-public
+            siteUrl: "https://book.matatu.nairobi.go.ke"
           - name: frontend-ops
             context: matatu-mms-ops
+            siteUrl: "https://ops.matatu.nairobi.go.ke"
     steps:
       - uses: actions/checkout@v4
 
@@ -346,14 +350,28 @@ jobs:
             ghcr.io/${{ github.repository }}/${{ matrix.name }}:latest
           # Frontend-only build args (Next.js bakes NEXT_PUBLIC_* into the
           # client bundle at build time — no-op for the backend build).
-          # Placeholder fallback matches the existing `frontend` job above:
-          # this proves the image builds correctly; the actual deploy step
-          # for a given environment would build with that environment's
-          # real values rather than reusing this generic image verbatim.
+          #
+          # Unlike the `frontend`/`frontend-public`/`frontend-ops` jobs above
+          # (typecheck+build only, correctly fine to point at localhost —
+          # they never ship), these images ARE what Argo CD deploys
+          # (infra/argocd/), so they must carry real values or every
+          # frontend goes live with wrong baked-in URLs (dead map, dead
+          # WebSockets, robots.txt/sitemap/OG images pointing at
+          # localhost — the same class of bug already found and fixed once
+          # for the Render build path, and previously unfixed here since
+          # this is a separate build). `vars.*` fallbacks keep this job
+          # green on a fork with no repo vars configured; a real deployment
+          # sets NEXT_PUBLIC_BACKEND_URL/NEXT_PUBLIC_WS_URL as repository
+          # variables pointing at the actual cluster ingress
+          # (infra/kubernetes/ingress.yaml) once one exists.
+          # NEXT_PUBLIC_SITE_URL is per-app (matrix.siteUrl above), since
+          # each frontend has its own public origin — empty for the backend
+          # build, where it's simply unused.
           build-args: |
-            NEXT_PUBLIC_BACKEND_URL=${{ vars.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000' }}
-            NEXT_PUBLIC_WS_URL=${{ vars.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:8000' }}
+            NEXT_PUBLIC_BACKEND_URL=${{ vars.NEXT_PUBLIC_BACKEND_URL || 'https://api.matatu.nairobi.go.ke' }}
+            NEXT_PUBLIC_WS_URL=${{ vars.NEXT_PUBLIC_WS_URL || 'wss://api.matatu.nairobi.go.ke' }}
             NEXT_PUBLIC_TOMTOM_API_KEY=${{ secrets.NEXT_PUBLIC_TOMTOM_API_KEY }}
+            NEXT_PUBLIC_SITE_URL=${{ matrix.siteUrl }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
@@ -369,3 +387,57 @@ jobs:
           format: table
           exit-code: "0"
           severity: HIGH,CRITICAL
+
+  update-gitops-manifests:
+    name: Update Argo CD image tags
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.event_name == 'push'
+    # This job is the actual GitOps deploy trigger for the Argo CD path
+    # (infra/argocd/), separate from Render's own auto-deploy (which just
+    # watches deploy/render-demo directly and needs nothing from CI). Argo
+    # CD's Application (infra/argocd/application.yaml) has automated sync
+    # enabled and polls this repo's `master` branch — this job's commit is
+    # what it detects and acts on. There is deliberately no `kubectl apply`
+    # or `argocd app sync` call anywhere here: pushing a git commit and
+    # letting Argo CD notice it IS the deployment step, by design (that's
+    # what makes this GitOps rather than a push-based pipeline).
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A shallow, detached checkout can't be committed back to and
+          # pushed cleanly against a branch that may have moved since
+          # build-and-push started — fetch-depth 0 with ref explicitly set
+          # keeps this a real, pushable branch checkout.
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- 5.4.3 /usr/local/bin
+
+      - name: Pin image tags to this commit's SHA
+        working-directory: infra/kubernetes
+        run: |
+          kustomize edit set image \
+            ghcr.io/${{ github.repository }}/backend=ghcr.io/${{ github.repository }}/backend:${{ github.sha }} \
+            ghcr.io/${{ github.repository }}/frontend=ghcr.io/${{ github.repository }}/frontend:${{ github.sha }} \
+            ghcr.io/${{ github.repository }}/frontend-public=ghcr.io/${{ github.repository }}/frontend-public:${{ github.sha }} \
+            ghcr.io/${{ github.repository }}/frontend-ops=ghcr.io/${{ github.repository }}/frontend-ops:${{ github.sha }}
+
+      - name: Commit and push, if the tags actually changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- infra/kubernetes/kustomization.yaml; then
+            echo "No image-tag change (rebuild of an already-deployed SHA) — nothing to commit."
+            exit 0
+          fi
+          git add infra/kubernetes/kustomization.yaml
+          # [skip ci]: this commit only touches image tags and must not
+          # re-trigger this same workflow — without it, every deploy would
+          # queue a second, pointless CI run against its own GitOps commit.
+          git commit -m "chore(gitops): deploy ${{ github.sha }} [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}

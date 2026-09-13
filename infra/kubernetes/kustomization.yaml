@@ -1,0 +1,45 @@
+# Base Kustomize target for Argo CD (infra/argocd/application.yaml points
+# here). Plain Kustomize, not Helm — this repo has no Chart.yaml and the
+# manifests were always written as raw YAML; introducing Helm just to get
+# templating would be exactly the kind of preemptive tooling this
+# directory's README already argues against.
+#
+# secrets.example.yaml is deliberately NOT listed as a resource here — it
+# is a template (see its own header comment), never meant to be applied
+# as-is. The real `mms-secrets`/`ghcr-pull-secret` objects come from
+# wherever the target cluster actually manages secrets (a hand-applied
+# `secrets.yaml` derived from the example, or an External Secrets
+# Operator ExternalSecret once Infisical is actually pointed at
+# production — MULTI_STAKEHOLDER_REVIEW.md §10) and must exist in the
+# `matatu-mms` namespace before Argo CD's first sync, or every Deployment
+# here will sit in CrashLoopBackOff/ImagePullBackOff waiting on a Secret
+# that was never created.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: matatu-mms
+
+resources:
+  - namespace.yaml
+  - backend.yaml
+  - control-plane-and-worker.yaml
+  - frontends.yaml
+  - ingress.yaml
+
+# CI (.github/workflows/ci.yml's update-gitops-manifests job, added
+# alongside build-and-push) runs `kustomize edit set image
+# ghcr.io/ipswyworld/matatu-mms/<name>=...:<git-sha>` for each of the four
+# entries below after a successful push+scan, and commits the result back
+# to this file — that commit is the actual deploy trigger Argo CD's
+# automated sync (infra/argocd/application.yaml) reacts to. The `:latest`
+# tags below are only what a fresh checkout starts from before CI has run
+# even once; they are never the tag a real sync should be running.
+images:
+  - name: ghcr.io/ipswyworld/matatu-mms/backend
+    newTag: latest
+  - name: ghcr.io/ipswyworld/matatu-mms/frontend
+    newTag: latest
+  - name: ghcr.io/ipswyworld/matatu-mms/frontend-public
+    newTag: latest
+  - name: ghcr.io/ipswyworld/matatu-mms/frontend-ops
+    newTag: latest

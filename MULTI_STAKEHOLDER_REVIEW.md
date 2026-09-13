@@ -2195,10 +2195,25 @@ whoever has capacity rather than sequencing:
 2. Actually apply the Kubernetes manifests against a real API server —
    "the YAML is correct" and "the cluster comes up clean" are different
    claims (§4).
-3. ArgoCD + blue-green (§4, §17) once the above lands — the canary
-   mechanics already exist and are runnable (`scripts/canary-promote.sh`)
-   against the self-hosted docker-compose target; wiring them to a real
-   orchestrator is the remaining step.
+3. **Argo CD — done (2026-09-14), still waiting on item 2 above to mean
+   anything live.** `infra/argocd/` now has a real AppProject + Application
+   (automated sync, prune, selfHeal) pointed at `infra/kubernetes/` via
+   Kustomize, and `.github/workflows/ci.yml`'s `build-and-push` job now
+   has a real downstream (`update-gitops-manifests`) that pins image tags
+   to the git SHA and commits back to `master` — the actual GitOps deploy
+   trigger. Also fixed while wiring this: the k8s manifests referenced a
+   container image path (`ghcr.io/ipswyworld/matatu-mms-backend`) that
+   `build-and-push` never actually published to (real path:
+   `ghcr.io/ipswyworld/matatu-mms/backend`) — every manifest here would
+   have `ImagePullBackOff`'d against a nonexistent image the moment
+   anyone tried to apply them. See `infra/argocd/README.md` for the full
+   mechanics and why this doesn't contradict `infra/kubernetes/README.md`'s
+   original "no GitOps controller, add it when there's a problem it
+   solves" stance (short version: `build-and-push` already existed with
+   nothing consuming its output — this closes an existing gap, not new
+   preemptive tooling). Blue-green/canary promotion
+   (`scripts/canary-promote.sh`) still wires into whatever orchestrator
+   item 2 stands up — unchanged, still pending a real cluster to target.
 4. A manual-approval gate before production — a GitHub Environments
    repo-settings toggle once there's a real deploy job to gate (§31).
 5. Terraform for infrastructure-as-code (§4, §19), so "what's running in

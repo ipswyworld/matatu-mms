@@ -16,11 +16,11 @@ that one written as prose is not.
 |---|---|
 | `namespace.yaml` | Namespace, resource quota, and default limits |
 | `backend.yaml` | API Deployment, Service, HPA, PDB |
-| `control-plane.yaml` | Ops control plane — no public ingress, by design |
-| `worker.yaml` | ARQ worker, split out of the API process |
+| `control-plane-and-worker.yaml` | Ops control plane (no public ingress, by design) + the ARQ worker + the migration Job, together — split as separate Deployments, kept in one file since all three exist for the same reason (the single-process Render deploy) and are read together far more often than apart |
 | `frontends.yaml` | Staff, public and ops apps |
 | `ingress.yaml` | TLS termination and routing |
 | `secrets.example.yaml` | Shape only — never real values |
+| `kustomization.yaml` | Kustomize base tying the above together — the actual sync target for Argo CD's Application (`../argocd/`) |
 
 ## Decisions worth knowing before reading the YAML
 
@@ -48,6 +48,17 @@ times concurrently against the same database.
 
 ## What is deliberately absent
 
-No service mesh, no operator, no GitOps controller. Each is defensible at a
-larger scale and each is another system a small team has to operate during
-an incident. Add them when there is a problem they solve, not preemptively.
+No service mesh, no operator. Each is defensible at a larger scale and
+each is another system a small team has to operate during an incident.
+Add them when there is a problem they solve, not preemptively.
+
+**A GitOps controller is no longer on this list — see [`../argocd/`](../argocd/).**
+This directory originally argued against one too, for the same
+"preemptive tooling" reason as the service mesh/operator above. That
+stopped being true once `.github/workflows/ci.yml`'s `build-and-push` job
+existed and had nowhere to deliver the images it was already building and
+pushing on every merge — Argo CD closes an existing gap in an already-built
+pipeline, not new complexity added ahead of a need. `../argocd/README.md`
+explains this in full and is worth reading before assuming this directory's
+older "add it later" framing still applies wholesale; it doesn't, for this
+one item specifically.

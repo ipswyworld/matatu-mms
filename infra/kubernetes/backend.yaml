@@ -1,6 +1,12 @@
 # API backend (Readiness List §1).
 #
 # Not applied anywhere today — see this directory's README.
+#
+# Image path fixed to match what .github/workflows/ci.yml's build-and-push
+# job actually publishes: ghcr.io/<owner>/<repo>/<component>, e.g.
+# ghcr.io/ipswyworld/matatu-mms/backend — not ghcr.io/ipswyworld/
+# matatu-mms-backend, a single hyphenated package name that was never a
+# real path CI ever pushed to. Found while wiring Argo CD to this CI.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -43,9 +49,15 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         fsGroup: 10001
+      # GHCR packages default to private. Argo CD/kubectl applying this
+      # manifest is not itself authenticated to ghcr.io — the cluster needs
+      # its own pull credential, documented (shape only) in
+      # secrets.example.yaml.
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: api
-          image: ghcr.io/ipswyworld/matatu-mms-backend:latest
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
