@@ -1704,16 +1704,84 @@ migration itself surfaces as new work.**
 
 ---
 
-## Mobile Apps — Approved to Build (2026-09-13), Public + Enforcement First
+## Mobile Apps — Approved to Build, Public + Enforcement First (Scheduled: Final Phase)
 
-**Status update: no longer deferred.** Go-ahead given to build two native
-apps — public/passenger and enforcement — as the two that matter (crew
-and Sacco-operator stay on the web apps for now). Everything below the
-original "deferred" reasoning is kept as-is since it's still the correct
-technical starting point; this section just records the decision plus
-what a build session will need on day one.
+**Status update: no longer deferred, but sequenced last, not next.**
+Go-ahead given (2026-09-13) to build two native apps — public/passenger
+and enforcement — as the two that matter (crew and Sacco-operator stay on
+the web apps for now). Explicitly slotted into the **final phase** of the
+roadmap below (see Phase 11), after the web apps' own architecture and
+data-infrastructure work settles — this is the same "don't build against
+a moving target" reasoning the original deferral was based on, just with
+a firm commitment now attached instead of an open-ended "someday."
+Everything below the original "deferred" reasoning is kept as-is since
+it's still the correct technical starting point; this section records the
+decision plus what a build session will need on day one.
 
-**Decisions made when this was greenlit:**
+**Both platforms, one codebase.** Both apps target **iOS and Android**
+from a single React Native/Expo codebase each — not two separate native
+builds per app. This is one of the reasons Expo was chosen over separate
+Swift/Kotlin codebases (§ below): one TypeScript codebase per app, two
+platforms each, four platform binaries total, not four separate
+codebases.
+
+**Account continuity with the web apps is a hard requirement, not an
+enhancement.** A user who registered or has been using
+`matatu-mms-public` (passenger) or the staff/enforcement web login must
+be able to sign in to the corresponding mobile app with the *same*
+credentials — no separate mobile-only account system, no re-registration.
+This is already true structurally and needs no new backend work: per the
+verified API surface below, mobile auth is the exact same
+`/api/auth/login` (email/phone/crew-number + password) that
+`matatu-mms-public`'s `loginAction` already calls, against the exact same
+`users` table. The mobile team should treat this as a **constraint to
+preserve**, not a feature to build — the risk is *breaking* this
+continuity (e.g. inventing a parallel mobile-only auth flow for
+convenience) rather than needing to construct it from nothing.
+
+**The mobile apps will have real capabilities beyond what the web apps
+offer** — this was stated explicitly at greenlight time and is a genuine
+scope difference, not just "the same app on a phone." What those
+additional capabilities actually are is **not yet decided** — that
+decision belongs to whoever staffs the mobile build, informed by what a
+phone can do that a browser tab structurally cannot. The two gaps already
+named in this document as native-only territory (§46 Field Operations,
+carried into the note above) are confirmed real candidates — offline
+queue-and-sync, and reliable background GPS instead of a foreground-only
+browser tab — but the team should not treat that pair as the ceiling of
+the discussion, only the floor.
+
+**Kickoff discussion agenda for the mobile build team** — explicitly
+framed as *open questions the team works out*, not decisions already
+made here:
+- What native-only capabilities beyond web parity are actually worth
+  building for each app (push notifications are the obvious first
+  candidate — background alerts a browser tab can't reliably deliver —
+  but the full list is the team's to define), and which of those need
+  new backend endpoints versus reusing what's already documented below.
+- Push notification delivery mechanism (APNs/FCM via Expo's push service)
+  and how it relates to the existing `WS /api/notifications/ws` feed,
+  which is live-only today ("not a durable inbox" per its own code
+  comment) — a mobile push channel may be the right place to finally
+  close that durability gap rather than duplicating the WS feed.
+- Background location semantics on each OS (iOS's stricter background-GPS
+  permission model versus Android's) for the enforcement app's "On
+  Patrol" broadcast, and what user-facing permission-priming UX is needed
+  before either OS's permission prompt fires.
+- Offline-first data strategy for both apps (queue-and-sync for
+  enforcement case filing and officer GPS; cached route/fare data for
+  passengers) — a real design decision (which local store, conflict
+  resolution rules), not a checkbox.
+- App-store review/compliance requirements for each platform (data-safety
+  disclosures, background-location justification text Apple/Google will
+  ask for given this is literal law-enforcement GPS tracking) — likely
+  the single biggest source of calendar risk in this phase, worth
+  surfacing early rather than discovering at submission time.
+- Whichever of the "million other things" surface once the team actually
+  starts — this list is a starting agenda, not a spec.
+
+**Decisions already made when this was greenlit** (settled, not open for
+the kickoff discussion above):
 - **Stack: React Native + Expo, TypeScript** — same language/type system
   as all three existing Next.js apps, not Flutter or separate native
   Swift/Kotlin codebases. Chosen for type/pattern reuse with the existing
@@ -2173,9 +2241,15 @@ Each of these has a stated trigger for when to revisit — not a "someday":
 
 - **Redpanda** — only once Redis Streams actually hits a real limit
   (§3); a replacement path, not something to run alongside Redis Streams.
-- **Native mobile apps** — deferred with a documented plug-and-play path
-  (§Mobile Apps); revisit once the three web apps and backend are settled
-  enough to build against without a moving target.
+- **Native mobile apps (public + enforcement, iOS and Android)** —
+  **approved to build** (§Mobile Apps), not merely deferred anymore, but
+  deliberately scheduled as the *last* phase in this roadmap: same
+  "don't build against a moving target" trigger as before, now with a
+  firm commitment attached instead of an open "someday." Account
+  continuity with the existing web login is a hard requirement; the
+  mobile apps are expected to carry real capabilities beyond web parity,
+  scope TBD by the team that builds them (kickoff agenda in §Mobile
+  Apps).
 - **ML/MLOps/Computer Vision** (§33-35) — no system exists yet to justify
   these disciplines; the demand-intelligence dashboard is the most
   plausible first real use case once enough historical volume exists.
