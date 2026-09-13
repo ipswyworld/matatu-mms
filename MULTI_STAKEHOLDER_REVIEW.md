@@ -1360,6 +1360,65 @@ on operationally, not just technically.
 
 ---
 
+## 47. Automation Specialist
+
+Distinct from DevOps (§17, which owns the deploy/build pipeline itself)
+and MLOps (§34, not applicable yet — no model to automate around): this
+is the person who looks at *repeated manual work inside the product and
+its operations* and asks what should be a job, a workflow, or a scheduled
+task instead of a person doing it by hand each time.
+
+**Would sign off on:**
+- `app/worker.py`'s ARQ task queue is real, in-process automation
+  infrastructure already proven with one live job (webhook delivery,
+  reusing the existing retry/circuit-breaker logic rather than
+  duplicating it) — the right foundation to route new automatable work
+  through (fare-chart PDF parsing, TomTom routing calls, report
+  generation, notification delivery — all named in the module's own
+  docstring as the intended next jobs).
+- `.github/workflows/ci.yml`'s `build-and-push` job already embodies the
+  right automation principle for deploys: "build once, promote the same
+  artefact" (git-SHA-tagged images), not a rebuild-per-environment script
+  that could drift between what was tested and what ships.
+- The CI file already automates a real, previously-manual failure mode
+  for itself: the `frontend-public` job's `diff` steps against
+  `NotificationBell.tsx`/`PageBanner.tsx` catch a file silently drifting
+  out of sync between the staff and public apps, instead of relying on
+  someone remembering to copy an edit to both places by hand.
+
+**Would ask for, and why:**
+- **The migration and backup/restore scripts used for this session's own
+  Render account migration (`db-backups/backup_db.py`, `restore_db.py`)
+  are one-off operator scripts, not a repeatable, scheduled job.** They
+  were written, run once under direct supervision, and are now sitting on
+  disk for reference. A real automation specialist's first ask here would
+  be: is a periodic Postgres backup a scheduled ARQ job (or a Render cron
+  job) yet, or does the next migration/disaster-recovery event start from
+  a blank page and a remembered script the way this one did? Right now
+  it's the latter.
+- **No scheduled/recurring jobs exist anywhere in the system today** —
+  `WorkerSettings.functions` in `worker.py` has exactly one function
+  wired (webhook delivery), triggered by application events, never by a
+  clock. Nothing currently runs "every night," "every hour," or "on the
+  1st of the month" — fine reconciliation, stale-session cleanup, fleet
+  compliance re-scoring, and audit-log archival are all plausible
+  candidates once the volume justifies them, but none exist yet and
+  none are scheduled.
+- **The `security-scan` job's `npm audit`/`pip-audit`/Trivy/gitleaks
+  findings are surfaced, not triaged automatically.** They land in a CI
+  job summary (`continue-on-error: true`, deliberately advisory per the
+  job's own comment) with no named owner or recurring review cadence —
+  worth automating the *routing* of a finding to a person/queue, not just
+  the detection of it, once findings start actually appearing.
+- **`scripts/check-bundle-budget.mjs` and `scripts/canary-promote.sh`
+  exist as one-off scripts invoked from CI/deploy steps** — worth
+  confirming these are genuinely idempotent and safe to re-run
+  unattended (an automation specialist's default question for any script
+  a person currently runs by hand or a pipeline calls once) rather than
+  scripts written and tested for a single execution context.
+
+---
+
 ## Ops Centre Rebuild — Cross-Team Discussion
 
 Triggered by the decision to move the deployment to a new free Render
