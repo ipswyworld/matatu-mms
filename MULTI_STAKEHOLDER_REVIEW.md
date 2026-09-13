@@ -1704,42 +1704,90 @@ migration itself surfaces as new work.**
 
 ---
 
-## Mobile Apps — Deferred for Now, With a Plug-and-Play Path
+## Mobile Apps — Approved to Build (2026-09-13), Public + Enforcement First
 
-Native mobile apps are explicitly **off the table for now**. Not because
-they aren't wanted — because building them before the three web apps and
-the backend they share are settled would mean building against a moving
-target twice. What follows is what makes picking this up later cheap
-instead of a from-scratch integration project.
+**Status update: no longer deferred.** Go-ahead given to build two native
+apps — public/passenger and enforcement — as the two that matter (crew
+and Sacco-operator stay on the web apps for now). Everything below the
+original "deferred" reasoning is kept as-is since it's still the correct
+technical starting point; this section just records the decision plus
+what a build session will need on day one.
 
-**What already exists that a future mobile app plugs into, unchanged:**
-- **`/api/v1`, already versioned.** A mobile client is just another API
-  consumer; nothing about mobile requires a new backend surface, only new
-  clients of the existing one.
-- **The OAuth2 client-credentials pattern built for the partner API**
-  (`app/api_clients.py`, `app/routes/oauth.py`) is the same shape a native
-  app needs for machine-to-machine or long-lived-session auth — token
-  issuance, scoped permissions via the same `ApiClientPrincipal` that
-  already reuses the human ABAC/RBAC engine unmodified (§7 above). A mobile
-  app does not need its own authorization model designed from zero.
-- **The PWA** (manifest, service worker, offline fallback, install prompt)
-  is a real interim mobile experience today for the public/passenger app —
-  installable from a browser, works offline for cached routes, and is
-  already live rather than hypothetical. This buys time without leaving
-  passengers with nothing on a phone in the meantime.
+**Decisions made when this was greenlit:**
+- **Stack: React Native + Expo, TypeScript** — same language/type system
+  as all three existing Next.js apps, not Flutter or separate native
+  Swift/Kotlin codebases. Chosen for type/pattern reuse with the existing
+  `lib/` code and so the same team can staff it without a new language.
+- **Repo layout:** new top-level folders in this same repo, matching how
+  the project is already organized (three app folders + `backend/`) —
+  `matatu-mms-mobile-public/` and `matatu-mms-mobile-enforcement/`, one
+  repo, one CI file to extend, rather than splitting into separate repos.
+- **Build order: both in parallel** (not sequenced public-first) — noted
+  at decision time that this only pays off with separate people/time on
+  each; if capacity turns out to be one person, revisit sequencing rather
+  than thinning both simultaneously.
 
-**What "plug and play" means concretely, when the day comes:** a native
-app talks to `/api/v1` the same way the partner integrators already do —
-same auth pattern, same versioned contract, same ABAC scoping — rather
-than requiring a parallel mobile-specific backend. The main *new* work at
-that point is genuinely mobile-shaped (push notifications, offline-first
-local storage/sync, app-store review cycles), not re-litigating auth or
-API design. The one thing worth doing **now**, cheaply, to keep that path
-open: treat any future backend change as a breaking-change decision against
-`/api/v1` (new fields additive, nothing silently removed or repurposed) —
-the existing OpenAPI-as-published-contract ask in §7 covers this directly
-and should be prioritized with mobile in mind, not just partner
-integrators.
+**One correction to the original "plug and play" plan below, found while
+scoping the actual API surface for this build:** the backend has **no
+`/api/v1` prefix at all** — every router in `backend/app/main.py` mounts
+directly at `/api/<resource>` (`/api/auth`, `/api/bookings`,
+`/api/telemetry`, etc). The versioning claim in the original section
+below was aspirational, not actual; correct this before quoting "v1" to
+anyone building against it.
+
+**Verified API surface for the build** (so the first implementation
+session doesn't have to re-derive this):
+- **Auth is the same `/api/auth/login` / `/api/auth/register` used by
+  staff and passengers today** — not the OAuth2 client-credentials
+  pattern (`api_clients.py`/`oauth.py`), which is strictly
+  machine-to-machine per its own docstrings and structurally can't
+  authenticate an end user (`get_current_user` requires `userId` in the
+  token; a client-credentials token only carries `clientId`). A mobile
+  app sends `Authorization: Bearer <accessToken>` and ignores cookies
+  entirely (the `mms_session` cookie carries a display-only base64 blob,
+  never the JWT). Access tokens run ~60 minutes; call `POST
+  /api/auth/refresh` proactively on a timer (mirroring
+  `NotificationBell.tsx`'s existing pattern) rather than waiting for a
+  401.
+- **Passenger app:** `GET /api/search/stages?q=` (typeahead) →
+  `GET /api/search/od?from_stage_id=&to_stage_id=` (fare/seat-availability
+  search) → `POST /api/bookings` (send an `Idempotency-Key` header, given
+  mobile networks drop mid-request more often than a browser tab does).
+  Live vehicle map: `WS /api/telemetry/ws/passengers` (no auth needed).
+- **Enforcement app:** `GET /api/beats/my-assignment` (today's beat) →
+  `POST /api/enforcement/cases` (multipart form, snake_case fields, at
+  least one photo required) to file a case. Officer GPS broadcast
+  ("On Patrol") is WebSocket-only —
+  `WS /api/telemetry/ws/officer/{officer_id}?token=` — replicate
+  `OnPatrolToggle.tsx`'s pattern with `expo-location`'s
+  `watchPositionAsync`; positions go stale server-side after 30s with no
+  updates, so keep the send interval well under that.
+- **WebSocket auth is a query param** (`?token=<JWT>`), not a header —
+  browsers can't set custom WS headers and the backend was written around
+  that constraint, which also just works for a native client. Watch the
+  close code, not just connection failure: `4401` (bad/expired token),
+  `4403` (wrong owner — e.g. an officer streaming someone else's id),
+  `4404` (not found).
+- **Live backend to point at:** `https://matatu-mms-backend-77ox.onrender.com`
+  (`wss://` for WebSocket). CORS is a browser-only mechanism and doesn't
+  apply to a native app's requests either way — no backend change needed
+  to unblock mobile.
+
+**What still holds from the original plan, unchanged:**
+- The PWA (manifest, service worker, offline fallback, install prompt)
+  remains the real interim mobile experience for passengers until the
+  native app ships — already live, not hypothetical.
+- Treat any backend change from here as additive/non-breaking against
+  this now-two-more-consumers API surface (partner integrators + the two
+  new mobile apps), per the OpenAPI-as-published-contract ask in §7.
+- The two named field-usability gaps from §46 Field Operations apply
+  directly to the enforcement app's design: **offline-tolerant
+  operation** (queue-and-sync when connectivity drops mid-shift) and a
+  **visible warning when GPS tracking silently stops** (e.g. app
+  backgrounded) are exactly the "genuinely mobile-shaped" work this
+  build should treat as first-class requirements, not stretch goals —
+  they were named as gaps specifically because the web app couldn't
+  close them and a native app can.
 
 ---
 
