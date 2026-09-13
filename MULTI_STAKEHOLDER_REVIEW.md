@@ -2214,6 +2214,32 @@ whoever has capacity rather than sequencing:
    preemptive tooling). Blue-green/canary promotion
    (`scripts/canary-promote.sh`) still wires into whatever orchestrator
    item 2 stands up — unchanged, still pending a real cluster to target.
+
+   **There is no Argo CD to log into yet — asked directly, worth stating
+   as plainly here as it was in chat.** Argo CD is a piece of software
+   that runs *inside* a Kubernetes cluster; it is not a hosted service
+   with its own URL. matatu-mms has no Kubernetes cluster today —
+   everything live runs on Render, a non-Kubernetes platform — so there
+   is nothing to open in a browser yet. What exists right now is
+   *configuration for* Argo CD (the `Application`/`AppProject` manifests
+   and the CI job that feeds them), not a running instance. Also worth
+   noting: the `Application` and the new CI job both watch `master`
+   specifically, not `deploy/render-demo` (the branch Render's own
+   auto-deploy watches, and the branch this session's work has actually
+   been pushed to) — so none of this fires yet regardless, until this
+   work lands on `master` too. To actually get a login screen, in order:
+   1. Provision a real Kubernetes cluster (GKE/EKS/etc.) — a real
+      infrastructure and budget decision, not something this repo can do
+      for you.
+   2. Install Argo CD into it (one command — see `infra/argocd/README.md`'s
+      Bootstrap section for the exact command).
+   3. Apply `infra/argocd/project.yaml` and `application.yaml` once, by
+      hand, into that cluster.
+   4. `kubectl port-forward svc/argocd-server -n argocd 8080:443` (or
+      expose it via the Ingress), then open `https://localhost:8080`.
+      Default login is `admin`, with a password Argo CD generates on
+      install: `kubectl get secret argocd-initial-admin-secret -n argocd
+      -o jsonpath="{.data.password}" | base64 -d`.
 4. A manual-approval gate before production — a GitHub Environments
    repo-settings toggle once there's a real deploy job to gate (§31).
 5. Terraform for infrastructure-as-code (§4, §19), so "what's running in
