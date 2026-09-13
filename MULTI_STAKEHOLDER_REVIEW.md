@@ -2240,6 +2240,18 @@ whoever has capacity rather than sequencing:
       Default login is `admin`, with a password Argo CD generates on
       install: `kubectl get secret argocd-initial-admin-secret -n argocd
       -o jsonpath="{.data.password}" | base64 -d`.
+
+   **Verified live — 2026-09-14, after pushing this work.** Confirmed the
+   Argo CD/CI changes touched nothing Render actually builds from (no
+   Dockerfile, no app code) by checking all four services rebuilt clean on
+   the new commit and re-running the full functional sweep: backend health,
+   all three frontends resolving, superadmin login, passenger search
+   (`/api/search/stages`), ops overview (Database/Redis/Job queue all
+   `ok`), and the `ARRESTING_OFFICER` enforcement login from the
+   role-naming finding above — all still `200`/correct. `recentClientErrors`
+   was back to `0`, expected: this deploy's restart cleared the in-memory
+   verification-ping entry the same way a manual restart would have.
+   Nothing broke.
 4. A manual-approval gate before production — a GitHub Environments
    repo-settings toggle once there's a real deploy job to gate (§31).
 5. Terraform for infrastructure-as-code (§4, §19), so "what's running in
