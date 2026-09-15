@@ -36,7 +36,10 @@ interface CrewPortalClientProps {
 export default function CrewPortalClient({ matatus, routes, token }: CrewPortalClientProps) {
   const [selectedMatatu, setSelectedMatatu] = useState<Matatu | null>(matatus[0] || null);
   const [isBroadcastingGps, setIsBroadcastingGps] = useState(true);
-  const [gpsSource, setGpsSource] = useState<"device" | "simulated" | "idle">("idle");
+  // "unavailable" is a first-class, visible state — the crew has to be able
+  // to tell that nothing is being tracked. There is deliberately no
+  // "simulated" source; see the broadcast effect below.
+  const [gpsSource, setGpsSource] = useState<"device" | "acquiring" | "unavailable" | "idle">("idle");
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isPending, startTransition] = useTransition();
@@ -218,14 +221,21 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
     .filter((b) => b.status === "CONFIRMED" || b.status === "USED")
     .reduce((sum, b) => sum + b.fareKes, 0);
 
-  // Stream live GPS to the passenger map: real device location when granted, simulated jitter as fallback
+  // Stream live GPS to the passenger map — real device location only.
+  //
+  // There is deliberately no simulated fallback here. The payload carries no
+  // provenance field, so by the time a position reaches Redis
+  // (telemetry:vehicle:*) and the public passenger map it is
+  // indistinguishable from a real fix: faking one shows commuters a vehicle
+  // at a place it has never been. This is the same rule the officer channel
+  // already documents (backend/app/routes/telemetry.py, OnPatrolToggle.tsx)
+  // — no fix means nothing is broadcast, and the crew is told so.
   useEffect(() => {
     if (!isBroadcastingGps || !selectedMatatu) return;
 
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let watchId: number | null = null;
-    let simInterval: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     let attempt = 0;
 
@@ -247,23 +257,12 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       }
     };
 
-    const startSimulatedMovement = () => {
-      setGpsSource("simulated");
-      simInterval = setInterval(() => {
-        send(
-          -1.2864 + Math.sin(Date.now() / 2000) * 0.005,
-          36.8228 + Math.cos(Date.now() / 2000) * 0.005,
-          Math.floor((Date.now() / 100) % 360),
-          45 + Math.floor(Math.sin(Date.now() / 1000) * 10)
-        );
-      }, 2000);
-    };
-
     const startDeviceGeolocation = () => {
       if (!("geolocation" in navigator)) {
-        startSimulatedMovement();
+        setGpsSource("unavailable");
         return;
       }
+      setGpsSource("acquiring");
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
           setGpsSource("device");
@@ -274,7 +273,9 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
             Math.round((pos.coords.speed || 0) * 3.6)
           );
         },
-        () => startSimulatedMovement(),
+        // Permission denied, or the fix timed out: broadcast nothing and say
+        // so. The watch stays registered, so a later fix recovers on its own.
+        () => setGpsSource("unavailable"),
         { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
       );
     };
@@ -288,7 +289,9 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       };
       ws.onclose = () => {
         if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        if (simInterval) clearInterval(simInterval);
+        // Nothing is reaching the map while the socket is down — don't keep
+        // showing "Device GPS Live" through the reconnect backoff.
+        setGpsSource("idle");
         if (cancelled) return;
         const delay = Math.min(1000 * 2 ** attempt, 15000);
         attempt += 1;
@@ -303,7 +306,6 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       cancelled = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      if (simInterval) clearInterval(simInterval);
       ws?.close();
       setGpsSource("idle");
     };
@@ -358,6 +360,12 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
     });
   };
 
+  const gpsLabel =
+    !isBroadcastingGps ? "OFF" :
+    gpsSource === "device" ? "Device GPS Live" :
+    gpsSource === "unavailable" ? "Unavailable — Not Tracked" :
+    "Connecting…";
+
   if (!selectedMatatu) {
     return (
       <div className="card">
@@ -380,8 +388,14 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
           <>
             <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/15">
               <LiveIndicator
-                label={`GPS: ${isBroadcastingGps ? (gpsSource === "device" ? "Device GPS Live" : gpsSource === "simulated" ? "Simulated (no fix)" : "Connecting…") : "OFF"}`}
-                state={!isBroadcastingGps ? "offline" : gpsSource === "device" ? "live" : "connecting"}
+                label={`GPS: ${gpsLabel}`}
+                state={
+                  !isBroadcastingGps || gpsSource === "unavailable"
+                    ? "offline"
+                    : gpsSource === "device"
+                      ? "live"
+                      : "connecting"
+                }
                 className="text-white normal-case tracking-normal font-bold"
               />
               <button
@@ -408,6 +422,25 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
           </>
         }
       />
+
+      {isBroadcastingGps && gpsSource === "unavailable" && (
+        <div
+          role="status"
+          className="card p-4 border-county-red/40 bg-county-red/10 flex items-start gap-3"
+        >
+          <ShieldAlert size={18} strokeWidth={2} className="text-county-red shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-county-red">
+              GPS unavailable — your vehicle is not being tracked
+            </p>
+            <p className="text-xs text-black/60">
+              Passengers cannot see this vehicle on the live map, and no position is being
+              recorded. Allow location access for this site (or move somewhere with a clearer
+              view of the sky), then toggle GPS off and on again.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total Vehicle Seats" value={selectedMatatu.capacity} hint="Licensed seating capacity" icon={Armchair} />

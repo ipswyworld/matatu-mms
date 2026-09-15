@@ -15,10 +15,13 @@ interface OnPatrolToggleProps {
  * product decision blocking live officer tracking (continuous background
  * tracking vs. a foreground screen the officer explicitly turns on).
  *
- * Deliberately no simulated-fallback position: unlike the demo vehicle GPS
- * (crew app), faking an officer's location would actively mislead a
- * commander about where someone actually is. If the device GPS fix isn't
- * available, this shows "GPS unavailable" and broadcasts nothing.
+ * Deliberately no simulated-fallback position: faking an officer's location
+ * would actively mislead a commander about where someone actually is. If the
+ * device GPS fix isn't available, this shows "GPS unavailable" and broadcasts
+ * nothing. The crew/vehicle channel (CrewPortalClient.tsx) used to be the
+ * exception here, falling back to simulated movement; it no longer does, for
+ * the same reason — a fabricated vehicle position reaches the public
+ * passenger map indistinguishable from a real one.
  */
 export default function OnPatrolToggle({ officerId, token }: OnPatrolToggleProps) {
   const [onPatrol, setOnPatrol] = useState(false);

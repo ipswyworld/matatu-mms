@@ -1322,10 +1322,13 @@ on operationally, not just technically.
   embedded in the code: no simulated-fallback position. If the device GPS
   fix isn't available, it shows "GPS unavailable" and broadcasts nothing,
   specifically because a faked officer location could actively mislead a
-  commander about where someone actually is — the crew app's demo-vehicle
-  GPS is allowed a simulated fallback; an officer's real safety-relevant
-  position is not, and the code treats those two cases differently on
-  purpose.
+  commander about where someone actually is. The crew app's vehicle GPS
+  (`CrewPortalClient.tsx`) once carved out an exception to this — a
+  sine/cosine "demo" position broadcast whenever the device fix was denied
+  or timed out — but since that position reached the public passenger map
+  indistinguishable from a real one, it has been removed: the crew portal
+  now shows "GPS unavailable — your vehicle is not being tracked" and
+  broadcasts nothing, and both channels follow one rule.
 - The crew and enforcement portals are real, working surfaces
   (`CrewPortalClient.tsx`, `EnforcementSceneForm.tsx`), not stubs standing
   in for a future native app.

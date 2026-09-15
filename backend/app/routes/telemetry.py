@@ -23,6 +23,13 @@ router = APIRouter(prefix="/api/telemetry", tags=["Live Telemetry & GPS Tracking
 # window) instead of a single process's memory, so "is this matatu live"
 # means the same thing on every backend instance behind the load balancer —
 # not just whichever one the crew app happened to connect to.
+#
+# Positions on this channel are never simulated, the same rule the officer
+# channel states below. The payload has no provenance field, so anything
+# accepted here is persisted and broadcast to the public passenger map as a
+# real sighting; the crew client therefore broadcasts nothing when it has no
+# device fix, and tells the crew they are untracked, rather than inventing a
+# location (see matatu-mms-public/components/CrewPortalClient.tsx).
 STALE_AFTER_SECONDS = 30
 TELEMETRY_CHANNEL = "telemetry:broadcast"
 TELEMETRY_KEY_PREFIX = "telemetry:vehicle:"
@@ -30,7 +37,8 @@ TELEMETRY_KEY_PREFIX = "telemetry:vehicle:"
 # Same pattern, separate channel/prefix — an officer's live position (§22.4)
 # is opt-in per officer (the "On Patrol" toggle in the frontend) and never
 # simulated: if the device GPS fix isn't available, nothing is broadcast,
-# rather than showing a commander a fake location.
+# rather than showing a commander a fake location. The vehicle channel above
+# now follows the same rule.
 OFFICER_TELEMETRY_CHANNEL = "officer_telemetry:broadcast"
 OFFICER_TELEMETRY_KEY_PREFIX = "telemetry:officer:"
 
