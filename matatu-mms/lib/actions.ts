@@ -691,6 +691,139 @@ export async function updateOfficerAssignmentAction(
   return {};
 }
 
+// --- PTCU duty allocation ---
+
+export async function createDutyAllocationAction(input: {
+  year: number;
+  month: number;
+  referenceNo?: string;
+  title?: string;
+  notes?: string;
+  copyFromAllocationId?: string;
+}): Promise<{ error?: string; allocationId?: string }> {
+  try {
+    const result = await apiWrite<{ id: string }>("/api/duty/allocations", "POST", input);
+    revalidatePath("/duty");
+    return { allocationId: result.id };
+  } catch (err: any) {
+    return { error: err.message || "Could not create the allocation." };
+  }
+}
+
+export async function publishDutyAllocationAction(allocationId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/allocations/${allocationId}/publish`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not publish the allocation." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function createDutyAssignmentAction(
+  allocationId: string,
+  input: {
+    officerId: string;
+    workStation: string;
+    sectorId?: string | null;
+    zoneId?: string | null;
+    shift?: string;
+    coverage?: string;
+    postingRole?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/allocations/${allocationId}/assignments`, "POST", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not post the officer." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function updateDutyAssignmentAction(
+  assignmentId: string,
+  input: Record<string, unknown>
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/assignments/${assignmentId}`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update the posting." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function deleteDutyAssignmentAction(assignmentId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/assignments/${assignmentId}`, "DELETE");
+  } catch (err: any) {
+    return { error: err.message || "Could not remove the posting." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function updateOfficerDutyStatusAction(
+  officerId: string,
+  input: {
+    dutyStatus: string;
+    dutyStatusFrom?: string | null;
+    dutyStatusUntil?: string | null;
+    dutyStatusNote?: string | null;
+  }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/officers/${officerId}/status`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update duty status." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function updateOfficerServiceRecordAction(
+  officerId: string,
+  input: { manpowerNo?: string | null; rank?: string | null; gender?: string | null }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/officers/${officerId}/service`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update the service record." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function sendBroadcastAction(input: {
+  subject: string;
+  body: string;
+  priority?: string;
+  audience: string;
+  sectorId?: string | null;
+  zoneId?: string | null;
+  officerIds?: string[];
+}): Promise<{ error?: string; recipientCount?: number }> {
+  try {
+    const result = await apiWrite<{ recipientCount: number }>("/api/broadcasts", "POST", input);
+    revalidatePath("/duty");
+    return { recipientCount: result.recipientCount };
+  } catch (err: any) {
+    return { error: err.message || "Could not send the broadcast." };
+  }
+}
+
+export async function markBroadcastReadAction(broadcastId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/broadcasts/${broadcastId}/read`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not mark as read." };
+  }
+  revalidatePath("/my-duty");
+  return {};
+}
+
 const PUBLIC_BACKEND_URL = BACKEND_URL;
 
 export async function publicLookupCaseAction(caseReference: string): Promise<{ error?: string; caseData?: any }> {

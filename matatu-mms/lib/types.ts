@@ -43,6 +43,161 @@ export interface Zone {
   id: string;
   name: string;
   description?: string;
+  // PTCU duty geography. All optional — the four legacy corridor zones
+  // predate the sector hierarchy and carry none of it.
+  sectorId?: string | null;
+  sectorCode?: string | null;
+  sectorName?: string | null;
+  code?: string | null;
+  centerLat?: number | null;
+  centerLng?: number | null;
+  boundaryGeojson?: string | null;
+  displayOrder?: number;
+  isActive?: boolean;
+  officerCount?: number;
+}
+
+// --- PTCU duty allocation ---
+
+export interface Sector {
+  id: string;
+  code: string;        // "1".."11", "5B", "MEU"
+  name: string;
+  description?: string | null;
+  commanderId?: string | null;
+  commanderName?: string | null;
+  deputyCommanderId?: string | null;
+  deputyCommanderName?: string | null;
+  contactPhone?: string | null;
+  centerLat?: number | null;
+  centerLng?: number | null;
+  boundaryGeojson?: string | null;
+  displayOrder: number;
+  isActive: boolean;
+  zoneCount: number;
+  officerCount: number;
+}
+
+export type DutyStatus = "ON_DUTY" | "OFF_DUTY" | "LEAVE" | "SICK" | "SUSPENDED" | "TRAINING";
+export type DutyShift = "DAY" | "NOON" | "NIGHT";
+export type DutyCoverage = "DAILY" | "WEEKDAY" | "WEEKEND";
+
+export interface OfficerRoster {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  role: Role;
+  manpowerNo?: string | null;
+  rank?: string | null;
+  gender?: string | null;
+  dutyStatus: DutyStatus;
+  dutyStatusFrom?: string | null;
+  dutyStatusUntil?: string | null;
+  dutyStatusNote?: string | null;
+  enforcementDuty?: string | null;
+  commanderTitle?: string | null;
+  isActive: boolean;
+  // Populated only when the roster was queried within an allocation.
+  assignmentId?: string | null;
+  sectorId?: string | null;
+  sectorCode?: string | null;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  workStation?: string | null;
+  shift?: DutyShift | null;
+  coverage?: DutyCoverage | null;
+  postingRole?: string | null;
+}
+
+export interface DutyAllocation {
+  id: string;
+  year: number;
+  month: number;
+  referenceNo?: string | null;
+  title?: string | null;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  notes?: string | null;
+  createdBy: string;
+  createdByName?: string | null;
+  createdAt: string;
+  publishedBy?: string | null;
+  publishedByName?: string | null;
+  publishedAt?: string | null;
+  assignmentCount: number;
+  // The sheet's own footer.
+  maleOnDuty: number;
+  femaleOnDuty: number;
+  totalAssigned: number;
+}
+
+export interface DutyAssignment {
+  id: string;
+  allocationId: string;
+  officerId: string;
+  officerName: string;
+  officerRank?: string | null;
+  officerManpowerNo?: string | null;
+  officerPhone?: string | null;
+  officerDutyStatus: DutyStatus;
+  sectorId?: string | null;
+  sectorCode?: string | null;
+  sectorName?: string | null;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  workStation: string;
+  shift: DutyShift;
+  coverage: DutyCoverage;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  postingRole?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface DutyCalendarDay {
+  date: string;
+  isWeekend: boolean;
+  assignmentCount: number;
+  shifts: DutyShift[];
+}
+
+export interface DutyCalendar {
+  year: number;
+  month: number;
+  allocationId?: string | null;
+  allocationStatus?: string | null;
+  days: DutyCalendarDay[];
+}
+
+export interface MyDuty {
+  date: string;
+  onDutyToday: boolean;
+  dutyStatus: DutyStatus;
+  dutyStatusUntil?: string | null;
+  dutyStatusNote?: string | null;
+  allocationMonth?: string | null;
+  allocationReference?: string | null;
+  today: DutyAssignment[];
+  month: DutyAssignment[];
+  unreadBroadcasts: number;
+}
+
+export interface Broadcast {
+  id: string;
+  subject: string;
+  body: string;
+  priority: "NORMAL" | "URGENT";
+  audience: "ALL" | "SECTOR" | "ZONE" | "OFFICER";
+  audienceSectorId?: string | null;
+  audienceZoneId?: string | null;
+  audienceLabel?: string | null;
+  sentBy: string;
+  sentByName?: string | null;
+  sentAt: string;
+  recipientCount: number;
+  readCount: number;
+  readAt?: string | null;
 }
 
 export interface Beat {

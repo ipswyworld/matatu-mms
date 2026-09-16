@@ -67,6 +67,8 @@ export type Action =
   | "decide_enforcement_case"
   | "review_case_dispute"
   | "manage_officer_assignments"
+  | "manage_duty_allocation"
+  | "send_broadcast"
   | "view_audit_logs"
   | "manage_admins"
   | "view_system_health"
@@ -83,10 +85,10 @@ export const ALL_BACKEND_PERMISSIONS: string[] = [
   "add_matatu", "approve_license_renewal", "book_ticket", "cancel_own_booking",
   "decide_enforcement_case", "decide_operator_verification_stage1", "decide_operator_verification_stage2",
   "dispute_fine", "edit_matatu_status", "file_enforcement_case", "issue_fine", "log_activity",
-  "manage_admins", "manage_crew", "manage_crew_seats", "manage_fare_stages", "manage_officer_assignments",
+  "manage_admins", "manage_crew", "manage_crew_seats", "manage_duty_allocation", "manage_fare_stages", "manage_officer_assignments",
   "manage_routes", "manage_sacco_documents", "manage_system_config", "manage_trips", "manage_users",
   "pay_fine", "record_crime", "remove_matatu", "review_case_dispute", "review_report",
-  "submit_license_renewal", "submit_report", "update_booking_status", "update_fine_status",
+  "send_broadcast", "submit_license_renewal", "submit_report", "update_booking_status", "update_fine_status",
   "update_telemetry", "verify_saccos", "view_activity", "view_audit_logs", "view_crew",
   "view_dashboard", "view_enforcement_cases", "view_fines", "view_matatu_bookings", "view_matatus",
   "view_operator_verification", "view_own_bookings", "view_reports", "view_routes",
@@ -150,6 +152,8 @@ export const MATRIX: Record<Role, Action[]> = {
     "decide_enforcement_case",
     "review_case_dispute",
     "manage_officer_assignments",
+    "manage_duty_allocation",
+    "send_broadcast",
     "view_audit_logs",
     "view_system_health",
     "manage_system_config",
@@ -183,6 +187,8 @@ export const MATRIX: Record<Role, Action[]> = {
     "decide_enforcement_case",
     "review_case_dispute",
     "manage_officer_assignments",
+    "manage_duty_allocation",
+    "send_broadcast",
     "view_audit_logs",
   ],
   DIRECTOR_MOBILITY: [
@@ -242,6 +248,8 @@ export const MATRIX: Record<Role, Action[]> = {
     "decide_enforcement_case",
     "review_case_dispute",
     "manage_officer_assignments",
+    "manage_duty_allocation",
+    "send_broadcast",
     "view_users",
     "view_reports",
     "review_report",

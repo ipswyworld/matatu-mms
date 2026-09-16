@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, ComplianceFunnel, CrewAssignment, EnforcementCase, Fine, Matatu, ODMatrixCell, OfficerAssignment, OffenceType, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -209,6 +209,81 @@ export async function getBeats(): Promise<Beat[]> {
 
 export async function getZones(): Promise<Zone[]> {
   return apiFetch<Zone[]>("/api/enforcement/zones");
+}
+
+// --- PTCU duty allocation ---
+// Query parameters are snake_case throughout, matching the backend's
+// FastAPI Query() names — camelCase applies to request/response bodies
+// (BaseModelCamel) but never to query strings, same as /api/search and
+// /api/beats already do.
+
+export async function getSectors(allocationId?: string): Promise<Sector[]> {
+  const qs = allocationId ? `?allocation_id=${encodeURIComponent(allocationId)}` : "";
+  return apiFetch<Sector[]>(`/api/duty/sectors${qs}`);
+}
+
+export async function getDutyZones(params: { sectorId?: string; allocationId?: string } = {}): Promise<Zone[]> {
+  const search = new URLSearchParams();
+  if (params.sectorId) search.set("sector_id", params.sectorId);
+  if (params.allocationId) search.set("allocation_id", params.allocationId);
+  const qs = search.toString();
+  return apiFetch<Zone[]>(`/api/duty/zones${qs ? `?${qs}` : ""}`);
+}
+
+export async function getDutyAllocations(): Promise<DutyAllocation[]> {
+  return apiFetch<DutyAllocation[]>("/api/duty/allocations");
+}
+
+export async function getDutyAssignments(
+  allocationId: string,
+  params: { sectorId?: string; zoneId?: string; shift?: string; onDate?: string } = {}
+): Promise<DutyAssignment[]> {
+  const search = new URLSearchParams();
+  if (params.sectorId) search.set("sector_id", params.sectorId);
+  if (params.zoneId) search.set("zone_id", params.zoneId);
+  if (params.shift) search.set("shift", params.shift);
+  if (params.onDate) search.set("on_date", params.onDate);
+  const qs = search.toString();
+  return apiFetch<DutyAssignment[]>(`/api/duty/allocations/${allocationId}/assignments${qs ? `?${qs}` : ""}`);
+}
+
+export async function getDutyCalendar(year: number, month: number): Promise<DutyCalendar> {
+  return apiFetch<DutyCalendar>(`/api/duty/calendar?year=${year}&month=${month}`);
+}
+
+export async function getOfficerRoster(
+  params: { allocationId?: string; sectorId?: string; zoneId?: string; dutyStatus?: string } = {}
+): Promise<OfficerRoster[]> {
+  const search = new URLSearchParams();
+  if (params.allocationId) search.set("allocation_id", params.allocationId);
+  if (params.sectorId) search.set("sector_id", params.sectorId);
+  if (params.zoneId) search.set("zone_id", params.zoneId);
+  if (params.dutyStatus) search.set("duty_status", params.dutyStatus);
+  const qs = search.toString();
+  return apiFetch<OfficerRoster[]>(`/api/duty/officers${qs ? `?${qs}` : ""}`);
+}
+
+export async function getMyDuty(): Promise<MyDuty | null> {
+  // Returns null rather than throwing for a non-enforcement account: the
+  // dashboard renders this panel for whoever is logged in, and a Sacco
+  // operator having no duty allocation is a normal state, not an error.
+  try {
+    return await apiFetch<MyDuty>("/api/duty/my-duty");
+  } catch {
+    return null;
+  }
+}
+
+export async function getSentBroadcasts(): Promise<Broadcast[]> {
+  return apiFetch<Broadcast[]>("/api/broadcasts");
+}
+
+export async function getMyBroadcasts(unreadOnly = false): Promise<Broadcast[]> {
+  try {
+    return await apiFetch<Broadcast[]>(`/api/broadcasts/mine${unreadOnly ? "?unread_only=true" : ""}`);
+  } catch {
+    return [];
+  }
 }
 
 export async function getOffenceTypes(): Promise<OffenceType[]> {
