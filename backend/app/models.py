@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, String, Integer, Float, Numeric, Date, ForeignKey, DateTime, Boolean, Text, LargeBinary
+from sqlalchemy import Column, String, Integer, Float, Numeric, Date, ForeignKey, DateTime, Boolean, Text, LargeBinary, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -95,6 +95,37 @@ class User(Base):
     enforcement_duty = Column(String, nullable=True)  # ARRESTING, RELEASING, or null
     assigned_zone_id = Column(String, ForeignKey("zones.id"), nullable=True)
     commander_title = Column(String, nullable=True)  # e.g. "Commander of Public Transport Compliance"
+
+    # --- Officer service record (PTCU duty-allocation sheet parity) ---
+    # The county's real monthly allocation sheet identifies an officer by
+    # NAME + MAN. NO + RANK, not by email — so a roster built without these
+    # cannot be reconciled against the paper document it replaces.
+    #
+    # Manpower number: the officer's service number as printed on the sheet
+    # (e.g. "72899"). Unique where present, but nullable — every non-officer
+    # account (passenger, crew, Sacco operator) legitimately has none, and a
+    # unique constraint tolerates many NULLs.
+    manpower_no = Column(String, nullable=True, unique=True, index=True)
+    # Rank as printed: SUPT, SCI, INSP, ACC III, S/SGT, SGT, CPL, CC. Kept
+    # as free-ish text rather than an enum — county rank vocabulary is set
+    # by the service, not by this system, and a new rank appearing on next
+    # month's sheet must not require a migration to record.
+    rank = Column(String, nullable=True)
+    # Duty status is what the sheet's "ON DUTY (OFF DUTY & LEAVE SPECIFY
+    # DATES)" column encodes. Distinct from is_active, which is account
+    # deactivation: an officer on leave still has a working login, and a
+    # deactivated account is not "off duty", it is gone.
+    duty_status = Column(String, nullable=False, default="ON_DUTY")  # ON_DUTY, OFF_DUTY, LEAVE, SICK, SUSPENDED, TRAINING
+    # "SPECIFY DATES" — the window the non-ON_DUTY status covers. Both null
+    # for an open-ended status; duty_status_until is what lets the roster
+    # show "back on Monday" instead of just "away".
+    duty_status_from = Column(Date, nullable=True)
+    duty_status_until = Column(Date, nullable=True)
+    duty_status_note = Column(String, nullable=True)
+    # The sheet totals male/female on duty separately and the county reports
+    # on that split, so it is operational data here, not demographic
+    # decoration. Nullable: never inferred, only recorded when known.
+    gender = Column(String, nullable=True)  # M, F, or null
 
     # Self-service password reset — token is single-use and time-boxed;
     # cleared after a successful reset or once expired.
@@ -881,12 +912,91 @@ class SystemControl(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class Sector(Base):
+    """A PTCU sector — the top level of the county's real enforcement
+    geography, above Zone. Taken from the Public Transport Control Unit's
+    own monthly allocation sheet, which is organised Section -> Sector
+    (1-11, plus 5B) -> Zone (1-13) -> officer.
+
+    Each sector has a named commander and a deputy, and that is a real
+    operational fact rather than an org-chart nicety: the sheet prints the
+    commander's mobile number beside the sector because that is who you
+    call about that stretch of road. Modelled as FKs to User so the roster
+    resolves a live account, not a string that goes stale when someone
+    transfers.
+    """
+    __tablename__ = "sectors"
+
+    id = Column(String, primary_key=True, index=True)
+    # "1", "5B", "11" — as printed. String, not int, precisely because of
+    # 5B: the county splits a sector without renumbering the rest.
+    code = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)  # "TOM MBOYA FROM KHOJA ROUNDABOUT - LATEMA"
+    description = Column(String, nullable=True)
+    # use_alter on both: users -> zones (assigned_zone_id) -> sectors
+    # (zones.sector_id) -> users (here) is a genuine circular FK dependency.
+    # Without use_alter, SQLAlchemy's create_all cannot topologically sort
+    # the tables and raises CircularDependencyError at dev startup, and
+    # Postgres cannot create the tables in any order either. Deferring these
+    # two constraints to an ALTER after table creation breaks the cycle at
+    # exactly the least-load-bearing link — a sector's commander is a
+    # convenience pointer, not a structural parent.
+    commander_id = Column(String, ForeignKey("users.id", use_alter=True, name="fk_sectors_commander_id"), nullable=True)
+    deputy_commander_id = Column(String, ForeignKey("users.id", use_alter=True, name="fk_sectors_deputy_commander_id"), nullable=True)
+    # Contact number as printed on the sheet. Deliberately stored on the
+    # sector rather than read off the commander's User.phone: the sheet's
+    # number is the *post's* number (it moves with the role, and is often a
+    # unit handset), not necessarily that person's personal line.
+    contact_phone = Column(String, nullable=True)
+    # Map placement — see Zone below for why this is GeoJSON text and not
+    # a PostGIS geometry.
+    center_lat = Column(Float, nullable=True)
+    center_lng = Column(Float, nullable=True)
+    boundary_geojson = Column(Text, nullable=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    commander = relationship("User", foreign_keys=[commander_id])
+    deputy_commander = relationship("User", foreign_keys=[deputy_commander_id])
+    zones = relationship("Zone", back_populates="sector")
+
+
 class Zone(Base):
+    """Extended from a bare label to a real, mappable posting.
+
+    The four original rows here were coarse corridor labels with no
+    geography at all ("CBD Corridor", "Thika Road Corridor"). The county's
+    actual zones are street-level postings inside a sector — "TOM MBOYA /
+    KHOJA / MOI LANE", "FIRE LANE / TIMBOROA LANE / LAGOS" — which is what
+    an officer is actually stood on and what a commander actually points at
+    on a map.
+
+    `sector_id` is nullable so the four legacy corridor zones survive
+    untouched: they are still referenced by `beats.zone_id` and by
+    `users.assigned_zone_id`, and orphaning those FKs to tidy the taxonomy
+    would break working data for a cosmetic gain.
+
+    Geometry is GeoJSON in a Text column, not PostGIS. This matches the
+    grain of the rest of the system, which deliberately avoids a spatial
+    extension (see Beat's docstring and the corridor-approximation note on
+    RouteStage) — and nothing here needs a spatial index or an ST_ query.
+    A zone is drawn and clicked, not spatially joined.
+    """
     __tablename__ = "zones"
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    sector_id = Column(String, ForeignKey("sectors.id"), nullable=True)
+    code = Column(String, nullable=True)  # "1".."13", or null for the legacy corridor zones
+    center_lat = Column(Float, nullable=True)
+    center_lng = Column(Float, nullable=True)
+    boundary_geojson = Column(Text, nullable=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    sector = relationship("Sector", back_populates="zones", foreign_keys=[sector_id])
 
 
 class DemandSignal(Base):
@@ -956,6 +1066,164 @@ class BeatAssignment(Base):
     officer = relationship("User", foreign_keys=[officer_id])
     beat = relationship("Beat")
     assigner = relationship("User", foreign_keys=[assigned_by])
+
+
+class DutyAllocation(Base):
+    """One month's duty allocation — the digital form of the signed sheet
+    the Section Commander sends to the Director of City Inspectorate
+    ("ALLOCATION OF DUTY ... REF: SC/P.T.C.U./5/VOL.III/9/2026 ... MONTH:
+    SEPTEMBER, YEAR 2026").
+
+    Deliberately a document, not a loose pile of assignments. The paper
+    process has a real draft->sign->circulate lifecycle, and reproducing
+    that matters operationally: officers must not see next month's postings
+    while the commander is still moving people around, and once published,
+    "what were the orders on the 14th" needs to be answerable months later
+    without reconstructing it from mutable rows.
+
+    Distinct from BeatAssignment above, which stays as-is: that is a
+    route-segment patrol slot on a specific datetime window, this is the
+    monthly establishment — which officer holds which posting, all month.
+    """
+    __tablename__ = "duty_allocations"
+
+    id = Column(String, primary_key=True, index=True)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)  # 1-12
+    # The county's own file reference, as printed. Free text: the format is
+    # the registry's, not this system's, and it is what someone searching
+    # the physical file will quote.
+    reference_no = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="DRAFT")  # DRAFT, PUBLISHED, ARCHIVED
+    notes = Column(Text, nullable=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    published_by = Column(String, ForeignKey("users.id"), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+
+    creator = relationship("User", foreign_keys=[created_by])
+    publisher = relationship("User", foreign_keys=[published_by])
+    assignments = relationship("DutyAssignment", back_populates="allocation", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        # One allocation document per month. The paper process issues one
+        # sheet per month; two "current" allocations for September is not a
+        # state anyone could act on.
+        UniqueConstraint("year", "month", name="uq_duty_allocation_year_month"),
+    )
+
+
+class DutyAssignment(Base):
+    """One officer's posting within a monthly allocation — one printed row
+    of the sheet.
+
+    A posting is either a zone, a sector (sector command and deputies sit
+    at sector level, above any single zone), or neither: MOBILE, GENERAL
+    STORE and the M.E.U LOADING ZONES on the real sheet are postings with
+    no geography at all. `work_station` carries the printed label in every
+    case, so a row always reads the way the sheet reads even when zone_id
+    and sector_id are both null.
+
+    `coverage` is how the sheet's daily and weekend allocations are one
+    table rather than two: a DAILY row applies every day of the month, a
+    WEEKEND row only Saturday/Sunday, WEEKDAY only Monday-Friday. Resolving
+    "who is posted on the 14th" is then a filter on coverage against that
+    date's weekday, not a separate document per pattern.
+    """
+    __tablename__ = "duty_assignments"
+
+    id = Column(String, primary_key=True, index=True)
+    allocation_id = Column(String, ForeignKey("duty_allocations.id"), nullable=False, index=True)
+    officer_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    sector_id = Column(String, ForeignKey("sectors.id"), nullable=True)
+    zone_id = Column(String, ForeignKey("zones.id"), nullable=True)
+    # The printed WORK STATION cell — "KHOJA / KILOME ROAD", "MOBILE",
+    # "GENERAL STORE", "I/C LOADING ZONE", "SECTOR COMMANDER".
+    work_station = Column(String, nullable=False)
+    # DAY, NOON, NIGHT — the sheet's SHIFT column. DAY and NOON are the two
+    # actually in use; NIGHT is accepted because a duty system that cannot
+    # express a night shift will need a migration the first time one runs.
+    shift = Column(String, nullable=False, default="DAY")
+    coverage = Column(String, nullable=False, default="DAILY")  # DAILY, WEEKDAY, WEEKEND
+    # Optional narrowing inside the month, for a posting that starts or
+    # ends mid-month (a transfer in, a secondment out). Null means "the
+    # whole month", which is the common case.
+    effective_from = Column(Date, nullable=True)
+    effective_to = Column(Date, nullable=True)
+    # Free-text role marker as printed: "I/C" (in charge), "DEPUTY
+    # COMMANDER", "SECTOR COMMANDER". Not a permission — permissions come
+    # from the role matrix — but it is what the sheet conveys and what
+    # officers actually go by on the ground.
+    posting_role = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    allocation = relationship("DutyAllocation", back_populates="assignments")
+    officer = relationship("User", foreign_keys=[officer_id])
+    sector = relationship("Sector")
+    zone = relationship("Zone")
+
+
+class Broadcast(Base):
+    """A command message from a commander to officers — one officer, a
+    zone, a sector, or everyone.
+
+    Persisted, unlike the rest of this system's notifications. notify_user()
+    is explicitly "a live nudge, not a durable inbox": if the officer's
+    browser is closed the toast is simply missed. That is the right trade
+    for "your booking was confirmed" and the wrong one for "report to
+    Muthurwa at 0600" — an order nobody can prove was issued or read is not
+    an order. So a Broadcast is a row first and a live push second.
+    """
+    __tablename__ = "broadcasts"
+
+    id = Column(String, primary_key=True, index=True)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    # NORMAL, URGENT. Urgent is not decoration: it is what the officer's
+    # own view sorts and highlights on, and what justifies interrupting
+    # someone mid-shift.
+    priority = Column(String, nullable=False, default="NORMAL")
+    # ALL, SECTOR, ZONE, OFFICER — recorded as sent, so "who was this
+    # addressed to" survives an officer later transferring out of the zone
+    # it was sent to.
+    audience = Column(String, nullable=False)
+    audience_sector_id = Column(String, ForeignKey("sectors.id"), nullable=True)
+    audience_zone_id = Column(String, ForeignKey("zones.id"), nullable=True)
+    sent_by = Column(String, ForeignKey("users.id"), nullable=False)
+    sent_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+    sender = relationship("User", foreign_keys=[sent_by])
+    sector = relationship("Sector")
+    zone = relationship("Zone")
+    recipients = relationship("BroadcastRecipient", back_populates="broadcast", cascade="all, delete-orphan")
+
+
+class BroadcastRecipient(Base):
+    """Per-officer delivery row, resolved at send time rather than
+    re-derived on read.
+
+    Resolving "everyone in Sector 4" once, at send, is what makes the
+    record honest: an officer posted into that sector tomorrow was not sent
+    yesterday's order and should not retroactively appear to have been,
+    and an officer posted out of it still needs to see what they were
+    actually sent. Re-running the audience query on every read would get
+    both of those wrong.
+    """
+    __tablename__ = "broadcast_recipients"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    broadcast_id = Column(String, ForeignKey("broadcasts.id"), nullable=False, index=True)
+    officer_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    broadcast = relationship("Broadcast", back_populates="recipients")
+    officer = relationship("User", foreign_keys=[officer_id])
+
+    __table_args__ = (
+        UniqueConstraint("broadcast_id", "officer_id", name="uq_broadcast_recipient"),
+    )
 
 
 class OffenceType(Base):

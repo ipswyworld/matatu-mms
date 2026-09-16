@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage, Beat, RouteDetour
+from app.models import Sacco, User, Route, Matatu, ActivityLog, Fine, Zone, OffenceType, Stage, RouteStage, Beat, RouteDetour, Sector
 from app.auth import get_password_hash
 from app.brn_data import STAGE_COORDS, GEOCODED_STAGE_COORDS, ROUTES as BRN_ROUTES
 import datetime
@@ -148,6 +148,109 @@ async def seed_zones_and_beats(db: AsyncSession):
     await db.commit()
 
 
+async def seed_ptcu_sectors_and_zones(db: AsyncSession):
+    """The Public Transport Control Unit's real sector/zone geography,
+    transcribed from the county's own monthly "ALLOCATION OF DUTY" sheet
+    (REF SC/P.T.C.U./5/VOL.III/9/2026).
+
+    Two deliberate omissions, both about not inventing data:
+
+    1. **No personnel.** The source sheet names 153 serving officers with
+       their manpower numbers and, for commanders, personal mobile numbers.
+       None of that is seeded here. Sector commanders, deputies and contact
+       numbers are left null for the county to fill in against real
+       accounts — loading a government unit's staff list into a demo
+       database is easy to do and hard to undo.
+
+    2. **Centre points, no boundaries.** `center_lat`/`center_lng` are
+       approximate CBD coordinates, good enough to drop a pin on roughly
+       the right block and no better. `boundary_geojson` is left null
+       rather than filled with plausible-looking polygons: a drawn boundary
+       that was guessed would be indistinguishable on screen from one
+       surveyed, and enforcement boundaries are the kind of thing people
+       argue about in court. Real boundaries should come from the county's
+       own GIS, through the zone editor.
+
+    Idempotent per-row by id, same as seed_zones_and_beats above and for
+    the same reason: an already-seeded live database must still pick these
+    up on its next boot.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    existing_sector_ids = set((await db.execute(select(Sector.id))).scalars().all())
+
+    # (id, code, name, lat, lng, display_order)
+    sectors = [
+        ("sector-1", "1", "Tom Mboya from Khoja Roundabout - Latema", -1.2824, 36.8287, 1),
+        ("sector-2", "2", "Tom Mboya - Latema to Accra", -1.2835, 36.8288, 2),
+        ("sector-3", "3", "Tom Mboya - Accra to Ronald Ngala", -1.2820, 36.8298, 3),
+        ("sector-4", "4", "Bus Station / Mfangano St / Tom Mboya - Ronald Ngala - Haile Selassie", -1.2862, 36.8272, 4),
+        ("sector-5", "5", "Ambassadeur / Kencom / Moi Service Lane / Nkrumah Lane", -1.2855, 36.8232, 5),
+        ("sector-5b", "5B", "Upper Tom Mboya from Archives / Super Metro / Cabral St / Mondlane / Moi Service Lane", -1.2838, 36.8252, 6),
+        ("sector-6", "6", "Uyoma / Temple Road & Lane / Race Course Rd to Riverside", -1.2886, 36.8305, 7),
+        ("sector-7", "7", "Athusi / Ladhies / Gwasi Road / Ring Road", -1.2899, 36.8338, 8),
+        ("sector-8", "8", "Nyamakima / Kirinyaga", -1.2809, 36.8331, 9),
+        ("sector-9", "9", "Country Bus / New Pumwani Road", -1.2894, 36.8383, 10),
+        ("sector-10", "10", "Muthurwa Terminus", -1.2889, 36.8349, 11),
+        ("sector-11", "11", "Ngara / Fig Tree / Park Road", -1.2744, 36.8266, 12),
+        # The M.E.U loading zones sit outside the numbered sector sequence
+        # on the sheet but are posted and commanded the same way, so they
+        # are a sector here rather than a special case everything downstream
+        # would have to remember.
+        ("sector-meu", "MEU", "M.E.U Loading Zones", -1.2870, 36.8290, 13),
+    ]
+    for sector_id, code, name, lat, lng, order in sectors:
+        if sector_id not in existing_sector_ids:
+            db.add(
+                Sector(
+                    id=sector_id, code=code, name=name,
+                    center_lat=lat, center_lng=lng,
+                    display_order=order, is_active=True, created_at=now,
+                )
+            )
+
+    existing_zone_ids = set((await db.execute(select(Zone.id))).scalars().all())
+    # (id, code, name, sector_id, lat, lng, display_order)
+    zones = [
+        ("ptcu-zone-1", "1", "Tom Mboya / Khoja / Moi Lane", "sector-1", -1.2818, 36.8285, 1),
+        ("ptcu-zone-2", "2", "Fire Lane / Timboroa Lane / Lagos", "sector-1", -1.2829, 36.8291, 2),
+        ("ptcu-zone-3", "3", "Tom Mboya / Latema", "sector-2", -1.2831, 36.8290, 3),
+        ("ptcu-zone-4", "4", "Tom Mboya / Accra", "sector-2", -1.2841, 36.8286, 4),
+        ("ptcu-zone-5", "5", "Luthuli / Gaberone / Mfangano Lane / Mfangano Street A", "sector-3", -1.2836, 36.8292, 5),
+        ("ptcu-zone-6", "6", "Munyu / Ronald Ngala Street / Sheikh Karume", "sector-3", -1.2819, 36.8310, 6),
+        ("ptcu-zone-7", "7", "Afya Centre / Hakati", "sector-4", -1.2879, 36.8264, 7),
+        ("ptcu-zone-8", "8", "Bus Station / Mfangano Street", "sector-4", -1.2856, 36.8276, 8),
+        ("ptcu-zone-9", "9", "Ambassadeur / Moi Service Lane (KTDA) / Gill House / Railway Roundabout", "sector-5", -1.2872, 36.8243, 9),
+        ("ptcu-zone-10", "10", "Kencom", "sector-5", -1.2864, 36.8228, 10),
+        ("ptcu-zone-11", "11", "Uyoma / Temple Road / Racecourse Road / Riverside", "sector-6", -1.2887, 36.8303, 11),
+        ("ptcu-zone-12", "12", "Ladhies / Gwasi / Ukwala / Ring Road / Athusi", "sector-7", -1.2901, 36.8339, 12),
+        ("ptcu-zone-13", "13", "Nyamakima — Price Road / Charles Rubia / Kumasi", "sector-8", -1.2808, 36.8332, 13),
+        # Sectors 5B, 9, 10, 11 and MEU post officers directly to named
+        # stations rather than numbered zones on the sheet. A zone per
+        # station keeps the drill-down (sector -> zone -> officers) working
+        # uniformly instead of needing a second path for "sectors without
+        # zones" — the code column is null because the sheet gives them no
+        # number, not because it is missing.
+        ("ptcu-zone-country-bus", None, "Country Bus", "sector-9", -1.2894, 36.8383, 14),
+        ("ptcu-zone-kware-pumwani", None, "Kware / New Pumwani Junction / Solidarity / Meru / DC Area", "sector-9", -1.2901, 36.8395, 15),
+        ("ptcu-zone-muthurwa", None, "Muthurwa", "sector-10", -1.2889, 36.8349, 16),
+        ("ptcu-zone-ngara", None, "Ngara", "sector-11", -1.2744, 36.8266, 17),
+        ("ptcu-zone-parkroad", None, "Park Road", "sector-11", -1.2701, 36.8291, 18),
+        ("ptcu-zone-meu-loading", None, "M.E.U Loading Zone", "sector-meu", -1.2870, 36.8290, 19),
+        ("ptcu-zone-upper-tom-mboya", None, "Upper Tom Mboya / Super Metro / Cabral Street", "sector-5b", -1.2838, 36.8252, 20),
+    ]
+    for zone_id, code, name, sector_id, lat, lng, order in zones:
+        if zone_id not in existing_zone_ids:
+            db.add(
+                Zone(
+                    id=zone_id, code=code, name=name, sector_id=sector_id,
+                    center_lat=lat, center_lng=lng,
+                    display_order=order, is_active=True,
+                )
+            )
+
+    await db.commit()
+
+
 async def seed_route_detour(db: AsyncSession):
     """One demo RouteDetour so the public "Live Updates" feed
     (/api/public/route-alerts) has something to show on first boot, using
@@ -183,6 +286,7 @@ async def backfill_demo_passenger_phone(db: AsyncSession):
 async def seed_data(db: AsyncSession):
     await seed_brn_data(db)
     await seed_zones_and_beats(db)
+    await seed_ptcu_sectors_and_zones(db)
     await seed_route_detour(db)
     await backfill_demo_passenger_phone(db)
 

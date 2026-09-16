@@ -62,6 +62,8 @@ from app.routes.system import router as system_router
 from app.routes.crew import router as crew_router
 from app.routes.fare_stages import router as fare_stages_router
 from app.routes.beats import router as beats_router
+from app.routes.duty import router as duty_router
+from app.routes.broadcasts import router as broadcasts_router
 from app.routes.analytics import router as analytics_router
 from app.routes.search import router as search_router
 from app.routes.demand import router as demand_router
@@ -318,6 +320,8 @@ app.include_router(system_router)
 app.include_router(crew_router)
 app.include_router(fare_stages_router)
 app.include_router(beats_router)
+app.include_router(duty_router)
+app.include_router(broadcasts_router)
 app.include_router(analytics_router)
 app.include_router(search_router)
 app.include_router(demand_router)

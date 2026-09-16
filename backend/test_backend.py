@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import os
 import sys
 import shutil
@@ -208,6 +209,108 @@ async def run_tests():
         logs = res.json()
         assert len(logs) > 0, "No webhook delivery attempts logged!"
         print(f"  [OK] Webhook Log entries found. First delivery error message (expected since URL is mock): {logs[0]['errorMessage']}")
+
+        print("\n[TEST 10] Testing PTCU duty allocation (sectors, postings, publish, broadcast)...")
+        # Covers the path a commander actually walks: a sector has zones, a
+        # month gets an allocation, officers get posted, the sheet is
+        # published, and only then does the officer see it.
+        res = await client.get("/api/duty/sectors", headers=admin_headers)
+        assert res.status_code == 200, f"Sectors unavailable: {res.status_code}"
+        sectors = res.json()
+        assert len(sectors) >= 13, f"Expected the seeded PTCU sectors, got {len(sectors)}"
+        assert any(s["code"] == "5B" for s in sectors), "Sector 5B missing — the sheet does not renumber"
+        print(f"  [OK] {len(sectors)} PTCU sectors seeded, including 5B.")
+
+        res = await client.get("/api/duty/zones", headers=admin_headers, params={"sector_id": "sector-1"})
+        assert res.status_code == 200 and len(res.json()) == 2, "Sector 1 should hold Zones 1 and 2"
+        print("  [OK] Sector -> zone drill-down returns the right zones.")
+
+        today = datetime.date.today()
+        res = await client.post(
+            "/api/duty/allocations",
+            json={"year": today.year, "month": today.month, "referenceNo": "TEST/PTCU/1"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 201, f"Allocation create failed: {res.text[:200]}"
+        allocation = res.json()
+        assert allocation["status"] == "DRAFT"
+        print(f"  [OK] Monthly allocation created as DRAFT ({allocation['id']}).")
+
+        res = await client.get("/api/duty/officers", headers=admin_headers)
+        assert res.status_code == 200 and res.json(), "No enforcement officers on the roster"
+        test_officer = next(o for o in res.json() if o["role"] == "ARRESTING_OFFICER")
+        assert test_officer["dutyStatus"] == "ON_DUTY", "Officers should default to ON_DUTY"
+
+        res = await client.post(
+            f"/api/duty/allocations/{allocation['id']}/assignments",
+            json={"officerId": test_officer["id"], "zoneId": "ptcu-zone-1",
+                  "workStation": "Khoja / Kilome Road", "shift": "DAY", "coverage": "DAILY"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 201, f"Posting failed: {res.text[:200]}"
+        assert res.json()["sectorId"] == "sector-1", "Posting should inherit its zone's sector"
+        print("  [OK] Officer posted to a zone; sector denormalized from the zone.")
+
+        res = await client.post(
+            f"/api/duty/allocations/{allocation['id']}/assignments",
+            json={"officerId": test_officer["id"], "zoneId": "ptcu-zone-2",
+                  "workStation": "Timboroa", "shift": "DAY", "coverage": "DAILY"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 400, "Double-posting the same officer on one shift must be refused"
+        print("  [OK] Double-posting on the same shift refused.")
+
+        officer_login = await client.post(
+            "/api/auth/login",
+            json={"email": "arresting.officer@nairobi.go.ke", "password": "arrest123"},
+        )
+        assert officer_login.status_code == 200
+        officer_headers = {"Authorization": f"Bearer {officer_login.json()['accessToken']}"}
+
+        res = await client.get("/api/duty/my-duty", headers=officer_headers)
+        assert res.status_code == 200 and res.json()["today"] == [], \
+            "A DRAFT allocation must not be visible to officers"
+        print("  [OK] Draft allocation correctly hidden from the officer.")
+
+        res = await client.post(f"/api/duty/allocations/{allocation['id']}/publish", headers=admin_headers)
+        assert res.status_code == 200 and res.json()["status"] == "PUBLISHED", res.text[:200]
+
+        res = await client.get("/api/duty/my-duty", headers=officer_headers)
+        my_duty = res.json()
+        assert len(my_duty["today"]) == 1, f"Officer should see their posting once published: {my_duty}"
+        assert my_duty["today"][0]["workStation"] == "Khoja / Kilome Road"
+        print("  [OK] Published allocation visible to the posted officer.")
+
+        res = await client.patch(
+            f"/api/duty/officers/{test_officer['id']}/status",
+            json={"dutyStatus": "LEAVE", "dutyStatusNote": "Annual leave"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 200 and res.json()["dutyStatus"] == "LEAVE"
+        res = await client.get("/api/duty/my-duty", headers=officer_headers)
+        assert res.json()["onDutyToday"] is False, \
+            "An officer on leave is not on duty, even holding a posting"
+        print("  [OK] Duty status (LEAVE) overrides an active posting.")
+
+        res = await client.post(
+            "/api/broadcasts",
+            json={"subject": "Parade 0600", "body": "Report to Khoja at 0600.",
+                  "audience": "ZONE", "zoneId": "ptcu-zone-1", "priority": "URGENT"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 201, f"Broadcast failed: {res.text[:200]}"
+        assert res.json()["recipientCount"] == 1, res.json()
+        res = await client.get("/api/broadcasts/mine", headers=officer_headers)
+        assert len(res.json()) == 1 and res.json()[0]["readAt"] is None, res.json()
+        print("  [OK] Zone broadcast delivered to the posted officer, unread.")
+
+        res = await client.post(
+            "/api/broadcasts",
+            json={"subject": "nope", "body": "x", "audience": "ALL"},
+            headers=officer_headers,
+        )
+        assert res.status_code == 403, "An officer must not be able to broadcast"
+        print("  [OK] Broadcast permission enforced (officer refused).")
 
     print("\n==================================================")
     print("        ALL AUTOMATED TESTS PASSED SUCCESSFULLY!  ")

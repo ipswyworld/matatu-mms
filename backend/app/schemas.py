@@ -29,7 +29,7 @@ MoneyKES = Annotated[
 import datetime
 import re
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 # Kenyan plates are like "KDA 112B" — letters/digits/space/hyphen only, kept
@@ -757,6 +757,19 @@ class ZoneResponse(BaseModelCamel):
     id: str
     name: str
     description: Optional[str] = None
+    # Added alongside the PTCU sector/zone hierarchy. All optional so every
+    # existing caller of this schema (and the four legacy corridor zones,
+    # which have no sector and no geography) keeps working unchanged.
+    sector_id: Optional[str] = None
+    sector_code: Optional[str] = None
+    sector_name: Optional[str] = None
+    code: Optional[str] = None
+    center_lat: Optional[float] = None
+    center_lng: Optional[float] = None
+    boundary_geojson: Optional[str] = None
+    display_order: int = 0
+    is_active: bool = True
+    officer_count: int = 0
 
 class OffenceTypeResponse(BaseModelCamel):
     id: str
@@ -971,3 +984,224 @@ class TimeseriesResponse(BaseModelCamel):
     metric: str
     grouping: str
     points: List[TimeseriesPoint]
+
+# --- PTCU duty allocation: sectors, postings, status, broadcasts ---
+# Modelled on the county's real monthly "ALLOCATION OF DUTY" sheet — see
+# app/models.py's Sector/DutyAllocation docstrings for why each of these
+# exists rather than being folded into the older Beat/BeatAssignment pair.
+
+class SectorUpsert(BaseModelCamel):
+    code: str = Field(min_length=1, max_length=10)
+    name: str = Field(min_length=2, max_length=200)
+    description: Optional[str] = None
+    commander_id: Optional[str] = None
+    deputy_commander_id: Optional[str] = None
+    contact_phone: Optional[str] = None
+    center_lat: Optional[float] = None
+    center_lng: Optional[float] = None
+    boundary_geojson: Optional[str] = None
+    display_order: int = 0
+
+class SectorResponse(BaseModelCamel):
+    id: str
+    code: str
+    name: str
+    description: Optional[str] = None
+    commander_id: Optional[str] = None
+    commander_name: Optional[str] = None
+    deputy_commander_id: Optional[str] = None
+    deputy_commander_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    center_lat: Optional[float] = None
+    center_lng: Optional[float] = None
+    boundary_geojson: Optional[str] = None
+    display_order: int = 0
+    is_active: bool = True
+    zone_count: int = 0
+    # Officers posted to this sector or any zone under it, in whichever
+    # allocation the caller asked about — the number a commander actually
+    # wants when looking at a sector tile.
+    officer_count: int = 0
+
+class ZoneUpsert(BaseModelCamel):
+    name: str = Field(min_length=2, max_length=200)
+    description: Optional[str] = None
+    sector_id: Optional[str] = None
+    code: Optional[str] = None
+    center_lat: Optional[float] = None
+    center_lng: Optional[float] = None
+    boundary_geojson: Optional[str] = None
+    display_order: int = 0
+
+class OfficerDutyStatusUpdate(BaseModelCamel):
+    """The sheet's "ON DUTY (OFF DUTY & LEAVE SPECIFY DATES)" column."""
+    duty_status: str  # ON_DUTY, OFF_DUTY, LEAVE, SICK, SUSPENDED, TRAINING
+    duty_status_from: Optional[datetime.date] = None
+    duty_status_until: Optional[datetime.date] = None
+    duty_status_note: Optional[str] = None
+
+class OfficerServiceUpdate(BaseModelCamel):
+    """Service-record fields as printed: MAN. NO, RANK, GENDER."""
+    manpower_no: Optional[str] = None
+    rank: Optional[str] = None
+    gender: Optional[str] = None
+
+class OfficerRosterResponse(BaseModelCamel):
+    """One officer as the roster shows them — service record, current duty
+    status, and where they are posted in the allocation being viewed."""
+    id: str
+    name: str
+    email: str
+    phone: Optional[str] = None
+    role: str
+    manpower_no: Optional[str] = None
+    rank: Optional[str] = None
+    gender: Optional[str] = None
+    duty_status: str = "ON_DUTY"
+    duty_status_from: Optional[datetime.date] = None
+    duty_status_until: Optional[datetime.date] = None
+    duty_status_note: Optional[str] = None
+    enforcement_duty: Optional[str] = None
+    commander_title: Optional[str] = None
+    is_active: bool = True
+    # Present only when the roster was queried within an allocation.
+    assignment_id: Optional[str] = None
+    sector_id: Optional[str] = None
+    sector_code: Optional[str] = None
+    zone_id: Optional[str] = None
+    zone_name: Optional[str] = None
+    work_station: Optional[str] = None
+    shift: Optional[str] = None
+    coverage: Optional[str] = None
+    posting_role: Optional[str] = None
+
+class DutyAllocationCreate(BaseModelCamel):
+    year: int = Field(ge=2020, le=2100)
+    month: int = Field(ge=1, le=12)
+    reference_no: Optional[str] = None
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    # Copy every posting from the most recent published allocation. Month
+    # to month a duty sheet changes in the margins, not wholesale — the
+    # real workflow is "last month's sheet, amended", and starting from a
+    # blank page for 153 officers is how a system gets abandoned for Word.
+    copy_from_allocation_id: Optional[str] = None
+
+class DutyAllocationResponse(BaseModelCamel):
+    id: str
+    year: int
+    month: int
+    reference_no: Optional[str] = None
+    title: Optional[str] = None
+    status: str
+    notes: Optional[str] = None
+    created_by: str
+    created_by_name: Optional[str] = None
+    created_at: datetime.datetime
+    published_by: Optional[str] = None
+    published_by_name: Optional[str] = None
+    published_at: Optional[datetime.datetime] = None
+    assignment_count: int = 0
+    # The sheet's own footer: MALE ON DUTY / FEMALE ON DUTY / SECTION TOTAL.
+    male_on_duty: int = 0
+    female_on_duty: int = 0
+    total_assigned: int = 0
+
+class DutyAssignmentCreate(BaseModelCamel):
+    officer_id: str
+    work_station: str = Field(min_length=1, max_length=200)
+    sector_id: Optional[str] = None
+    zone_id: Optional[str] = None
+    shift: str = "DAY"          # DAY, NOON, NIGHT
+    coverage: str = "DAILY"     # DAILY, WEEKDAY, WEEKEND
+    effective_from: Optional[datetime.date] = None
+    effective_to: Optional[datetime.date] = None
+    posting_role: Optional[str] = None
+    notes: Optional[str] = None
+
+class DutyAssignmentUpdate(BaseModelCamel):
+    work_station: Optional[str] = None
+    sector_id: Optional[str] = None
+    zone_id: Optional[str] = None
+    shift: Optional[str] = None
+    coverage: Optional[str] = None
+    effective_from: Optional[datetime.date] = None
+    effective_to: Optional[datetime.date] = None
+    posting_role: Optional[str] = None
+    notes: Optional[str] = None
+
+class DutyAssignmentResponse(BaseModelCamel):
+    id: str
+    allocation_id: str
+    officer_id: str
+    officer_name: str
+    officer_rank: Optional[str] = None
+    officer_manpower_no: Optional[str] = None
+    officer_phone: Optional[str] = None
+    officer_duty_status: str = "ON_DUTY"
+    sector_id: Optional[str] = None
+    sector_code: Optional[str] = None
+    sector_name: Optional[str] = None
+    zone_id: Optional[str] = None
+    zone_name: Optional[str] = None
+    work_station: str
+    shift: str
+    coverage: str
+    effective_from: Optional[datetime.date] = None
+    effective_to: Optional[datetime.date] = None
+    posting_role: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime.datetime
+
+class MyDutyResponse(BaseModelCamel):
+    """What an officer sees on their own screen: today's posting, plus the
+    month's, plus anything that stops them being expected on parade."""
+    date: datetime.date
+    on_duty_today: bool
+    duty_status: str
+    duty_status_until: Optional[datetime.date] = None
+    duty_status_note: Optional[str] = None
+    allocation_month: Optional[str] = None      # "September 2026"
+    allocation_reference: Optional[str] = None
+    today: List[DutyAssignmentResponse] = []
+    month: List[DutyAssignmentResponse] = []
+    unread_broadcasts: int = 0
+
+class DutyCalendarDay(BaseModelCamel):
+    date: datetime.date
+    is_weekend: bool
+    assignment_count: int
+    shifts: List[str] = []
+
+class DutyCalendarResponse(BaseModelCamel):
+    year: int
+    month: int
+    allocation_id: Optional[str] = None
+    allocation_status: Optional[str] = None
+    days: List[DutyCalendarDay]
+
+class BroadcastCreate(BaseModelCamel):
+    subject: str = Field(min_length=2, max_length=200)
+    body: str = Field(min_length=1, max_length=4000)
+    priority: str = "NORMAL"    # NORMAL, URGENT
+    audience: str               # ALL, SECTOR, ZONE, OFFICER
+    sector_id: Optional[str] = None
+    zone_id: Optional[str] = None
+    officer_ids: Optional[List[str]] = None
+
+class BroadcastResponse(BaseModelCamel):
+    id: str
+    subject: str
+    body: str
+    priority: str
+    audience: str
+    audience_sector_id: Optional[str] = None
+    audience_zone_id: Optional[str] = None
+    audience_label: Optional[str] = None
+    sent_by: str
+    sent_by_name: Optional[str] = None
+    sent_at: datetime.datetime
+    recipient_count: int = 0
+    read_count: int = 0
+    # Only meaningful on an officer's own feed.
+    read_at: Optional[datetime.datetime] = None
