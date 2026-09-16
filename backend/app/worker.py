@@ -24,14 +24,24 @@ existing direct-call webhook path in listeners.py — see events.py's
 dispatch() docstring for why: migrating that one already-tested, already-
 verified-live call site onto the queue is real follow-up work, done
 separately from proving the queue itself works.
+
+A second job is scheduled rather than triggered: run_scheduled_backup
+(app/backup.py), via arq's own `cron_jobs` — the first genuinely recurring
+job in this codebase (everything else here and in app/streams.py fires on
+an event, never on a clock). WorkerSettings.cron_jobs is not automatically
+read by anything; run_worker() below has to pass it into the Worker(...)
+constructor explicitly, same as functions/redis_settings/max_tries already
+are.
 """
 import asyncio
 import logging
 
 from arq import create_pool
 from arq.connections import RedisSettings
+from arq.cron import cron
 from arq.worker import Worker
 
+from app.backup import run_scheduled_backup
 from app.config import REDIS_URL
 
 logger = logging.getLogger("app.worker")
@@ -70,6 +80,13 @@ async def deliver_webhook_job(ctx, subscription_id: int, url: str, event_type: s
 
 class WorkerSettings:
     functions = [deliver_webhook_job]
+    # 03:00 UTC — outside both Nairobi's (UTC+3, 06:00 local) and any
+    # plausible US/EU operator's business hours, and well clear of the
+    # commute-peak traffic this system's own metrics show (§4 dashboard).
+    # A dump reads every row in every table; running it against live
+    # traffic would only ever make it slower or more contended, never
+    # meaningfully safer, so there's no reason to run it at peak instead.
+    cron_jobs = [cron(run_scheduled_backup, hour=3, minute=0)]
     redis_settings = _redis_settings()
     max_tries = 3
     # Required for the ops console's "cancel job" action (Ops Console
@@ -86,6 +103,7 @@ async def run_worker() -> None:
     cancelled on shutdown."""
     worker = Worker(
         functions=WorkerSettings.functions,
+        cron_jobs=WorkerSettings.cron_jobs,
         redis_settings=WorkerSettings.redis_settings,
         max_tries=WorkerSettings.max_tries,
         allow_abort_jobs=WorkerSettings.allow_abort_jobs,

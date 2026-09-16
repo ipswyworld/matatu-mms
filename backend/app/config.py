@@ -114,6 +114,21 @@ S3_SECRET_ACCESS_KEY = secrets_provider.get("S3_SECRET_ACCESS_KEY")
 # rather than narrowing it.
 S3_PUBLIC_URL_BASE = os.getenv("S3_PUBLIC_URL_BASE")
 
+# Automated database backup (app/backup.py). Ships row data as a gzipped
+# JSON asset on a GitHub Release rather than requiring a new object-storage
+# account with billing (S3 above is unconfigured for this deployment for
+# exactly that reason — no account with billing set up yet). GitHub is
+# infrastructure this project already has and pays nothing extra for.
+# Unset means backups are skipped with a loud warning, not silently
+# no-op'd — see app/backup.py's own module docstring.
+GITHUB_BACKUP_TOKEN = secrets_provider.get("GITHUB_BACKUP_TOKEN")
+# owner/repo, e.g. "ipswyworld/matatu-mms" — deliberately not defaulted to
+# this project's own repo: a hardcoded default here would silently start
+# writing releases to a specific GitHub account/repo the moment someone
+# else deploys this codebase and configures only the token.
+GITHUB_BACKUP_REPO = os.getenv("GITHUB_BACKUP_REPO")
+BACKUP_RETENTION_DAYS = int(os.getenv("BACKUP_RETENTION_DAYS", "30"))
+
 # Explicit override for which backend app/storage.py uses — "local", "s3",
 # or "db" (store file bytes as a row in Postgres, alongside everything
 # else). Sensible default when unset: S3 if configured above, otherwise

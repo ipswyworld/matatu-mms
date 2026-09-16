@@ -6,28 +6,41 @@ keep."
 
 ## RPO / RTO
 
-**Recovery Point Objective (acceptable data loss window): 24 hours for the current
-investor-demo deployment tier.** Render's free-tier Postgres does not include automated
-point-in-time recovery or scheduled backups (that's a paid-plan feature, same category as
-PgBouncer/read-replica — see `DATA_LAYER_SCALING_STATUS.md`). Until the plan is upgraded,
-this system has **no automated backup at all** — RPO is whatever the last manual export
-happened to be, which is not an acceptable posture for statutory financial records (fines,
-payments) beyond the demo stage.
+**Recovery Point Objective: 24 hours — now a real, automated number, not an aspiration
+(updated 2026-09-16).** `app/backup.py` + `app/worker.py`'s ARQ `cron_jobs` run a full
+row-data dump every night at 03:00 UTC, uploaded as a gzipped JSON asset on a GitHub
+Release (see that module's docstring for why GitHub rather than the still-unconfigured S3
+path — no object-storage account with billing exists yet, and GitHub is infrastructure
+this project already trusts). Old backups beyond `BACKUP_RETENTION_DAYS` (default 30) are
+pruned automatically on each run. Render's free-tier Postgres still has no *built-in*
+point-in-time recovery (that remains a paid-plan feature — see
+`DATA_LAYER_SCALING_STATUS.md`), but this system is no longer relying on that: the backup
+now exists independent of the Postgres plan tier.
 
-**Recovery Time Objective: not yet meaningful to set**, since there's no restore
-procedure to time. Setting an RTO number before a restore has been tested even once would
-be a guess dressed as a commitment (§20.3's own framing: "an untested backup is a
-hypothesis").
+**This closes the previous "no automated backup at all" gap** — the RPO is now genuinely
+bounded by the nightly schedule, not by whenever someone last happened to run a manual
+export. Requires `GITHUB_BACKUP_TOKEN` (a PAT with `contents:write` on the target repo)
+and `GITHUB_BACKUP_REPO` to actually be set — until they are, `run_scheduled_backup` logs
+a loud warning and skips every night rather than silently doing nothing. **Confirm these
+two env vars are actually set on the live Render backend service** — writing the
+automation is not the same claim as it running in production.
 
-**Required before production launch (not done in this pass — infra-blocked, tracked
-honestly rather than faked):**
-1. Upgrade the Render Postgres plan to one with automated backups + point-in-time
-   recovery, or provision an external backup mechanism (`pg_dump` on a schedule to
-   object storage, at minimum).
-2. Pick real RPO/RTO numbers once a plan is chosen — Render's paid tiers document their
-   own PITR window, which becomes the RPO ceiling.
-3. **Test an actual restore** onto a scratch database and verify the app boots against
-   it before trusting the number. This is the step most backup setups skip.
+**Recovery Time Objective: still not yet meaningful to set**, since no restore from one of
+these backups has been tested end-to-end yet (§20.3's own framing: "an untested backup is
+a hypothesis" — that's just as true of an automated backup as a manual one).
+
+**Required before production launch (not done in this pass — tracked honestly rather than
+faked):**
+1. **Test an actual restore** from a real nightly backup asset onto a scratch database and
+   verify the app boots against it, using `db-backups/restore_db.py`'s approach (same JSON
+   row-data shape) as the starting point. This is the step most backup setups skip, and
+   it's the one that actually earns the RTO number below.
+2. Set a real RTO once step 1 has been timed for real, not estimated.
+3. Revisit whether GitHub Releases remain the right storage target once backup size or
+   restore frequency grows past what makes sense for this stopgap — a paid object-storage
+   account (S3/R2/B2, `app/storage.py` is already wired for it) is the natural next step,
+   deliberately deferred rather than adding a second paid account before a first one was
+   needed for anything else.
 
 ## Data retention policy (DPA 2019)
 

@@ -1389,22 +1389,28 @@ task instead of a person doing it by hand each time.
   out of sync between the staff and public apps, instead of relying on
   someone remembering to copy an edit to both places by hand.
 
-**Would ask for, and why:**
-- **The migration and backup/restore scripts used for this session's own
-  Render account migration (`db-backups/backup_db.py`, `restore_db.py`)
-  are one-off operator scripts, not a repeatable, scheduled job.** They
-  were written, run once under direct supervision, and are now sitting on
-  disk for reference. A real automation specialist's first ask here would
-  be: is a periodic Postgres backup a scheduled ARQ job (or a Render cron
-  job) yet, or does the next migration/disaster-recovery event start from
-  a blank page and a remembered script the way this one did? Right now
-  it's the latter.
-- **No scheduled/recurring jobs exist anywhere in the system today** —
-  `WorkerSettings.functions` in `worker.py` has exactly one function
-  wired (webhook delivery), triggered by application events, never by a
-  clock. Nothing currently runs "every night," "every hour," or "on the
-  1st of the month" — fine reconciliation, stale-session cleanup, fleet
-  compliance re-scoring, and audit-log archival are all plausible
+**Closed — 2026-09-16.** The backup half of this ask is done:
+`app/backup.py` + `app/worker.py`'s new `cron_jobs` run a full row-data
+dump nightly (03:00 UTC), uploaded to a GitHub Release with automatic
+retention pruning — see `BACKUP_RECOVERY_POLICY.md`'s updated RPO section
+for the full detail. `db-backups/backup_db.py`/`restore_db.py` remain
+on disk as the one-off scripts they always were (a local, gitignored
+reference from the original migration), now genuinely superseded rather
+than "the only thing that exists" for the next disaster-recovery event.
+This is also the **first genuinely recurring (clock-triggered, not
+event-triggered) job in this codebase** — `WorkerSettings.cron_jobs`
+using arq's own scheduler, not a new mechanism bolted on. Requires
+`GITHUB_BACKUP_TOKEN`/`GITHUB_BACKUP_REPO` to actually be set on the live
+backend — confirm this before treating the gap as closed in production,
+not just in code.
+
+**Still open:**
+- **No restore has been tested end-to-end** against a real nightly backup
+  asset — an untested backup is a documented hypothesis, not a working
+  recovery path (`BACKUP_RECOVERY_POLICY.md` §RTO).
+- **No scheduled/recurring jobs beyond the backup exist yet** — fine
+  reconciliation, stale-session cleanup, fleet compliance re-scoring, and
+  audit-log archival are all plausible
   candidates once the volume justifies them, but none exist yet and
   none are scheduled.
 - **The `security-scan` job's `npm audit`/`pip-audit`/Trivy/gitleaks
