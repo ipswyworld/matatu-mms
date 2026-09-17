@@ -184,7 +184,8 @@ async def staff_telemetry_ws(websocket: WebSocket, token: str = "", db: AsyncSes
     passenger vehicle-only feed is.
     """
     try:
-        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         user_id = payload.get("userId") or payload.get("sub")
     except Exception:
         user_id = None
@@ -232,7 +233,8 @@ async def crew_telemetry_ws(websocket: WebSocket, matatu_id: str, token: str = "
     this matatu may stream to it.
     """
     try:
-        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         user_id = payload.get("userId") or payload.get("sub")
     except Exception:
         user_id = None
@@ -287,7 +289,8 @@ async def officer_telemetry_ws(websocket: WebSocket, officer_id: str, token: str
     command map.
     """
     try:
-        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         user_id = payload.get("userId") or payload.get("sub")
     except Exception:
         user_id = None

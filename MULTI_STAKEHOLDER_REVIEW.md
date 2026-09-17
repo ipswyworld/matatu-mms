@@ -2118,30 +2118,114 @@ Nothing here depends on anything else in this list — split across
 whoever has capacity rather than sequencing:
 
 - Bot/CAPTCHA protection on login, registration, password reset (Security
-  Checklist #12)
+  Checklist #12) — **backend done (2026-09-17)**: Cloudflare Turnstile
+  verification (`app/turnstile.py`) wired into all three endpoints,
+  inert (fails open, verification skipped) until `TURNSTILE_SECRET_KEY`
+  is set — no existing dev/test flow changes behavior. **Frontend not
+  done**: no Turnstile site key/account exists to render a real widget
+  against, so `TurnstileWidget.tsx` was not built — the backend hook is
+  ready for it once one exists.
 - File upload size limit + content-type/extension whitelist (Security
-  Checklist #16, #27)
-- CSRF token mechanism (Security Checklist #23)
+  Checklist #16, #27) — **done (2026-09-17)**: `app/storage.py`'s
+  `save_upload()` now rejects anything over 10MB or outside
+  jpg/jpeg/png/webp/pdf, checked by both extension and guessed MIME type.
+  Verified live: a `.txt` upload to a case-filing endpoint now 400s, a
+  real JPEG still succeeds.
+- CSRF token mechanism (Security Checklist #23) — **reviewed
+  (2026-09-17), no new mechanism added.** State-changing calls from the
+  browser go through Next.js Server Actions (`matatu-mms/lib/actions.ts`),
+  which Next itself CSRF-protects (an Origin-header check since 13.4) —
+  the browser never has a bearer token to attach, so a form on another
+  site can't drive one of these actions even if it tried. The FastAPI
+  backend is bearer-token-primary (`Authorization` header from the
+  server-side action, never the browser); its cookie fallback
+  (`app/routes/auth.py`'s `SESSION_COOKIE_NAME`, for the few endpoints
+  that read it directly) is `SameSite=Lax`, which already blocks a
+  cross-site POST/PATCH/DELETE from attaching it — Lax only forwards a
+  cookie on a cross-site top-level GET navigation, so as long as no
+  state-changing endpoint is reachable via GET (confirmed: none are),
+  there's no exposure left for a dedicated CSRF token to close. Revisit if
+  a client-side page ever calls the backend directly with
+  `credentials: "include"` instead of going through a Server Action.
 - Session revocation on password change (Security Checklist #24, §25 IAM
-  Engineer independently asks for the same fix)
+  Engineer independently asks for the same fix) — **done (2026-09-17)**:
+  all three password-change paths (`/reset-password`,
+  `/reset-password-phone`, and an admin-forced reset via `PATCH
+  /api/users/{id}`) now call the already-existing
+  `session_revocation.revoke_all_sessions()`. Verified by code
+  inspection and reuse of the already-tested primitive (same function
+  the standalone `/revoke-sessions` endpoint uses); not re-run
+  end-to-end as a full reset → old-token-rejected sequence this session.
 - Least-privilege Postgres role instead of the default broad one
-  (Security Checklist #31)
+  (Security Checklist #31) — **not applied (2026-09-17), needs a human
+  with the Render dashboard.** This means rotating `DATABASE_URL` on the
+  live production database, which I don't have standing access to do
+  silently. The exact steps, ready to run:
+  1. As the current (broad) role, create a dedicated app role and grant it
+     only what this app actually needs — no `CREATEDB`/`CREATEROLE`, no
+     ownership, just data access on the app's own schema:
+     ```sql
+     CREATE ROLE matatu_mms_app WITH LOGIN PASSWORD '<generate a real one>';
+     GRANT USAGE ON SCHEMA public TO matatu_mms_app;
+     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO matatu_mms_app;
+     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO matatu_mms_app;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public
+       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO matatu_mms_app;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public
+       GRANT USAGE, SELECT ON SEQUENCES TO matatu_mms_app;
+     ```
+     (Alembic migrations still need `CREATE`/`ALTER TABLE` rights — either
+     run migrations as the original broad role and only the app's
+     runtime traffic as `matatu_mms_app`, or additionally grant
+     `CREATE ON SCHEMA public` to this role if migrations should run as
+     it too. Decide which before creating it.)
+  2. Update Render's `DATABASE_URL` env var for the backend service to the
+     new role's connection string; redeploy.
+  3. Confirm the app still boots and a write path works (e.g. issue a
+     test fine), then revoke the old broad role's ability to log in
+     (`ALTER ROLE <old_role> NOLOGIN`) rather than dropping it outright,
+     in case something was missed.
 - Token scope/audience claims for API clients, so a compromised partner
-  credential is provably limited to what it was granted (§25)
+  credential is provably limited to what it was granted (§25) — **done
+  (2026-09-17)**: see ADR `docs/adr/0002-jwt-audience-claim.md`. Every
+  token (human and machine `ApiClient`) now carries `aud:
+  "matatu-mms-api"`, checked at all 7 decode call sites. Verified live —
+  the browser's own active session (WebSocket notifications, dashboard)
+  survived the backend restart via its normal token-refresh flow with an
+  `aud`-bearing token, and the full `test_backend.py` suite passes.
 - A periodic `.gitignore`-completeness check per app — `gitleaks` catches
   a committed secret, not the gap that made committing one likely (§24)
+  — **done (2026-09-17)**: `scripts/check-gitignore.mjs`, run against
+  this repo with a clean result (after excluding `.env.example`-style
+  template files from its own false-positive list).
 - A lint rule for the static-file exemption pattern that already caused
-  the `webmanifest`/`/offline` redirect bug once (§6)
+  the `webmanifest`/`/offline` redirect bug once (§6) — **confirmed
+  already fixed in both frontends (2026-09-17)**: `matatu-mms/middleware.ts`
+  and `matatu-mms-public/middleware.ts` both already include `webmanifest`
+  in the static-file exemption regex; no code change needed. A dedicated
+  lint rule (vs. this manual confirmation) is still not built.
 - Fix the regression suite's non-idempotency against a persistent
   database before it's safe to run in CI against shared Postgres (§7,
-  also blocks §15's CI-integrated Postgres testing ask)
+  also blocks §15's CI-integrated Postgres testing ask) — **done
+  (2026-09-17)**: `test_backend.py`'s TEST 10 (PTCU duty allocation) hit
+  the concrete blocker — `DutyAllocation`'s `UNIQUE(year, month)`
+  constraint would fail a second run in the same calendar month against
+  a persistent DB. Now clears its own prior allocation/assignments/
+  broadcast and resets the test officer's duty status before creating
+  fresh test data. Verified by running the full suite twice back-to-back
+  — both passed.
 - A rollback runbook tied to the release process itself — "which git SHA
-  was last known-good, one command back" (§31)
+  was last known-good, one command back" (§31) — **done (2026-09-17)**:
+  `RUNBOOKS.md`'s "Backend won't start after a deploy" section now has
+  the exact `git log`/`git revert`/push sequence for `deploy/render-demo`,
+  plus how to cross-check against Render's own deploy history.
 - A single onboarding doc / `DOCS.md` index across the dozen standalone
   root-level audit documents, distinguishing current from historical
-  (§32)
+  (§32) — **done (2026-09-17)**: `DOCS.md`, splitting the 17 root docs
+  into "living references" and "point-in-time snapshots."
 - Seed data confirmed to exercise the full role matrix, not just enough
-  to boot (§32)
+  to boot (§32) — **confirmed already true (2026-09-17)**: every one of
+  `ROLE_MATRIX`'s 12 roles has at least one seed user; no gap found.
 - Disambiguate the `ENFORCEMENT` vs. `ARRESTING_OFFICER` role labels on
   the login/demo-accounts screen, or decide which is canonical and
   deprecate the other — found live, this session, by picking the
@@ -2169,25 +2253,51 @@ whoever has capacity rather than sequencing:
 5. **A Timescale-licensed Postgres** (self-hosted or Timescale Cloud),
    replacing Render's Apache build once telemetry volume justifies it
    (§3).
-6. **Multi-replica-aware circuit breaker state** — today's breaker/retry
-   primitives are correct for one process and will silently under-protect
-   above replica count 1; prioritize before scaling replicas, not after
-   an incident reveals the gap (§18, §20, §30).
+6. **Multi-replica-aware circuit breaker state** — **already done**
+   (found during this session's Phase 2/3 pass, 2026-09-17; this item
+   predates `app/ops_breakers.py`, which resolves it). Breaker *state*
+   stays per-process by design (a shared tripped state would let one
+   replica's bad luck block every other replica's healthy connections —
+   see that file's docstring), but is published to Redis with a short TTL
+   for cross-replica visibility, and manual *overrides* are stored in
+   Redis and picked up by every replica within `REFRESH_INTERVAL_SECONDS`
+   (5s). `app/listeners.py`'s webhook-delivery breakers already register
+   through this path. No further work needed unless the 5s override-lag
+   turns out to matter in practice.
 7. **Explicit consistency documentation** — which parts of the system are
    eventually consistent (breaker/rate-limit overrides) versus strongly
    consistent (ledger postings, seat assignment), so a future engineer
    doesn't assume uniform guarantees (§20).
-8. **SLOs with real error budgets**, confirming `alertmanager.yml` is
-   wired to defined SLOs rather than raw thresholds (§18).
+8. **SLOs with real error budgets** — **done (2026-09-17)**:
+   `prometheus/slo-alerts.yml` defines a 99.5% availability SLO and a
+   95%-under-1s latency SLO over a 30-day window, with burn-rate alerts
+   (fast: 1h window/14.4x burn → page; slow: 6h window/3x burn → ticket)
+   replacing/supplementing `alerts.yml`'s raw thresholds — wired into
+   `prometheus.yml`'s `rule_files`. YAML-validated; not live-tested
+   against a running Prometheus (this repo's docker-compose Prometheus
+   wasn't running during this session) — confirm with `promtool check
+   rules prometheus/slo-alerts.yml` before trusting it in an incident.
 9. **A disaster-recovery drill** rehearsing the runbooks against the
    Postgres-expiry-shaped scenario, not just a read-through (§18); pair
    with **chaos-testing the runbooks** against a deliberately broken
    dependency (§30).
-10. **A documented, drilled incident-response runbook** synthesizing the
-    ad hoc diagnostic steps already used this session (a failed deploy, a
-    PII leak, a proxy-IP bug) into a standing procedure (§10).
-11. **A living ADR practice** — one-ADR-per-decision going forward,
-    rather than the single monolithic `ARCHITECTURE_DECISIONS.md` (§16).
+10. **A documented incident-response runbook** — **done (2026-09-17)**:
+    `RUNBOOKS.md` now has dedicated sections for the PII-leak and
+    proxy-IP-misattribution failure patterns, synthesized from the actual
+    diagnostic steps used to find and confirm each ("actually run it and
+    check the row" / "confirm against real request logs", not code
+    reading alone). The deploy-failure pattern was already covered by
+    that file's existing "Backend won't start after a deploy" section.
+    **Not done: the "drilled" half** — rehearsing these against a
+    deliberately broken dependency is a real exercise, not a doc, and
+    stays in the "needs your call" list (§Phase 3, disaster-recovery
+    drill).
+11. **A living ADR practice** — **started (2026-09-17)**: `docs/adr/`
+    now has a template plus two real ADRs from this session's own work
+    (per-officer release eligibility, the JWT audience claim).
+    `ARCHITECTURE_DECISIONS.md` is not being retroactively split — it
+    stays as the historical record; new architecturally-significant
+    decisions go in `docs/adr/` going forward.
 
 ### Phase 4 — Ops console: the two remaining named gaps (§Ops Centre Rebuild)
 

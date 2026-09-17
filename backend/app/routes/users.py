@@ -282,6 +282,11 @@ async def update_user(
             user.reset_token = None
             user.reset_token_expires_at = None
             new_values["passwordReset"] = True
+            # An admin-forced reset should also end whatever session the old
+            # password was still authenticating (e.g. a compromised account
+            # being locked out from under an active attacker).
+            from app.session_revocation import revoke_all_sessions
+            await revoke_all_sessions(user.id)
 
         if payload.extra_permissions is not None:
             # Only a Super Admin grants individual extra permissions — an Admin

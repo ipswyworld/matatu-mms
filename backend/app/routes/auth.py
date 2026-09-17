@@ -184,6 +184,10 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
     # the driver or conductor" step needed.
     identifier = credentials.email
 
+    from app.turnstile import verify_turnstile
+    if not await verify_turnstile(credentials.turnstile_token, request.client.host if request.client else None):
+        raise HTTPException(status_code=400, detail="Verification failed. Please try again.")
+
     # Per-account throttle (app/login_throttle.py), complementing the per-IP
     # limiter above. The per-IP limit cannot see credential stuffing spread
     # across many source addresses, and it penalises everyone behind a shared
@@ -482,6 +486,10 @@ async def register(request: Request, credentials: UserCreate, response: Response
             detail="Self-registration is only available for passengers. Crew accounts are issued by your operator; staff accounts are issued by the county.",
         )
 
+    from app.turnstile import verify_turnstile
+    if not await verify_turnstile(credentials.turnstile_token, request.client.host if request.client else None):
+        raise HTTPException(status_code=400, detail="Verification failed. Please try again.")
+
     # Self-registration requires genuine, recorded consent: the checkbox
     # alone isn't enough — a typed signature must also be present. This is
     # server-side enforcement, not just a disabled submit button in the UI.
@@ -660,6 +668,10 @@ async def register(request: Request, credentials: UserCreate, response: Response
 @router.post("/forgot-password")
 @limiter.limit(ops_limits.limit_callable("auth_forgot_password"))
 async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    from app.turnstile import verify_turnstile
+    if not await verify_turnstile(payload.turnstile_token, request.client.host if request.client else None):
+        raise HTTPException(status_code=400, detail="Verification failed. Please try again.")
+
     # Always returns the same generic message regardless of whether the email
     # exists, so this endpoint can't be used to enumerate registered accounts.
     result = await db.execute(select(User).where(User.email == payload.email.lower().strip()))
@@ -702,6 +714,12 @@ async def reset_password(request: Request, payload: ResetPasswordRequest, db: As
     user.reset_token = None
     user.reset_token_expires_at = None
     await db.commit()
+
+    # A password reset should log out every other session — otherwise
+    # whoever had the old password (or an already-open session on a shared
+    # device) keeps working after the account owner deliberately changed it.
+    from app.session_revocation import revoke_all_sessions
+    await revoke_all_sessions(user.id)
 
     return {"message": "Password updated. You can now sign in with your new password."}
 
@@ -751,6 +769,9 @@ async def reset_password_phone(request: Request, payload: PhoneResetPasswordRequ
     user.phone_otp_code = None
     user.phone_otp_expires_at = None
     await db.commit()
+
+    from app.session_revocation import revoke_all_sessions
+    await revoke_all_sessions(user.id)
 
     return {"message": "Password updated. You can now sign in with your new password."}
 

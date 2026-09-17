@@ -15,6 +15,14 @@ import bcrypt
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
+# Every token minted by this service is scoped to this one API audience.
+# There is only one API today, so this closes a gap that doesn't bite yet
+# rather than one that does — but it means a token minted for some future
+# second service (an extracted microservice, a partner integration) can
+# never be silently accepted here just because it shares the same signing
+# key, and vice versa.
+JWT_AUDIENCE = "matatu-mms-api"
+
 def _verify_password_sync(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
@@ -53,7 +61,7 @@ def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] 
     # than relying on pyjwt to add it, since we need the exact same value
     # to compare against in get_current_user.
     issued_at = datetime.datetime.utcnow()
-    to_encode.update({"exp": expire, "iat": issued_at})
+    to_encode.update({"exp": expire, "iat": issued_at, "aud": JWT_AUDIENCE})
     # pyjwt library
     encoded_jwt = pyjwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -79,7 +87,7 @@ async def get_current_user(
         
     try:
         # Decode the token
-        payload = pyjwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = pyjwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         user_id: str = payload.get("userId") or payload.get("sub")
         issued_at = payload.get("iat")
         if user_id is None:

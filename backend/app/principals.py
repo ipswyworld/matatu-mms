@@ -56,7 +56,8 @@ async def get_current_principal(
         raise _credentials_exception
 
     try:
-        payload = pyjwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        payload = pyjwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
     except Exception:
         raise _credentials_exception
 

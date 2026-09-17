@@ -1921,3 +1921,47 @@ Ordered by dependency, not by appeal:
 7. **Orchestrator + blue/green + CD** (§7, §13, §14.4) — meaningful only once there is more
    than one replica to route between.
 8. **OpenTelemetry** (§8) — before the service split, not after.
+
+## 32. Consistency model — what's eventually vs. strongly consistent
+
+Added 2026-09-17 (MULTI_STAKEHOLDER_REVIEW.md Phase 3 item 7) so a future
+engineer doesn't assume uniform guarantees across the system. This is a
+map of what already exists, not a new design.
+
+**Eventually consistent** (a brief window where different readers can see
+different answers is accepted, because the alternative — blocking a
+request on a synchronous cross-process round trip — costs more than the
+staleness does):
+
+- **Circuit breaker cross-replica visibility** (§ops_breakers.py) — one
+  replica's breaker state reaches the ops console's cluster view within
+  `REFRESH_INTERVAL_SECONDS` (5s) of tripping, not instantly. Manual
+  overrides have the same 5s propagation lag to every replica.
+- **Rate-limit overrides** (`app/ops_limits.py`) — same pattern, same
+  reasoning: an operator's live limit change reaches every replica within
+  a bounded refresh interval, not atomically.
+- **Real-time fan-out** (`app/realtime.py`'s `publish()`, GPS/dashboard/
+  notification pub-sub) — best-effort. A dropped Redis publish loses that
+  one update; the next one still lands. Nothing here is replayed or
+  guaranteed delivered, by design (§4's durable-events layer is the
+  guaranteed-delivery counterpart for anything that actually needs it).
+- **Durable events** (`app/streams.py`'s `publish_event()`) — dispatches
+  to in-process listeners synchronously regardless of whether the durable
+  record succeeded; a listener never blocks on storage succeeding first.
+
+**Strongly consistent** (a single Postgres transaction is the unit of
+truth; nothing reads a partial or stale view of these):
+
+- **Ledger postings** (`app/ledger.py`) — a fine's payment state and its
+  ledger entry are written in the same transaction; there is no
+  intermediate state where one exists without the other.
+- **Seat/vehicle assignment and fine status transitions** — ordinary
+  row-level ACID guarantees via SQLAlchemy's session/transaction, no
+  cross-service or cross-process coordination involved.
+- **RBAC/permission checks** (`app/rbac.py`) — read directly from the
+  authenticated request's own `User` row inside the same request; never
+  cached or fanned out, so there is no window where a just-revoked
+  permission is still honored by a different process's stale copy.
+- **Duty allocation publish state** (`app/routes/duty.py`) — an officer
+  never sees a DRAFT allocation and a commander never sees "published"
+  register as anything but an atomic status flip on one row.

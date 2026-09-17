@@ -129,6 +129,13 @@ GITHUB_BACKUP_TOKEN = secrets_provider.get("GITHUB_BACKUP_TOKEN")
 GITHUB_BACKUP_REPO = os.getenv("GITHUB_BACKUP_REPO")
 BACKUP_RETENTION_DAYS = int(os.getenv("BACKUP_RETENTION_DAYS", "30"))
 
+# Cloudflare Turnstile — bot protection on login/register/password-reset
+# (Security Checklist #12). Unset by default: local dev and any deploy
+# that hasn't created a Turnstile site yet keeps working exactly as
+# before, with the check skipped entirely (see app/turnstile.py) rather
+# than failing closed on a missing credential.
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY")
+
 # Explicit override for which backend app/storage.py uses — "local", "s3",
 # or "db" (store file bytes as a row in Postgres, alongside everything
 # else). Sensible default when unset: S3 if configured above, otherwise

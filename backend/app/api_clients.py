@@ -198,6 +198,7 @@ def mint_token(principal: ApiClientPrincipal) -> dict:
     session by code that reads `userId`.
     """
     import jwt as pyjwt_lib
+    from app.auth import JWT_AUDIENCE
     from app.config import ALGORITHM, SECRET_KEY
 
     now = datetime.datetime.utcnow()
@@ -209,6 +210,7 @@ def mint_token(principal: ApiClientPrincipal) -> dict:
         "tier": principal.tier,
         "iat": now,
         "exp": now + datetime.timedelta(seconds=TOKEN_TTL_SECONDS),
+        "aud": JWT_AUDIENCE,
     }
     return {
         "access_token": pyjwt_lib.encode(payload, SECRET_KEY, algorithm=ALGORITHM),

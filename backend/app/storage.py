@@ -31,6 +31,7 @@ import os
 import uuid
 import datetime
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import (
@@ -55,6 +56,16 @@ elif STORAGE_BACKEND == "s3" or (not STORAGE_BACKEND and _s3_configured):
     BACKEND = "s3"
 else:
     BACKEND = "local"
+
+# Covers every current caller: scene/crime photos (jpg/png/webp) and Sacco
+# compliance documents (pdf) — saccos.py is the one route that isn't
+# strictly images, so an images-only list would reject a real registration
+# certificate upload.
+MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+ALLOWED_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+ALLOWED_UPLOAD_CONTENT_TYPES = {
+    "image/jpeg", "image/png", "image/webp", "application/pdf",
+}
 
 _s3_client = None
 
@@ -92,7 +103,21 @@ async def save_upload(
     "registrationCert_") for routes that need a recognizable filename per
     document type.
     """
+    if len(contents) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File is too large — the limit is {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)}MB.",
+        )
+
     safe_name = os.path.basename(original_filename or "file")
+    ext = os.path.splitext(safe_name)[1].lower()
+    guessed_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS or guessed_type not in ALLOWED_UPLOAD_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Only JPG, PNG, WEBP, and PDF are accepted.",
+        )
+
     stored_name = f"{prefix}{uuid.uuid4().hex[:8]}_{safe_name}"
     key = f"{category}/{entity_id}/{stored_name}"
 

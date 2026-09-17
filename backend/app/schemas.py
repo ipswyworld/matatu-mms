@@ -210,6 +210,11 @@ class UserCreate(UserBase):
     # Minor/student self-registration only — register() validates these are
     # all present when is_minor is true and ignores them otherwise.
     is_minor: Optional[bool] = False
+    # Same optional/inert-until-configured field as UserLogin — only
+    # meaningful for the one caller that's actually a public, unauthenticated
+    # self-registration (routes/auth.py's register()); create_user() (the
+    # admin/commander-facing endpoint) never checks it.
+    turnstile_token: Optional[str] = None
     guardian_name: Optional[str] = None
     guardian_phone: Optional[str] = None
     guardian_relationship: Optional[str] = None
@@ -270,6 +275,10 @@ class UserLogin(BaseModel):
     email: str
     password: str
     remember_me: bool = False
+    # Optional — only meaningful once TURNSTILE_SECRET_KEY is configured
+    # (app/turnstile.py); absent or ignored otherwise, so no existing
+    # caller (including this suite's own tests) needs to send it.
+    turnstile_token: Optional[str] = None
 
     @field_validator("email", mode="before")
     @classmethod
@@ -332,6 +341,7 @@ class CrewAlertRequest(BaseModelCamel):
 
 class ForgotPasswordRequest(BaseModelCamel):
     email: EmailStr
+    turnstile_token: Optional[str] = None
 
     _normalize_email = _normalized_email_validator()
 

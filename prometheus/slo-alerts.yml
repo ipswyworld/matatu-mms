@@ -1,0 +1,71 @@
+## SLOs with real error budgets (MULTI_STAKEHOLDER_REVIEW.md Phase 3 item 8),
+## replacing/supplementing alerts.yml's raw thresholds with budget-burn
+## alerts. A raw "5% error rate for 5 minutes" threshold (alerts.yml) fires
+## on the exact same blip whether it's the 1st or the 31st such blip this
+## month; a burn-rate alert instead asks "at this rate, will the month's
+## error budget actually run out" — the question an SLO is for.
+##
+## Two SLOs, each over a rolling 30-day window:
+##   - Availability: 99.5% of requests are non-5xx (0.5% error budget)
+##   - Latency:       95% of requests complete under 1s
+##
+## Burn-rate math (single-window, simplified from Google's SRE workbook
+## multi-window approach — a second, longer-window pair per alert is the
+## natural next refinement once this is proven useful in practice, not
+## added here to avoid an alerts file nobody has calibrated against a real
+## incident yet): burning at rate N means the entire 30-day budget would be
+## exhausted in (30/N) days. A 1h window catching a 14.4x burn page
+## alerts fast enough to catch a real outage well within the month
+## (30 / 14.4 ≈ 2 days to exhaustion at that rate); a 6h window at 3x burn
+## catches slower, sustained degradation a 1h window would miss between
+## its own evaluations.
+groups:
+  - name: matatu-mms-slo-availability
+    rules:
+      # Recording rules: the actual SLI, so PromQL elsewhere (a dashboard,
+      # another alert) can reuse it without re-deriving the ratio each time.
+      - record: slo:availability:ratio_rate1h
+        expr: |
+          sum(rate(http_requests_total{status!~"5.."}[1h]))
+          /
+          sum(rate(http_requests_total[1h]))
+      - record: slo:availability:ratio_rate6h
+        expr: |
+          sum(rate(http_requests_total{status!~"5.."}[6h]))
+          /
+          sum(rate(http_requests_total[6h]))
+
+      - alert: AvailabilitySLOFastBurn
+        expr: (1 - slo:availability:ratio_rate1h) > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Availability error budget burning fast (page)"
+          description: "Error rate over the last hour implies the 30-day 99.5% availability budget would be exhausted in ~2 days at this rate."
+
+      - alert: AvailabilitySLOSlowBurn
+        expr: (1 - slo:availability:ratio_rate6h) > (3 * 0.005)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Availability error budget burning steadily (ticket)"
+          description: "Error rate over the last 6 hours implies the 30-day 99.5% availability budget would be exhausted in ~10 days at this rate — not an emergency, but worth a ticket before it becomes one."
+
+  - name: matatu-mms-slo-latency
+    rules:
+      - record: slo:latency:fast_ratio_rate1h
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{le="1"}[1h]))
+          /
+          sum(rate(http_request_duration_seconds_count[1h]))
+
+      - alert: LatencySLOFastBurn
+        expr: slo:latency:fast_ratio_rate1h < (1 - 14.4 * 0.05)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Latency SLO (95% under 1s) error budget burning fast (page)"
+          description: "Fewer than expected requests over the last hour completed under 1s — at this rate the 30-day latency budget burns out in ~2 days."

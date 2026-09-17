@@ -43,7 +43,8 @@ async def notify_user(user_id: str, title: str, message: str, level: str = "info
 
 def _decode_user_id(token: str) -> str | None:
     try:
-        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         return payload.get("userId") or payload.get("sub")
     except Exception:
         return None

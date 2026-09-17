@@ -32,6 +32,91 @@
 4. Roll back: revert the offending commit and push again, or (self-hosted docker-compose
    path only) use `scripts/canary-promote.sh 0` if a canary is in flight.
 
+#### Finding the last known-good SHA and rolling back to it (Render deploys)
+
+Render's auto-deploy watches `deploy/render-demo` — there is no "one-click
+previous version" without knowing which commit that was, so this is the
+actual sequence, not just "revert and push":
+
+1. `git log --oneline deploy/render-demo -20` — find the last commit that
+   deployed and was confirmed healthy. Render's own dashboard (Deploys tab,
+   per service) also lists every past deploy with its commit SHA and
+   whether it succeeded — cross-check there if recent history is unclear
+   locally, since a deploy can fail on Render's side even for a commit
+   that built and tested cleanly here.
+2. One command back, without rewriting history (never force-push
+   `deploy/render-demo` — that branch is what production watches, and a
+   force-push race with an in-flight deploy is exactly the kind of thing
+   this section exists to avoid):
+   ```
+   git revert --no-edit <bad-sha>..HEAD
+   git push origin deploy/render-demo
+   ```
+   For a single bad commit, `git revert --no-edit <bad-sha>` alone is
+   enough. Render redeploys automatically on the push, same as any other
+   commit — there is no separate "rollback" action in Render for a
+   git-connected service.
+3. Confirm the rollback actually deployed (Render dashboard shows the new
+   deploy's SHA matching what was just pushed, not the reverted one) before
+   declaring the incident over — a revert commit that itself fails to
+   build leaves the previous (bad) deploy still live.
+
+### Suspected PII leak in a data-handling path (erasure, export, anonymization)
+
+Synthesized from a real incident this session: an early version of the
+DPA erasure path (`app/data_rights.py`) looked up consent records by the
+wrong key and left a subject's actual phone number in the database after
+"successful" erasure. It passed code review; it did not survive being
+actually run.
+
+1. **Don't trust the code path's own success response.** The bug above
+   returned a normal 200 — the failure was silent by construction (wrong
+   key means "no rows matched", not an error). Whatever the endpoint
+   claims to have done, query the actual row afterward and check the
+   field is gone/changed.
+2. Reproduce against a real (non-empty, ideally close-to-production-shape)
+   dataset, not a freshly-seeded one where every foreign key happens to
+   line up by construction — the wrong-key bug above only surfaced once a
+   real subject with real linked records was run through it.
+3. Once confirmed: identify every row this leak could have touched (grep
+   for the same lookup pattern elsewhere — a wrong-key bug in one function
+   is rarely unique to that one function) before fixing just the reported
+   instance.
+4. Fix, then **prove it** by re-running the exact same erasure call and
+   inspecting the row directly — the standard this session already set:
+   found by actually running the function, not by reading the diff.
+5. Assess disclosure obligations under the DPA policy (`BACKUP_RECOVERY_
+   POLICY.md`) once the scope (which subjects, which fields, how long
+   exposed) is known — that's a legal/compliance decision, not an
+   engineering one, and shouldn't wait on the rest of this runbook to
+   start being considered.
+
+### Rate limiting / IP-based logic misbehaving behind Cloudflare → Render
+
+Synthesized from a real incident this session: the login rate limiter and
+the ops console's network gate both keyed on `request.client.host`, which
+uvicorn populates from the **last** entry of `X-Forwarded-For` — behind
+Cloudflare → Render, that's an internal proxy hop's address, shared by
+every user routed through it, not the actual client.
+
+1. **Symptom pattern:** a rate limit or CIDR gate that either blocks
+   unrelated users together (they're sharing an apparent "IP") or fails to
+   distinguish anyone at all.
+2. Confirm directly against `login_events` (or equivalent request logs) —
+   look for a suspicious concentration of one address, especially an
+   RFC1918 (private) one, across many distinct real users. That's what
+   proved this bug; it wasn't found by reading the rate-limiter code in
+   isolation.
+3. Fix by preferring `CF-Connecting-IP` (`app/client_ip.py`) — trusted and
+   unspoofable behind Cloudflare — over blind trust in `X-Forwarded-For`
+   ordering, which depends on every hop in front of the app behaving and
+   on no infra change silently reordering it later.
+4. This is an infra-coupled assumption, not a one-time fix: if the proxy
+   chain in front of the backend ever changes (a different CDN, Cloudflare
+   config change, added hop), re-verify which header/position actually
+   carries the real client IP before assuming the existing fix still
+   applies.
+
 ### Webhook deliveries all failing for one Sacco
 
 1. Check `GET /api/webhooks/logs?sacco_id=...` for the actual `error_message` on recent

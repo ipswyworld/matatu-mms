@@ -9,6 +9,7 @@ alerting:
 
 rule_files:
   - "alerts.yml"
+  - "slo-alerts.yml"
 
 scrape_configs:
   # FastAPI backend — request rate/latency/status via prometheus-fastapi-instrumentator.

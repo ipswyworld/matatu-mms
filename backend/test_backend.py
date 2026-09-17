@@ -226,6 +226,49 @@ async def run_tests():
         print("  [OK] Sector -> zone drill-down returns the right zones.")
 
         today = datetime.date.today()
+        # DutyAllocation has a UNIQUE(year, month) constraint, so a second
+        # run of this suite against a persistent (Postgres) database on the
+        # same calendar month would otherwise fail at creation with a 400 —
+        # this is what made the suite non-idempotent. Clearing this month's
+        # test-created allocation (and everything hanging off it) first
+        # means the suite behaves the same whether the DB was just wiped
+        # (the SQLite dev path) or has last month's/today's earlier run
+        # still sitting in it (the Postgres CI path).
+        from app.models import DutyAllocation, DutyAssignment, Broadcast, BroadcastRecipient
+        async with AsyncSessionLocal() as cleanup_session:
+            existing = (
+                await cleanup_session.execute(
+                    select(DutyAllocation).where(
+                        DutyAllocation.year == today.year, DutyAllocation.month == today.month
+                    )
+                )
+            ).scalars().first()
+            if existing:
+                await cleanup_session.execute(
+                    DutyAssignment.__table__.delete().where(DutyAssignment.allocation_id == existing.id)
+                )
+                # Scoped to this test's own broadcast subject, not a blanket
+                # wipe of the Broadcast table — a shared Postgres CI database
+                # could hold rows from other runs or callers.
+                broadcast_ids = (
+                    await cleanup_session.execute(
+                        select(Broadcast.id).where(Broadcast.subject == "Parade 0600")
+                    )
+                ).scalars().all()
+                if broadcast_ids:
+                    await cleanup_session.execute(
+                        BroadcastRecipient.__table__.delete().where(
+                            BroadcastRecipient.broadcast_id.in_(broadcast_ids)
+                        )
+                    )
+                    await cleanup_session.execute(
+                        Broadcast.__table__.delete().where(Broadcast.id.in_(broadcast_ids))
+                    )
+                await cleanup_session.execute(
+                    DutyAllocation.__table__.delete().where(DutyAllocation.id == existing.id)
+                )
+                await cleanup_session.commit()
+
         res = await client.post(
             "/api/duty/allocations",
             json={"year": today.year, "month": today.month, "referenceNo": "TEST/PTCU/1"},
@@ -291,6 +334,16 @@ async def run_tests():
         assert res.json()["onDutyToday"] is False, \
             "An officer on leave is not on duty, even holding a posting"
         print("  [OK] Duty status (LEAVE) overrides an active posting.")
+
+        # Restore ON_DUTY — otherwise a second run against a persistent
+        # database would fail this test's own earlier assertion that the
+        # officer defaults to ON_DUTY (line ~242 above).
+        res = await client.patch(
+            f"/api/duty/officers/{test_officer['id']}/status",
+            json={"dutyStatus": "ON_DUTY"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 200 and res.json()["dutyStatus"] == "ON_DUTY"
 
         res = await client.post(
             "/api/broadcasts",

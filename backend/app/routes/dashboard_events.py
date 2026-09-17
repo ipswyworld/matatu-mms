@@ -59,7 +59,8 @@ def register_dashboard_broadcast_listeners():
 
 def _token_is_valid(token: str) -> bool:
     try:
-        pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         return True
     except Exception:
         return False
