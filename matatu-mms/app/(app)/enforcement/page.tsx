@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ShieldAlert, UserCog, Gavel, Ban, AlertTriangle, MapPin } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones, getBeats } from "@/lib/data";
+import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones, getBeats, getDutyAllocations, getSectors, getDutyZones, getDutyCalendar, getDutyAssignments, getOfficerRoster } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import StatCard from "@/components/StatCard";
 import { MatatuStatusPill, FineStatusPill } from "@/components/StatusPill";
@@ -11,6 +11,7 @@ import ReportsReviewPanel from "@/components/ReportsReviewPanel";
 import PageBanner from "@/components/PageBanner";
 import ExportCsvButton from "@/components/ExportCsvButton";
 import EnforcementTabs from "@/components/EnforcementTabs";
+import DutyConsole from "@/components/duty/DutyConsole";
 import OfficerAssignmentRow from "@/components/OfficerAssignmentRow";
 import EnforcementMap from "@/components/EnforcementMap";
 import OnPatrolToggle from "@/components/OnPatrolToggle";
@@ -36,6 +37,34 @@ export default async function EnforcementPage() {
     canManageAssignments ? getZones() : Promise.resolve([]),
     canManageAssignments ? getBeats() : Promise.resolve([]),
   ]);
+
+  // Duty allocation (the third tab). Fetched here rather than on its own
+  // page so posting officers sits beside the Command Centre, where the
+  // same commander is already working.
+  const canManageDuty = can(session.role, "manage_duty_allocation");
+  const canBroadcast = can(session.role, "send_broadcast");
+  const showDutyTab = canManageDuty || canBroadcast;
+
+  const dutyNow = new Date();
+  const dutyYear = dutyNow.getFullYear();
+  const dutyMonth = dutyNow.getMonth() + 1;
+
+  const [dutyAllocations, sectors, dutyZones, dutyCalendar] = showDutyTab
+    ? await Promise.all([getDutyAllocations(), getSectors(), getDutyZones(), getDutyCalendar(dutyYear, dutyMonth)])
+    : [[], [], [], { year: dutyYear, month: dutyMonth, allocationId: null, allocationStatus: null, days: [] }];
+
+  // This month's sheet if it exists, else the most recent — a commander
+  // opening this before the new sheet is drafted should still see what is
+  // currently in force rather than an empty screen.
+  const currentAllocation =
+    dutyAllocations.find((a) => a.year === dutyYear && a.month === dutyMonth) || dutyAllocations[0] || null;
+
+  const [dutyAssignments, dutyOfficers] = showDutyTab
+    ? await Promise.all([
+        currentAllocation ? getDutyAssignments(currentAllocation.id) : Promise.resolve([]),
+        getOfficerRoster(currentAllocation ? { allocationId: currentAllocation.id } : {}),
+      ])
+    : [[], []];
 
   const commanders = officerAssignments.filter((o) => o.role === "ENFORCEMENT_COMMANDER");
   const fieldOfficers = officerAssignments.filter((o) => o.role !== "ENFORCEMENT_COMMANDER");
@@ -354,35 +383,6 @@ export default async function EnforcementPage() {
               </div>
 
               <div className="card p-5 space-y-3">
-                <h3 className="font-bold text-sm text-county-black">Daily Duty & Zone Assignment</h3>
-                <p className="text-xs text-black/50">
-                  Arresting and Releasing duties never mix on the same officer for the same period. Assign a patrol zone/corridor to
-                  each Arresting Officer.
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-black/5 text-black/60 uppercase text-[10px]">
-                      <tr>
-                        <th className="p-2.5">Officer</th>
-                        <th className="p-2.5">Role</th>
-                        <th className="p-2.5">Duty Today</th>
-                        <th className="p-2.5">Zone / Corridor</th>
-                        <th className="p-2.5"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                      {fieldOfficers.map((o) => (
-                        <OfficerAssignmentRow key={o.id} officer={o} zones={zones} />
-                      ))}
-                      {fieldOfficers.length === 0 && (
-                        <tr><td colSpan={5} className="text-center py-6 text-black/40">No field officers onboarded yet.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="card p-5 space-y-3">
                 <h3 className="font-bold text-sm text-county-black">Full Case Ledger — Arrest & Release Actions</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-left">
@@ -419,6 +419,21 @@ export default async function EnforcementPage() {
                 </div>
               </div>
             </div>
+          ) : undefined
+        }
+        dutyContent={
+          showDutyTab ? (
+            <DutyConsole
+              allocation={currentAllocation}
+              allocations={dutyAllocations}
+              sectors={sectors}
+              zones={dutyZones}
+              assignments={dutyAssignments}
+              officers={dutyOfficers}
+              calendar={dutyCalendar}
+              canManage={canManageDuty}
+              canBroadcast={canBroadcast}
+            />
           ) : undefined
         }
       />

@@ -86,6 +86,15 @@ export default function EnforcementMap({ beats, zones, token }: EnforcementMapPr
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "live" | "offline">("connecting");
   const zoneOrder = zones.map((z) => z.id);
 
+  // A legend explains the colours actually on the map, so it lists only
+  // zones that have a beat drawn here — not every zone in the database.
+  // Once the PTCU sector/zone geography landed, `zones` went from 4 coarse
+  // corridors to two dozen street-level postings, and a pill per zone
+  // buried the map under its own legend. The PTCU zones are drawn on the
+  // duty console's own map (components/duty/DutyMap.tsx); they have no
+  // line on this one.
+  const legendZones = zones.filter((z) => beats.some((b) => b.zoneId === z.id));
+
   // Initialize the TomTom map once
   useEffect(() => {
     if (!TOMTOM_API_KEY) return;
@@ -277,9 +286,9 @@ export default function EnforcementMap({ beats, zones, token }: EnforcementMapPr
             )}
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dotColor }} />
           </span>
-          {zones.length > 0 && (
+          {legendZones.length > 0 && (
             <div className="absolute bottom-3 left-3 flex flex-wrap gap-2 max-w-[70%]">
-              {zones.map((z) => (
+              {legendZones.map((z) => (
                 <span
                   key={z.id}
                   className="flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur px-2.5 py-1 text-[10px] font-bold text-white"

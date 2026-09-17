@@ -108,7 +108,6 @@ export default function Sidebar({
     { href: "/routes", label: t("nav.routes"), action: "view_routes", section: "Fleet" },
     { href: "/enforcement", label: t("nav.enforcement"), action: "view_enforcement", section: "Enforcement" },
     { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute", section: "Enforcement" },
-    { href: "/duty", label: "Duty Allocation", action: "manage_duty_allocation", section: "Enforcement" },
     { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue", section: "Revenue" },
     { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers", section: "Revenue" },
     { href: "/users", label: t("nav.users"), action: "view_users", section: "Administration" },
@@ -146,7 +145,6 @@ export default function Sidebar({
     ],
     ENFORCEMENT_COMMANDER: [
       { href: "/enforcement", label: t("nav.overview"), action: "view_enforcement" },
-      { href: "/duty", label: "Duty Allocation", action: "manage_duty_allocation" },
       { href: "/my-duty", label: "My Duty", action: "view_activity" },
       { href: "/enforcement/cases", label: "Case Queue", action: "view_enforcement_cases" },
       { href: "/enforcement/disputes", label: "Dispute Reviews", action: "review_case_dispute" },
