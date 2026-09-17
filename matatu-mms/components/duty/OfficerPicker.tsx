@@ -90,8 +90,8 @@ export default function OfficerPicker({ officers, value, onChange, label = "Offi
     <div>
       <label className="text-[11px] font-bold text-black/50 block mb-1">{label}</label>
 
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[140px]">
           <Search
             size={13}
             strokeWidth={2}
@@ -110,7 +110,7 @@ export default function OfficerPicker({ officers, value, onChange, label = "Offi
             value={rank}
             onChange={(e) => setRank(e.target.value)}
             aria-label="Filter by rank"
-            className="input text-xs w-24 shrink-0"
+            className="input text-xs w-full sm:w-auto sm:min-w-[6.5rem] shrink-0"
           >
             <option value="">All ranks</option>
             {availableRanks.map((r) => (
