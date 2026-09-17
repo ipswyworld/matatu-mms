@@ -39,6 +39,16 @@ const SCRIPT_SRC = process.env.NODE_ENV === "production" ? "script-src 'self' 'u
 // https, so this only needs relaxing for `next dev`).
 const CONNECT_SRC = process.env.NODE_ENV === "production" ? "connect-src 'self' https: wss:" : "connect-src 'self' https: http: wss: ws:";
 
+// Same gap, same fix, for images: scene-evidence photos on enforcement
+// cases and crime records are served by the backend (/uploads/... or
+// /api/uploads/...), not by Next. In production that origin is https, so
+// the broad `https:` below already covers it — but under `next dev` the
+// backend is http://127.0.0.1:8000 and every evidence thumbnail is
+// silently blocked, which reads as "the photo is missing" rather than
+// "the browser refused to load it". Verified: filing a case with two
+// photos produced exactly that before this line existed.
+const IMG_SRC = process.env.NODE_ENV === "production" ? "img-src 'self' data: blob: https:" : "img-src 'self' data: blob: https: http:";
+
 const SECURITY_HEADERS = [
   {
     key: "Content-Security-Policy",
@@ -52,7 +62,7 @@ const SECURITY_HEADERS = [
       // locally. No app code triggers this fetch; it can't be worked
       // around from our side, only allowed.
       "style-src 'self' 'unsafe-inline' https://unpkg.com",
-      "img-src 'self' data: blob: https:",
+      IMG_SRC,
       "font-src 'self' data:",
       CONNECT_SRC,
       // maplibre-gl (used by the TomTom map SDK) fetches and parses vector

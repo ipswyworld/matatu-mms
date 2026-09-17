@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ShieldAlert, UserCog, Gavel, Ban, AlertTriangle, MapPin } from "lucide-react";
+import { ShieldAlert, UserCog, Gavel, Ban, AlertTriangle, MapPin, KeyRound, CheckCircle2 } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getMatatus, getActivity, getFines, getUsers, getCrimes, getRoutes, getReports, getEnforcementCases, getOfficerAssignments, getZones, getBeats, getDutyAllocations, getSectors, getDutyZones, getDutyCalendar, getDutyAssignments, getOfficerRoster } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -12,6 +12,8 @@ import PageBanner from "@/components/PageBanner";
 import ExportCsvButton from "@/components/ExportCsvButton";
 import EnforcementTabs from "@/components/EnforcementTabs";
 import DutyConsole from "@/components/duty/DutyConsole";
+import CaseStatusPanel from "@/components/CaseStatusPanel";
+import EvidenceGallery from "@/components/EvidenceGallery";
 import OfficerAssignmentRow from "@/components/OfficerAssignmentRow";
 import EnforcementMap from "@/components/EnforcementMap";
 import OnPatrolToggle from "@/components/OnPatrolToggle";
@@ -71,9 +73,18 @@ export default async function EnforcementPage() {
 
   const openEnforcementCases = enforcementCases.filter((c) => c.status === "ARRESTED" || c.status === "PAID");
 
-  const officerUsers = users.filter((u) =>
-    ["ENFORCEMENT", "ADMIN", "ARRESTING_OFFICER", "RELEASING_OFFICER", "ENFORCEMENT_COMMANDER"].includes(u.role)
-  );
+  // "Pending release" is every vehicle still physically held — unpaid
+  // (ARRESTED) and paid-but-not-yet-released (PAID). The paid ones are the
+  // urgent half: the county is holding a vehicle it has already been paid
+  // to release, so that count is called out separately in the hint.
+  const pendingReleaseCases = enforcementCases.filter((c) => c.status === "ARRESTED" || c.status === "PAID");
+  const awaitingReleaseCount = enforcementCases.filter((c) => c.status === "PAID").length;
+  const releasedCases = enforcementCases.filter((c) => c.status === "RELEASED");
+
+  // Field strength, so ADMIN is deliberately excluded: an administrator
+  // with enforcement permissions is not a patrol officer, and counting
+  // them overstated the number on the ground.
+  const officerUsers = users.filter((u) => ENFORCEMENT_FIELD_ROLES.includes(u.role));
   const impoundedVehicles = matatus.filter((m) => m.status === "IMPOUNDED");
   const flaggedVehicles = matatus.filter((m) => m.status === "FLAGGED");
   const pendingFines = fines.filter((f) => f.status === "PENDING");
@@ -160,12 +171,27 @@ export default async function EnforcementPage() {
       )}
 
       {/* Enforcement Key Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Active Patrol Officers" value={officerUsers.length} hint="Assigned county personnel" icon={UserCog} />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <StatCard label="Active Patrol Officers" value={officerUsers.length} hint="Field officers on the establishment" icon={UserCog} />
         <StatCard label="Recorded Offences / Crimes" value={crimes.length} accent="red" hint="Total traffic & compliance citations" icon={Gavel} />
         <StatCard label="Impounded Vehicles" value={impoundedVehicles.length} accent="red" hint="Holding yard status" icon={Ban} />
-        <StatCard label="Flagged for Stop" value={flaggedVehicles.length} accent="red" hint="Pending compliance review" icon={AlertTriangle} />
+        <StatCard label="Flagged" value={flaggedVehicles.length} accent="red" hint="Pending compliance review" icon={AlertTriangle} />
+        <StatCard
+          label="Pending Release"
+          value={pendingReleaseCases.length}
+          accent="red"
+          hint={awaitingReleaseCount > 0 ? `${awaitingReleaseCount} paid, awaiting release` : "Held, fine outstanding"}
+          icon={KeyRound}
+        />
+        <StatCard
+          label="Released"
+          value={releasedCases.length}
+          hint="Paid and returned to the operator"
+          icon={CheckCircle2}
+        />
       </div>
+
+      <CaseStatusPanel cases={enforcementCases} />
 
       {/* Crime & Offence Ledger Table */}
       <div className="card p-5 space-y-3">
@@ -190,6 +216,7 @@ export default async function EnforcementPage() {
                 <th className="p-2.5">Location</th>
                 <th className="p-2.5">Penalty (KES)</th>
                 <th className="p-2.5">Officer</th>
+                <th className="p-2.5">Evidence</th>
                 <th className="p-2.5">Status</th>
               </tr>
             </thead>
@@ -217,6 +244,15 @@ export default async function EnforcementPage() {
                     {c.officerName || userMap.get(c.officerId) || "Enforcement Officer"}
                   </td>
                   <td className="p-2.5">
+                    {/* Scene evidence. Mandatory at capture (routes/crimes.py
+                        rejects a record with no photo) but never shown
+                        anywhere until now. */}
+                    <EvidenceGallery
+                      photos={c.photoPath ? [c.photoPath] : []}
+                      label={`${c.regNumber} — ${c.offenceCommitted}`}
+                    />
+                  </td>
+                  <td className="p-2.5">
                     <span className="badge bg-amber-100 text-amber-700 font-bold">
                       {c.status}
                     </span>
@@ -225,7 +261,7 @@ export default async function EnforcementPage() {
               ))}
               {crimes.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-6 text-black/40">
+                  <td colSpan={9} className="text-center py-6 text-black/40">
                     No offences or crimes recorded yet. Click &quot;+ Record Crime / Citation&quot; to log an offence.
                   </td>
                 </tr>

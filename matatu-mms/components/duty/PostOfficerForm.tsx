@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
 import { createDutyAssignmentAction } from "@/lib/actions";
 import { OfficerRoster, Sector, Zone } from "@/lib/types";
+import OfficerPicker from "./OfficerPicker";
 
 interface PostOfficerFormProps {
   allocationId: string;
@@ -87,20 +88,7 @@ export default function PostOfficerForm({ allocationId, officers, sectors, zones
         </div>
       )}
 
-      <div>
-        <label className="text-[11px] font-bold text-black/50 block mb-1">Officer</label>
-        <select value={officerId} onChange={(e) => setOfficerId(e.target.value)} className="input text-xs w-full">
-          <option value="">Select an officer…</option>
-          {officers.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.rank ? `${o.rank} ` : ""}
-              {o.name}
-              {o.manpowerNo ? ` (#${o.manpowerNo})` : ""}
-              {o.dutyStatus !== "ON_DUTY" ? ` — ${o.dutyStatus.replace("_", " ")}` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
+      <OfficerPicker officers={officers} value={officerId} onChange={setOfficerId} />
 
       <div>
         <label className="text-[11px] font-bold text-black/50 block mb-1">

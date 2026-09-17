@@ -4,8 +4,7 @@ import { getEnforcementCases } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 import EnforcementCaseActions from "@/components/EnforcementCaseActions";
-
-const PUBLIC_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
+import EvidenceGallery from "@/components/EvidenceGallery";
 
 const STATUS_STYLES: Record<string, string> = {
   ARRESTED: "bg-amber-100 text-amber-700",
@@ -13,6 +12,10 @@ const STATUS_STYLES: Record<string, string> = {
   RELEASED: "bg-county-green/10 text-county-green",
   DISPUTED: "bg-county-red/10 text-county-red",
   WAIVED: "bg-black/10 text-black/60",
+  UNDER_REVIEW: "bg-county-yellow/20 text-county-yellow-dark",
+  RESOLVED_UPHELD: "bg-county-yellow/20 text-county-yellow-dark",
+  RESOLVED_PARTIAL: "bg-county-yellow/20 text-county-yellow-dark",
+  RESOLVED_OVERTURNED: "bg-county-green/10 text-county-green",
 };
 
 export default async function EnforcementCasesPage() {
@@ -20,8 +23,13 @@ export default async function EnforcementCasesPage() {
   const cases = await getEnforcementCases();
   const canDecide = can(session.role, "decide_enforcement_case");
 
-  const openCases = cases.filter((c) => c.status === "ARRESTED" || c.status === "PAID");
-  const closedCases = cases.filter((c) => c.status === "RELEASED" || c.status === "DISPUTED" || c.status === "WAIVED");
+  // Open = anything still needing action, which includes a dispute under
+  // review and an upheld/partially-relieved fine (both still payable).
+  // Previously UNDER_REVIEW and every RESOLVED_* case matched neither
+  // list and vanished from this page altogether.
+  const OPEN_STATUSES = ["ARRESTED", "PAID", "DISPUTED", "UNDER_REVIEW", "RESOLVED_UPHELD", "RESOLVED_PARTIAL"];
+  const openCases = cases.filter((c) => OPEN_STATUSES.includes(c.status));
+  const closedCases = cases.filter((c) => !OPEN_STATUSES.includes(c.status));
 
   return (
     <div className="space-y-6">
@@ -72,17 +80,10 @@ export default async function EnforcementCasesPage() {
                     <span className={`badge font-bold ${STATUS_STYLES[c.status]}`}>{c.status}</span>
                   </td>
                   <td className="p-2.5">
-                    {c.photoPaths.length > 0 ? (
-                      <div className="flex gap-1 flex-wrap">
-                        {c.photoPaths.map((p) => (
-                          <a key={p} href={`${PUBLIC_BACKEND_URL}${p}`} target="_blank" className="text-county-blue hover:underline text-[10px]">
-                            Photo
-                          </a>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-black/30 text-[10px] italic">None</span>
-                    )}
+                    <EvidenceGallery
+                      photos={c.photoPaths}
+                      label={`${c.caseReference} — ${c.regNumber}`}
+                    />
                   </td>
                   {canDecide && (
                     <td className="p-2.5">

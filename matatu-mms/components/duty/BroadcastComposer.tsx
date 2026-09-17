@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Radio, Send, X } from "lucide-react";
 import { sendBroadcastAction } from "@/lib/actions";
 import { OfficerRoster, Sector, Zone } from "@/lib/types";
+import OfficerPicker from "./OfficerPicker";
 
 export interface BroadcastTarget {
   audience: "ALL" | "SECTOR" | "ZONE" | "OFFICER";
@@ -193,19 +194,7 @@ export default function BroadcastComposer({
       )}
 
       {audience === "OFFICER" && (
-        <div>
-          <label className="text-[11px] font-bold text-black/50 block mb-1">Officer</label>
-          <select value={officerId} onChange={(e) => setOfficerId(e.target.value)} className="input text-xs w-full">
-            <option value="">Select an officer…</option>
-            {officers.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.rank ? `${o.rank} ` : ""}
-                {o.name}
-                {o.manpowerNo ? ` (#${o.manpowerNo})` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
+        <OfficerPicker officers={officers} value={officerId} onChange={setOfficerId} />
       )}
 
       <div>
