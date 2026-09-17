@@ -2118,13 +2118,17 @@ Nothing here depends on anything else in this list — split across
 whoever has capacity rather than sequencing:
 
 - Bot/CAPTCHA protection on login, registration, password reset (Security
-  Checklist #12) — **backend done (2026-09-17)**: Cloudflare Turnstile
-  verification (`app/turnstile.py`) wired into all three endpoints,
-  inert (fails open, verification skipped) until `TURNSTILE_SECRET_KEY`
-  is set — no existing dev/test flow changes behavior. **Frontend not
-  done**: no Turnstile site key/account exists to render a real widget
-  against, so `TurnstileWidget.tsx` was not built — the backend hook is
-  ready for it once one exists.
+  Checklist #12) — **done (2026-09-17)**: Cloudflare Turnstile
+  verification (`app/turnstile.py`) wired into all three backend
+  endpoints, inert (fails open, verification skipped) until
+  `TURNSTILE_SECRET_KEY` is set. `TurnstileWidget.tsx` built and wired
+  into every actually-reachable auth form in both frontends (staff app:
+  login, forgot-password; public app: login, register) — it renders
+  nothing unless `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is set, so this is
+  zero behavior change until an account exists. **What I can't do for
+  you**: create a Cloudflare account and a Turnstile site to get the
+  actual keys — that's the one remaining step, and it's a five-minute
+  one once you have those two env vars.
 - File upload size limit + content-type/extension whitelist (Security
   Checklist #16, #27) — **done (2026-09-17)**: `app/storage.py`'s
   `save_upload()` now rejects anything over 10MB or outside
@@ -2240,19 +2244,64 @@ whoever has capacity rather than sequencing:
    first because it degrades the live product on *every deploy today*.
    Three independent roles converged on this (§16, §20, §28), including
    the Redis-backed fan-out design for the split-out gateway (§20, §28).
+   **Not attempted (2026-09-17)** — `SERVICE_EXTRACTION_READINESS.md`'s
+   own module-boundary audit already confirmed `telemetry.py` is
+   extraction-ready (narrow, already-isolated imports); what's left is
+   cutting a live, working, currently-load-bearing WebSocket subsystem
+   over to a second running process. That's a real regression risk to a
+   feature actively used by the demo (live map), it's explicitly gated in
+   that doc on "once a second service exists," and doing it as a side
+   effect of an unrelated "finish these items" request — without a plan
+   discussion first, on infrastructure I can't test a rollback against —
+   is exactly the kind of large, hard-to-reverse change worth pausing on
+   rather than forcing through. Say the word and I'll scope it properly.
 2. **A read replica for reporting** (Cross-Cutting Theme #2) — raised
    independently by six roles (§1, §3, §9, §19, §36, §39); unblocks the
    read-only DB browser (§Ops Centre Rebuild) and a BI tool connection
-   target (§39, §40).
+   target (§39, §40). **Self-hosted stack: done (2026-09-17)** —
+   `docker-compose.yml` now runs a real streaming-replication Postgres
+   replica (`postgres-replica`, via `postgres/replica-entrypoint.sh`'s
+   `pg_basebackup`), and `app/database.py`'s new `get_read_db()` routes
+   the read-heavy `/api/analytics/timeseries` endpoint to it, falling
+   back to the primary automatically when unconfigured — verified with
+   `docker compose config` (valid) and the full `test_backend.py` suite
+   (unaffected, since it runs on SQLite where this is a no-op); **not
+   live-tested end-to-end with real replication traffic** — Docker
+   Desktop would not finish starting in this sandbox, so run `docker
+   compose up postgres postgres-replica pgbouncer` yourself and confirm
+   before trusting it under load. **Render: still not done** — no
+   read-replica add-on on the free/standard tiers, a plan-upgrade
+   decision only you can make.
 3. **PgBouncer / connection pooling** (§9, §29) — before Kubernetes
    autoscaling multiplies backend pod count along with raw Postgres
-   connections.
+   connections. **Self-hosted stack: done (2026-09-17)** — a `pgbouncer`
+   service now sits in front of Postgres in `docker-compose.yml`
+   (transaction-pooling mode); the primary `DATABASE_URL` deliberately
+   still points at Postgres directly, not through it, since Alembic
+   migrations run on that same URL and DDL doesn't reliably survive
+   transaction pooling — point it at `pgbouncer:6432` instead once
+   connection-count pressure, not migrations, is the actual bottleneck.
+   Same Docker-Desktop caveat as item 2 above. **Render: still not
+   done** — same plan-tier gate as `DATA_LAYER_SCALING_STATUS.md` already
+   documented.
 4. **The telemetry ingest carve-out** (§16, mapped in
    `SERVICE_EXTRACTION_READINESS.md`) — sequenced after the WebSocket
-   gateway per §16/§20/§28's explicit ranking.
+   gateway per §16/§20/§28's explicit ranking. Not attempted, same
+   reasoning as item 1.
 5. **A Timescale-licensed Postgres** (self-hosted or Timescale Cloud),
    replacing Render's Apache build once telemetry volume justifies it
-   (§3).
+   (§3). **Self-hosted stack: done (2026-09-17)** — `docker-compose.yml`'s
+   `postgres` service now runs `timescale/timescaledb:latest-pg16`
+   instead of plain `postgres:16-alpine`; a drop-in image (same Postgres
+   underneath) with the extension actually present, so the existing
+   `enable_timescaledb` migration's hypertable conversion can now
+   actually succeed instead of silently no-op'ing. Not live-verified in
+   this sandbox (same Docker Desktop caveat) — check for "TimescaleDB
+   extension enabled successfully" in the logs per that migration's own
+   note. **Render: still not done** — its Postgres offering has no
+   Timescale extension; needs either a Timescale Cloud subscription or
+   self-hosting Postgres on Render's compute instead of its managed
+   product, a cost/ops decision I can't make for you.
 6. **Multi-replica-aware circuit breaker state** — **already done**
    (found during this session's Phase 2/3 pass, 2026-09-17; this item
    predates `app/ops_breakers.py`, which resolves it). Breaker *state*
@@ -2278,9 +2327,24 @@ whoever has capacity rather than sequencing:
    wasn't running during this session) — confirm with `promtool check
    rules prometheus/slo-alerts.yml` before trusting it in an incident.
 9. **A disaster-recovery drill** rehearsing the runbooks against the
-   Postgres-expiry-shaped scenario, not just a read-through (§18); pair
-   with **chaos-testing the runbooks** against a deliberately broken
-   dependency (§30).
+   Postgres-expiry-shaped scenario, not just a read-through (§18) —
+   **not done**: this specifically means rehearsing against production
+   (or a production-shaped staging environment), which this session has
+   no access to provision or safely experiment against. **Chaos-testing
+   the runbooks against a deliberately broken dependency (§30) — done
+   in part (2026-09-17)**: ran a real backend instance against a Redis
+   made deliberately unreachable (a throwaway instance pointed at a
+   closed port, not the shared dev Redis service — chose not to stop
+   that service since other work on this machine may depend on it) and
+   confirmed every fail-open claim in `RUNBOOKS.md`'s Redis row actually
+   holds under a live outage: login, a read, and issuing a fine (ledger +
+   durable event + real-time publish) all completed correctly instead of
+   500ing. Found two fail-open paths (login throttle, session revocation)
+   that worked correctly but weren't in the fallback matrix before —
+   added them. Not done: the Postgres-outage and NairobiPay-outage
+   scenarios, and anything at production scale/topology (multi-replica,
+   real network partitions) — this was one dependency, one process,
+   local.
 10. **A documented incident-response runbook** — **done (2026-09-17)**:
     `RUNBOOKS.md` now has dedicated sections for the PII-leak and
     proxy-IP-misattribution failure patterns, synthesized from the actual

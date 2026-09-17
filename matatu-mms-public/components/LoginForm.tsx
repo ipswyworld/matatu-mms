@@ -5,6 +5,7 @@ import { LogIn, Loader2 } from "lucide-react";
 import { loginAction } from "@/lib/actions";
 import { useLanguage } from "@/components/LanguageProvider";
 import PasswordInput from "@/components/PasswordInput";
+import TurnstileWidget from "@/components/TurnstileWidget";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -70,6 +71,8 @@ export default function LoginForm({ tagline }: LoginFormProps) {
           <input type="checkbox" name="rememberMe" className="h-4 w-4 rounded border-black/20 text-county-green focus:ring-county-green/40" />
           {t("login.rememberMe")}
         </label>
+
+        <TurnstileWidget />
 
         {state?.error && (
           <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold">

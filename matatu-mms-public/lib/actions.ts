@@ -89,12 +89,16 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
   const rememberMe = formData.get("rememberMe") === "on";
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, remember_me: rememberMe }),
+      body: JSON.stringify({
+        email, password, remember_me: rememberMe,
+        turnstile_token: turnstileToken ? String(turnstileToken) : undefined,
+      }),
       cache: "no-store",
     });
 
@@ -176,6 +180,7 @@ export async function registerAction(_prevState: { error?: string; pendingGuardi
   const guardianPhone = String(formData.get("guardianPhone") || "").trim() || undefined;
   const guardianRelationship = String(formData.get("guardianRelationship") || "").trim() || undefined;
   const guardianIdNumber = String(formData.get("guardianIdNumber") || "").trim() || undefined;
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   if (role === "PASSENGER" && !phone) {
     return { error: "A phone number is required to register." };
@@ -202,6 +207,7 @@ export async function registerAction(_prevState: { error?: string; pendingGuardi
         guardianPhone,
         guardianRelationship,
         guardianIdNumber,
+        turnstileToken: turnstileToken ? String(turnstileToken) : undefined,
       }),
       cache: "no-store",
     });
@@ -1202,12 +1208,13 @@ export async function forgotPasswordAction(
 ): Promise<{ message?: string; error?: string }> {
   const email = String(formData.get("email") || "").trim();
   if (!email) return { error: "Enter your account email." };
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, turnstileToken: turnstileToken ? String(turnstileToken) : undefined }),
       cache: "no-store",
     });
     const data = await res.json();

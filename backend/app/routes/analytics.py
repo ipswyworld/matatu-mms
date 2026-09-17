@@ -23,7 +23,7 @@ from sqlalchemy import func, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.database import get_db, IS_SQLITE
+from app.database import get_read_db, IS_SQLITE
 from app.models import Fine, Booking, Matatu, Trip, User
 from app.schemas import TimeseriesResponse, TimeseriesPoint
 from app.auth import requires_permission
@@ -67,7 +67,12 @@ async def get_timeseries(
     days: int = Query(30, ge=1, le=730, description="Lookback window in days from today."),
     grouping: str = Query("day", description="day | week | month"),
     current_user: User = Depends(requires_permission("view_dashboard")),
-    db: AsyncSession = Depends(get_db),
+    # This is exactly the read-heavy, staleness-tolerant reporting query
+    # DATA_LAYER_SCALING_STATUS.md's read-replica plan names — pointed at
+    # the replica (get_read_db, app/database.py) so chart traffic never
+    # contends with the primary's write path; falls back to the primary
+    # automatically wherever no replica is configured.
+    db: AsyncSession = Depends(get_read_db),
 ):
     if metric not in METRICS:
         raise HTTPException(status_code=400, detail=f"Unknown metric. Choose one of: {', '.join(METRICS)}")

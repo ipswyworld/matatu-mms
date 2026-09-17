@@ -10,6 +10,7 @@ import { registerAction } from "@/lib/actions";
 import AuthSkyline from "@/components/AuthSkyline";
 import PublicFooter from "@/components/PublicFooter";
 import PasswordInput from "@/components/PasswordInput";
+import TurnstileWidget from "@/components/TurnstileWidget";
 
 // Passenger self-registration only. Crew accounts are issued by the
 // operator when they onboard a vehicle (see the Sacco Operator dashboard's
@@ -239,6 +240,8 @@ function RegisterFormBody({
             )}
           </div>
         </div>
+
+        <TurnstileWidget />
 
         <button type="submit" disabled={!canSubmit} className="btn-primary w-full !py-3 text-base flex items-center justify-center gap-2">
           <UserPlus size={16} strokeWidth={2} />

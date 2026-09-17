@@ -12,7 +12,20 @@ services:
       # Real Postgres by default now — SQLite (single-writer, file-locked)
       # can't carry real concurrent traffic. Override only for a throwaway
       # local run with no docker-compose Postgres available.
+      #
+      # Points at Postgres directly, not through the pgbouncer service
+      # below, deliberately: Alembic migrations run against this same
+      # DATABASE_URL, and DDL/session-level features don't reliably survive
+      # PgBouncer's transaction-pooling mode. Point this at
+      # postgresql+asyncpg://matatu:<pw>@pgbouncer:6432/matatu_mms instead
+      # once connection-count pressure (not migrations) is the actual
+      # bottleneck — an operational switch, not the default.
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms}
+      # Analytics/dashboard reads go to the streaming replica instead of
+      # the primary writer (DATA_LAYER_SCALING_STATUS.md's read-replica
+      # plan) — app/database.py falls back to the primary automatically
+      # if this is ever unset.
+      DATABASE_URL_READONLY: ${DATABASE_URL_READONLY:-postgresql+asyncpg://matatu:${POSTGRES_PASSWORD:-changeme}@postgres-replica:5432/matatu_mms}
       # Real-time backbone (GPS telemetry, dashboard live-refresh, per-user
       # notifications) — every backend instance publishes/subscribes here
       # instead of only fanning out to its own in-memory websocket list.
@@ -46,19 +59,106 @@ services:
     networks: [internal]
 
   postgres:
-    image: postgres:16-alpine
+    # DATA_LAYER_SCALING_STATUS.md: the `enable_timescaledb` migration
+    # already tries to convert vehicle_positions into a hypertable and
+    # falls back gracefully if the extension isn't available — on plain
+    # postgres:16-alpine it never IS available, so that fallback is all
+    # that ever ran here. timescale/timescaledb is a drop-in, self-hostable
+    # Postgres image (same wire protocol, same postgres:16 underneath)
+    # with the extension actually present, so the existing migration now
+    # does real work instead of silently no-op'ing. This closes the
+    # self-hosted half of Phase 3 item 5 — Render's own Postgres is a
+    # separate, still-open decision (its free/standard tiers are an
+    # Apache-licensed build with no TimescaleDB extension available;
+    # moving Render itself onto Timescale means either a Timescale Cloud
+    # subscription or self-hosting Postgres on Render's own compute
+    # instead of its managed Postgres product — a real cost/ops decision,
+    # not something this file can decide on your behalf).
+    image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: matatu
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: matatu_mms
+      # Consumed by postgres/init-replication.sh (docker-entrypoint-initdb.d
+      # runs once, on an empty data dir) to create the replication role the
+      # postgres-replica service authenticates as.
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-changeme_replica}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=5"
+      - "-c"
+      - "wal_keep_size=512MB"
+      - "-c"
+      - "hot_standby=on"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U matatu -d matatu_mms"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [internal]
+
+  # Connection pooler (DATA_LAYER_SCALING_STATUS.md's option 2: "a
+  # separate PgBouncer service... in front of the database"). Transaction
+  # pooling mode is a transparent proxy from the app's point of view per
+  # that doc — app/database.py needs no change, only DATABASE_URL pointed
+  # at pgbouncer:6432 instead of postgres:5432 directly (see backend's
+  # DATABASE_URL_POOLED below). Closes the self-hosted half of Phase 3
+  # item 3; Render's own Postgres still needs its plan upgraded for the
+  # same capability there, or this same PgBouncer pattern run as its own
+  # Render service in front of Render's Postgres.
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      AUTH_TYPE: scram-sha-256
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U matatu"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  # Streaming read replica (DATA_LAYER_SCALING_STATUS.md's read-replica
+  # plan: "point analytics/monitoring-centre dashboard queries at the
+  # replica's connection string via a second DATABASE_URL-style env var,
+  # leaving the primary writer connection untouched"). Real Postgres
+  # streaming replication, not a mock — `postgres-replica/entrypoint.sh`
+  # runs `pg_basebackup` against the primary once at first start, then
+  # starts in standby mode. Closes the self-hosted half of Phase 3 item 2;
+  # Render's free/standard Postgres tiers have no read-replica add-on, so
+  # that side is still a paid-plan decision.
+  postgres-replica:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      PGUSER: matatu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PRIMARY_HOST: postgres
+      PRIMARY_PORT: 5432
+      PRIMARY_USER: replicator
+      REPLICATOR_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-changeme_replica}
+    entrypoint: ["/bin/bash", "/scripts/entrypoint.sh"]
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres/replica-entrypoint.sh:/scripts/entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [internal]
 
   redis:
@@ -196,6 +296,7 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/slo-alerts.yml:/etc/prometheus/slo-alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -259,6 +360,7 @@ volumes:
   backend_data:
   backend_uploads:
   postgres_data:
+  postgres_replica_data:
   redis_data:
   nginx_logs:
   certbot_webroot:

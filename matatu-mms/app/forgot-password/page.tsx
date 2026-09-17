@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Send, Loader2 } from "lucide-react";
 import { forgotPasswordAction } from "@/lib/actions";
 import PublicFooter from "@/components/PublicFooter";
+import TurnstileWidget from "@/components/TurnstileWidget";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -43,6 +44,7 @@ export default function ForgotPasswordPage() {
                   <label className="label" htmlFor="email">Email</label>
                   <input className="input" id="email" name="email" type="email" placeholder="you@nairobi.go.ke" required />
                 </div>
+                <TurnstileWidget />
                 {state?.error && (
                   <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold">
                     {state.error}

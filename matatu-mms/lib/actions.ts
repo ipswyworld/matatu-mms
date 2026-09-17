@@ -105,12 +105,20 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
   const rememberMe = formData.get("rememberMe") === "on";
+  // Present only when TurnstileWidget actually rendered a widget (a site
+  // key is configured) and the visitor completed it — the Cloudflare
+  // script injects this field into the form itself. Absent otherwise,
+  // which the backend already treats as "not configured, allow through."
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, remember_me: rememberMe }),
+      body: JSON.stringify({
+        email, password, remember_me: rememberMe,
+        turnstile_token: turnstileToken ? String(turnstileToken) : undefined,
+      }),
       cache: "no-store",
     });
 
@@ -312,6 +320,7 @@ export async function registerAction(_prevState: { error?: string } | undefined,
   const role = String(formData.get("role") || "PASSENGER") as Role;
   const saccoId = String(formData.get("saccoId") || "").trim() || undefined;
   const signature = String(formData.get("signature") || "").trim();
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
@@ -325,6 +334,7 @@ export async function registerAction(_prevState: { error?: string } | undefined,
         saccoId,
         termsAccepted: true,
         termsSignature: signature,
+        turnstileToken: turnstileToken ? String(turnstileToken) : undefined,
       }),
       cache: "no-store",
     });
@@ -1434,12 +1444,13 @@ export async function forgotPasswordAction(
 ): Promise<{ message?: string; error?: string }> {
   const email = String(formData.get("email") || "").trim();
   if (!email) return { error: "Enter your account email." };
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, turnstileToken: turnstileToken ? String(turnstileToken) : undefined }),
       cache: "no-store",
     });
     const data = await res.json();

@@ -25,6 +25,18 @@ if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+
+# Optional read-replica connection (DATA_LAYER_SCALING_STATUS.md's
+# read-replica plan) — unset by default, so every deployment without one
+# configured (which is every deployment today except the self-hosted
+# docker-compose stack's postgres-replica service) behaves exactly as
+# before. Same driver-suffix normalization as the primary URL above.
+DATABASE_URL_READONLY = secrets_provider.get("DATABASE_URL_READONLY", "")
+if DATABASE_URL_READONLY.startswith("postgresql://"):
+    DATABASE_URL_READONLY = DATABASE_URL_READONLY.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL_READONLY.startswith("postgres://"):
+    DATABASE_URL_READONLY = DATABASE_URL_READONLY.replace("postgres://", "postgresql+asyncpg://", 1)
+
 REDIS_URL = secrets_provider.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 # Recorded before the auto-generated fallbacks below overwrite these — the
