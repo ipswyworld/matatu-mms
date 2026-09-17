@@ -127,6 +127,11 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "review_report",
         "view_users",
         "record_crime",
+        # Any officer can file a case — the county's own instruction was
+        # "any officer can be an arresting officer", not just accounts
+        # literally named ARRESTING_OFFICER.
+        "file_enforcement_case",
+        "view_enforcement_cases",
     ],
     "ARRESTING_OFFICER": [
         "view_dashboard",
@@ -164,6 +169,8 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_users",
         "view_reports",
         "review_report",
+        # Scoped user-creation: lets a commander bring on a new officer
+        "add_officer",
     ],
     "SACCO_OPERATOR": [
         "view_dashboard",
@@ -276,4 +283,9 @@ def user_permissions(user) -> set:
 
 
 def has_permission(user, action: str) -> bool:
+    # Release eligibility is also grantable per officer (User.can_release_cases)
+    # on top of the roles that already carry decide_enforcement_case — the
+    # county assigns this by trust in the individual, not by account type.
+    if action == "decide_enforcement_case" and getattr(user, "can_release_cases", False):
+        return True
     return action in user_permissions(user)

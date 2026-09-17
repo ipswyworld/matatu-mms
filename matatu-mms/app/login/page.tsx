@@ -14,13 +14,13 @@ const PUBLIC_APP_URL = process.env.NEXT_PUBLIC_PUBLIC_APP_URL || "http://localho
 
 const STAFF_DEMO_ACCOUNTS = [
   { role: "Admin", email: "admin@nairobi.go.ke", password: "admin123" },
-  { role: "Enforcement Officer", email: "enforcement@nairobi.go.ke", password: "enforce123" },
+  { role: "Enforcement Officer (fines & crime records)", email: "enforcement@nairobi.go.ke", password: "enforce123" },
   { role: "Viewer / Executive", email: "viewer@nairobi.go.ke", password: "viewer123" },
   { role: "Director of Mobility", email: "director.mobility@nairobi.go.ke", password: "director123" },
   { role: "Chief Officer", email: "chiefofficer@nairobi.go.ke", password: "chief123" },
   { role: "Enforcement Commander", email: "commander@nairobi.go.ke", password: "commander123" },
-  { role: "Arresting Officer", email: "arresting.officer@nairobi.go.ke", password: "arrest123" },
-  { role: "Releasing Officer", email: "releasing.officer@nairobi.go.ke", password: "release123" },
+  { role: "Arresting Officer (files a case)", email: "arresting.officer@nairobi.go.ke", password: "arrest123" },
+  { role: "Releasing Officer (decides a case)", email: "releasing.officer@nairobi.go.ke", password: "release123" },
 ];
 
 // Staff-only entry point — Admin, Enforcement (all sub-roles), Director of

@@ -39,7 +39,7 @@ export default function LoginForm({ tagline }: LoginFormProps) {
       <form action={formAction} className="space-y-4">
         <div>
           <label className="label" htmlFor="email">{t("login.email")}</label>
-          <input className="input" id="email" name="email" type="email" placeholder="you@nairobi.go.ke" required />
+          <input className="input" id="email" name="email" type="text" autoComplete="username" placeholder="you@nairobi.go.ke or 74786" required />
         </div>
         <div>
           <div className="flex items-center justify-between gap-3 flex-wrap">

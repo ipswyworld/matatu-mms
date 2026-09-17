@@ -5,6 +5,7 @@ import { Check, Pencil, X } from "lucide-react";
 import { updateOfficerDutyStatusAction, updateOfficerServiceRecordAction } from "@/lib/actions";
 import { DutyStatus, OfficerRoster } from "@/lib/types";
 import DutyStatusPill from "./DutyStatusPill";
+import AddOfficerForm from "./AddOfficerForm";
 
 const DUTY_STATUSES: DutyStatus[] = ["ON_DUTY", "OFF_DUTY", "LEAVE", "SICK", "SUSPENDED", "TRAINING"];
 // As printed on the county sheet. Free text on the backend deliberately —
@@ -39,6 +40,12 @@ export default function OfficerRosterTable({
         </div>
       </div>
 
+      {canEdit && (
+        <div className="mb-4">
+          <AddOfficerForm />
+        </div>
+      )}
+
       {officers.length === 0 ? (
         <p className="text-xs text-black/40 italic">No officers match this filter.</p>
       ) : (
@@ -52,6 +59,7 @@ export default function OfficerRosterTable({
                 <th className="pb-2 pr-3">Work station</th>
                 <th className="pb-2 pr-3">Shift</th>
                 <th className="pb-2 pr-3">Status</th>
+                <th className="pb-2 pr-3">Release</th>
                 {canEdit && <th className="pb-2 w-8" />}
               </tr>
             </thead>
@@ -72,6 +80,7 @@ function OfficerRow({ officer, canEdit }: { officer: OfficerRoster; canEdit: boo
   const [rank, setRank] = useState(officer.rank || "");
   const [manpowerNo, setManpowerNo] = useState(officer.manpowerNo || "");
   const [gender, setGender] = useState(officer.gender || "");
+  const [canRelease, setCanRelease] = useState(officer.canReleaseCases);
   const [status, setStatus] = useState<DutyStatus>(officer.dutyStatus);
   const [until, setUntil] = useState(officer.dutyStatusUntil || "");
   const [note, setNote] = useState(officer.dutyStatusNote || "");
@@ -88,6 +97,7 @@ function OfficerRow({ officer, canEdit }: { officer: OfficerRoster; canEdit: boo
         manpowerNo: manpowerNo.trim() || null,
         rank: rank.trim() || null,
         gender: gender || null,
+        canReleaseCases: canRelease,
       });
       if (service.error) {
         setError(service.error);
@@ -168,6 +178,16 @@ function OfficerRow({ officer, canEdit }: { officer: OfficerRoster; canEdit: boo
           )}
           {error && <p className="text-[10px] font-semibold text-county-red mt-1 max-w-[12rem]">{error}</p>}
         </td>
+        <td className="py-2 pr-3 align-top">
+          <label className="flex items-center gap-1.5 text-[10px] font-semibold text-black/60">
+            <input
+              type="checkbox"
+              checked={canRelease}
+              onChange={(e) => setCanRelease(e.target.checked)}
+            />
+            Can release
+          </label>
+        </td>
         <td className="py-2 align-top">
           <div className="flex flex-col gap-1">
             <button
@@ -220,6 +240,13 @@ function OfficerRow({ officer, canEdit }: { officer: OfficerRoster; canEdit: boo
           <span className="block text-[10px] text-black/40 mt-0.5">
             until {officer.dutyStatusUntil}
           </span>
+        )}
+      </td>
+      <td className="py-2 pr-3">
+        {officer.canReleaseCases ? (
+          <span className="badge bg-county-green/10 text-county-green text-[9px] font-extrabold">Yes</span>
+        ) : (
+          <span className="text-[11px] text-black/30">—</span>
         )}
       </td>
       {canEdit && (

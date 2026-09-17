@@ -1045,6 +1045,7 @@ class OfficerServiceUpdate(BaseModelCamel):
     manpower_no: Optional[str] = None
     rank: Optional[str] = None
     gender: Optional[str] = None
+    can_release_cases: Optional[bool] = None
 
 class OfficerRosterResponse(BaseModelCamel):
     """One officer as the roster shows them — service record, current duty
@@ -1063,6 +1064,7 @@ class OfficerRosterResponse(BaseModelCamel):
     duty_status_note: Optional[str] = None
     enforcement_duty: Optional[str] = None
     commander_title: Optional[str] = None
+    can_release_cases: bool = False
     is_active: bool = True
     # Present only when the roster was queried within an allocation.
     assignment_id: Optional[str] = None

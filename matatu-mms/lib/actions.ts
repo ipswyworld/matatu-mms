@@ -783,9 +783,50 @@ export async function updateOfficerDutyStatusAction(
   return {};
 }
 
+/**
+ * Easy officer intake for a commander, filling in from the paper sheet —
+ * not the generic admin "create user" form, which asks for things (a
+ * chosen password, an email) a commander copying a manpower number off a
+ * sheet does not have and should not have to invent. The temp password is
+ * generated here, server-side, and handed back once so it can be given to
+ * the officer; only its hash is ever stored.
+ */
+export async function createOfficerAction(input: {
+  name: string;
+  role: string;
+  manpowerNo: string;
+  rank?: string;
+  phone?: string;
+  email?: string;
+}): Promise<{ error?: string; tempPassword?: string }> {
+  const crypto = await import("crypto");
+  const tempPassword = crypto.randomBytes(6).toString("base64url");
+
+  try {
+    const created = await apiWrite<{ id: string }>("/api/users", "POST", {
+      name: input.name.trim(),
+      role: input.role,
+      phone: input.phone?.trim() || null,
+      email: input.email?.trim() || null,
+      password: tempPassword,
+    });
+    const service = await updateOfficerServiceRecordAction(created.id, {
+      manpowerNo: input.manpowerNo.trim(),
+      rank: input.rank?.trim() || null,
+    });
+    if (service.error) {
+      return { error: service.error };
+    }
+  } catch (err: any) {
+    return { error: err.message || "Could not add the officer." };
+  }
+  revalidatePath("/enforcement");
+  return { tempPassword };
+}
+
 export async function updateOfficerServiceRecordAction(
   officerId: string,
-  input: { manpowerNo?: string | null; rank?: string | null; gender?: string | null }
+  input: { manpowerNo?: string | null; rank?: string | null; gender?: string | null; canReleaseCases?: boolean }
 ): Promise<{ error?: string }> {
   try {
     await apiWrite(`/api/duty/officers/${officerId}/service`, "PATCH", input);

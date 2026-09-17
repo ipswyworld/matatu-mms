@@ -1009,6 +1009,7 @@ async def list_officers(
                 duty_status_note=o.duty_status_note,
                 enforcement_duty=o.enforcement_duty,
                 commander_title=o.commander_title,
+                can_release_cases=o.can_release_cases,
                 is_active=o.is_active,
                 assignment_id=a.id if a else None,
                 sector_id=a.sector_id if a else None,
@@ -1072,6 +1073,7 @@ async def set_officer_duty_status(
         duty_status=officer.duty_status, duty_status_from=officer.duty_status_from,
         duty_status_until=officer.duty_status_until, duty_status_note=officer.duty_status_note,
         enforcement_duty=officer.enforcement_duty, commander_title=officer.commander_title,
+        can_release_cases=officer.can_release_cases,
         is_active=officer.is_active,
     )
 
@@ -1102,18 +1104,23 @@ async def set_officer_service_record(
     if payload.gender and payload.gender.upper() not in ("M", "F"):
         raise HTTPException(status_code=400, detail="gender must be M, F, or empty.")
 
-    old = {"manpowerNo": officer.manpower_no, "rank": officer.rank}
+    old = {"manpowerNo": officer.manpower_no, "rank": officer.rank, "canReleaseCases": officer.can_release_cases}
     if payload.manpower_no is not None:
         officer.manpower_no = payload.manpower_no.strip() or None
     if payload.rank is not None:
         officer.rank = payload.rank.strip() or None
     if payload.gender is not None:
         officer.gender = payload.gender.upper() or None
+    if payload.can_release_cases is not None:
+        officer.can_release_cases = payload.can_release_cases
 
     stage_audit_log(
         db, resource_type="officer_service_record", resource_id=officer.id, action="UPDATE",
         user_id=current_user.id, old_values=old,
-        new_values={"manpowerNo": officer.manpower_no, "rank": officer.rank, "gender": officer.gender},
+        new_values={
+            "manpowerNo": officer.manpower_no, "rank": officer.rank, "gender": officer.gender,
+            "canReleaseCases": officer.can_release_cases,
+        },
     )
     await db.commit()
     await db.refresh(officer)
@@ -1124,6 +1131,7 @@ async def set_officer_service_record(
         duty_status=officer.duty_status or "ON_DUTY", duty_status_from=officer.duty_status_from,
         duty_status_until=officer.duty_status_until, duty_status_note=officer.duty_status_note,
         enforcement_duty=officer.enforcement_duty, commander_title=officer.commander_title,
+        can_release_cases=officer.can_release_cases,
         is_active=officer.is_active,
     )
 

@@ -126,6 +126,13 @@ class User(Base):
     # on that split, so it is operational data here, not demographic
     # decoration. Nullable: never inferred, only recorded when known.
     gender = Column(String, nullable=True)  # M, F, or null
+    # Release eligibility is granted per officer, not implied by account
+    # type: any enforcement officer can file a case, but only specific,
+    # individually-trusted officers may release one. Defaults False so
+    # existing RELEASING_OFFICER/ENFORCEMENT_COMMANDER accounts (already
+    # gated by role) are unaffected; this is an additional grant on top of
+    # those roles, not a replacement for them.
+    can_release_cases = Column(Boolean, nullable=False, default=False)
 
     # Self-service password reset — token is single-use and time-boxed;
     # cleared after a successful reset or once expired.

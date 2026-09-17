@@ -211,6 +211,10 @@ async def login(request: Request, response: Response, credentials: UserLogin, db
                 User.email == identifier.lower(),
                 User.phone == identifier,
                 User.crew_number == identifier.upper(),
+                # Officer number as printed on the county's allocation
+                # sheet — the identifier officers actually recognize
+                # themselves by, not an email they may not use daily.
+                User.manpower_no == identifier,
             )
         )
     )

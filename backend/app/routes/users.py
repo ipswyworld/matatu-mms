@@ -17,7 +17,7 @@ from app.schemas import (
 )
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
-from app.rbac import ADMIN_TIER_ROLES, has_permission, ALL_ACTIONS, ALL_ROLES
+from app.rbac import ADMIN_TIER_ROLES, has_permission, ALL_ACTIONS, ALL_ROLES, ENFORCEMENT_ROLES
 from app.abac import sacco_scope_query
 from app.realtime import get_redis
 
@@ -139,15 +139,40 @@ async def get_users(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     payload: UserCreate,
-    current_user: User = Depends(requires_permission("manage_users")),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    # Two doors into the same endpoint: full manage_users (any role) or the
+    # narrower add_officer grant an ENFORCEMENT_COMMANDER holds — a
+    # commander bringing on a new officer from the paper sheet, not a
+    # general admin provisioning any account type.
+    can_manage_users = has_permission(current_user, "manage_users")
+    can_add_officer = has_permission(current_user, "add_officer")
+    if not (can_manage_users or can_add_officer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to perform this action: manage_users",
+        )
+
     target_role = payload.role.upper().strip()
+    if not can_manage_users:
+        # add_officer alone cannot be used to mint any other account type,
+        # even by editing the request body — enforced server-side.
+        if target_role not in ENFORCEMENT_ROLES:
+            raise HTTPException(status_code=403, detail="You can only add officers to an enforcement role.")
     if target_role in ADMIN_TIER_ROLES and not has_permission(current_user, "manage_admins"):
         raise HTTPException(status_code=403, detail="Only a Super Admin can create an Admin or Super Admin account")
 
+    user_id = f"u-{uuid.uuid4().hex[:8]}"
+
+    # An officer brought in from the sheet often has no email on file yet —
+    # same placeholder pattern as phone-only self-registration
+    # (routes/auth.py's register()), so User.email's NOT NULL/unique
+    # constraint never sees the gap.
+    email = payload.email.lower().strip() if payload.email else f"{user_id}@officer.matatu-mms.internal"
+
     # Verify email uniqueness
-    existing_result = await db.execute(select(User).where(User.email == payload.email.lower().strip()))
+    existing_result = await db.execute(select(User).where(User.email == email))
     if existing_result.scalars().first():
         raise HTTPException(status_code=400, detail="User email already exists")
 
@@ -159,12 +184,11 @@ async def create_user(
         if not sacco_result.scalars().first():
             raise HTTPException(status_code=400, detail="Invalid Sacco ID")
 
-    user_id = f"u-{uuid.uuid4().hex[:8]}"
-
     new_user = User(
         id=user_id,
         name=payload.name.strip(),
-        email=payload.email.lower().strip(),
+        email=email,
+        phone=payload.phone.strip() if payload.phone else None,
         password=await get_password_hash(payload.password),
         role=payload.role.upper().strip(),
         sacco_id=payload.sacco_id if payload.role == "SACCO_OPERATOR" else None

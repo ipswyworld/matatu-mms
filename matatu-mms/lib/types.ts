@@ -97,6 +97,7 @@ export interface OfficerRoster {
   dutyStatusNote?: string | null;
   enforcementDuty?: string | null;
   commanderTitle?: string | null;
+  canReleaseCases: boolean;
   isActive: boolean;
   // Populated only when the roster was queried within an allocation.
   assignmentId?: string | null;
