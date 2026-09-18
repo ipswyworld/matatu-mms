@@ -1233,6 +1233,32 @@ class BroadcastRecipient(Base):
     )
 
 
+class Notification(Base):
+    """The durable half of notify_user() (app/routes/notifications.py).
+
+    That function was, until now, a pure live nudge — if the recipient's
+    browser wasn't open, the notification was simply gone, with nothing
+    to show on the next page load and no way to compute a real unread
+    count. This table is what notify_user() now writes to before (or
+    regardless of) the best-effort Redis publish, so "what did I miss
+    while I was away" has an actual answer. Deliberately much simpler
+    than Broadcast/BroadcastRecipient: this is always exactly one
+    recipient (name-addressed, per notify_user's own contract), so there
+    is no separate audience-resolution row to get right.
+    """
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    level = Column(String, nullable=False, default="info")  # info, success, error
+    created_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
 class OffenceType(Base):
     __tablename__ = "offence_types"
 

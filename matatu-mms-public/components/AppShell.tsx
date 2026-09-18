@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Role } from "@/lib/types";
+import { NotificationHistory, Role } from "@/lib/types";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 
@@ -16,12 +16,14 @@ export default function AppShell({
   name,
   token,
   actionNeeded,
+  notificationHistory,
   children,
 }: {
   role: Role;
   name: string;
   token?: string;
   actionNeeded?: ActionNeeded;
+  notificationHistory?: NotificationHistory;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -35,6 +37,7 @@ export default function AppShell({
           role={role}
           token={token}
           actionNeeded={actionNeeded}
+          notificationHistory={notificationHistory}
           onMenuClick={() => setMobileOpen(true)}
         />
         <main className="p-4 md:p-6">{children}</main>

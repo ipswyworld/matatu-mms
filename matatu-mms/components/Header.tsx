@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { ROLE_LABELS } from "@/lib/rbac";
-import { Role } from "@/lib/types";
+import { NotificationHistory, Role } from "@/lib/types";
 import NotificationBell from "./NotificationBell";
 import LanguageToggle from "./LanguageToggle";
 import { useLanguage } from "./LanguageProvider";
@@ -35,12 +35,14 @@ export default function Header({
   role,
   token,
   actionNeeded,
+  notificationHistory,
   onMenuClick,
 }: {
   name: string;
   role: Role;
   token?: string;
   actionNeeded?: ActionNeeded;
+  notificationHistory?: NotificationHistory;
   onMenuClick?: () => void;
 }) {
   const pathname = usePathname();
@@ -71,7 +73,14 @@ export default function Header({
 
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
         <LanguageToggle />
-        {token && <NotificationBell token={token} actionNeeded={actionNeeded} />}
+        {token && (
+          <NotificationBell
+            token={token}
+            actionNeeded={actionNeeded}
+            initialItems={notificationHistory?.items || []}
+            initialUnreadCount={notificationHistory?.unreadCount || 0}
+          />
+        )}
         <div className="text-right leading-tight hidden sm:block">
           <div className="text-sm font-bold text-county-ink">{name}</div>
           <div className="text-[10px] font-bold text-county-green tracking-[0.1em] uppercase mt-0.5">

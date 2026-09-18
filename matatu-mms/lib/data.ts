@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -283,6 +283,14 @@ export async function getMyBroadcasts(unreadOnly = false): Promise<Broadcast[]> 
     return await apiFetch<Broadcast[]>(`/api/broadcasts/mine${unreadOnly ? "?unread_only=true" : ""}`);
   } catch {
     return [];
+  }
+}
+
+export async function getNotificationHistory(): Promise<NotificationHistory> {
+  try {
+    return await apiFetch<NotificationHistory>("/api/notifications");
+  } catch {
+    return { items: [], unreadCount: 0 };
   }
 }
 

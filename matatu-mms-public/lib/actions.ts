@@ -57,6 +57,15 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
 // logged in. Called proactively by NotificationBell before its token
 // would expire, and safe to call after it already has (the backend
 // tolerates a recently-expired token here, not just a valid one).
+export async function markNotificationsReadAction(): Promise<{ error?: string; unreadCount?: number }> {
+  try {
+    const result = await apiWrite<{ unreadCount: number }>("/api/notifications/read", "POST");
+    return { unreadCount: result.unreadCount };
+  } catch (err: any) {
+    return { error: err.message || "Could not mark notifications read." };
+  }
+}
+
 export async function refreshSessionAction(): Promise<{ accessToken?: string; error?: string }> {
   const session = readSession();
   if (!session?.token) return { error: "No session to refresh." };

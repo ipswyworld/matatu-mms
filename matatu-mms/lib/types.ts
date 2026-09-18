@@ -201,6 +201,20 @@ export interface Broadcast {
   readAt?: string | null;
 }
 
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  level: "info" | "success" | "error";
+  createdAt: string;
+  readAt?: string | null;
+}
+
+export interface NotificationHistory {
+  items: AppNotification[];
+  unreadCount: number;
+}
+
 export interface Beat {
   id: string;
   name: string;

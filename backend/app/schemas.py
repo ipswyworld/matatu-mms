@@ -1217,3 +1217,21 @@ class BroadcastResponse(BaseModelCamel):
     read_count: int = 0
     # Only meaningful on an officer's own feed.
     read_at: Optional[datetime.datetime] = None
+
+
+class NotificationResponse(BaseModelCamel):
+    id: str
+    title: str
+    message: str
+    level: str
+    created_at: datetime.datetime
+    read_at: Optional[datetime.datetime] = None
+
+
+class NotificationHistoryResponse(BaseModelCamel):
+    """One roundtrip on page load: the recent list plus the unread count,
+    rather than making every page compute the count from the list itself
+    (a list capped at N items can't tell you the true unread count once
+    the number of unread notifications exceeds N)."""
+    items: List[NotificationResponse]
+    unread_count: int

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { refreshSessionAction } from "@/lib/actions";
+import { refreshSessionAction, markNotificationsReadAction } from "@/lib/actions";
+import { AppNotification } from "@/lib/types";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
 
@@ -11,13 +12,10 @@ const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
 // path below during normal use, not just recover from it after the fact.
 const TOKEN_REFRESH_INTERVAL_MS = 45 * 60 * 1000;
 
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  level: "info" | "success" | "error";
-  receivedAt: number;
-}
+// How many of the merged (history + live) items to actually render — the
+// server-side history fetch already caps at 50; this just keeps the
+// dropdown itself from growing unbounded within one long-lived session.
+const DISPLAY_LIMIT = 30;
 
 interface ActionNeeded {
   count: number;
@@ -29,10 +27,22 @@ interface ActionNeeded {
  * Per-user, real-time, name-addressed notifications — connects to this
  * user's own Redis-backed channel (see backend/app/routes/notifications.py),
  * so what arrives here is never visible to anyone else, and arrives the
- * same way regardless of which backend instance triggered it. `actionNeeded`
- * is a separate, pinned entry computed at page load (pending operator
- * approvals) rather than a live WS push, but lives in the same dropdown so
- * there's one place to check instead of a persistent banner on the dashboard.
+ * same way regardless of which backend instance triggered it.
+ *
+ * Two independent badges, not one summed number: `actionNeeded` (yellow,
+ * pending operator approvals — recomputed from real DB state on every
+ * page load, clears itself once the underlying thing is resolved) and
+ * unread notifications (red, sourced from `Notification.read_at` in the
+ * backend — persists across reconnects and reloads, and only actually
+ * clears when `/api/notifications/read` is called, not just by opening
+ * the dropdown and having the client forget). Folding both into one
+ * number used to mean a commander seeing "3" had no way to tell how many
+ * were approvals versus already-seen noise.
+ *
+ * History: `initialItems`/`initialUnreadCount` come from the server
+ * component that renders this (a real fetch against `/api/notifications`
+ * at page load), so a refresh no longer empties the list — only what
+ * arrived over the WebSocket used to survive here.
  *
  * Token lifecycle: the access token embedded in the session cookie expires
  * after 60 minutes, but the cookie itself lasts 8 hours (30 days with
@@ -44,12 +54,22 @@ interface ActionNeeded {
  * actually rejected for an expired one (code 4401), rather than retrying
  * the same known-bad token forever.
  */
-export default function NotificationBell({ token: initialToken, actionNeeded }: { token: string; actionNeeded?: ActionNeeded }) {
+export default function NotificationBell({
+  token: initialToken,
+  actionNeeded,
+  initialItems,
+  initialUnreadCount,
+}: {
+  token: string;
+  actionNeeded?: ActionNeeded;
+  initialItems: AppNotification[];
+  initialUnreadCount: number;
+}) {
   const [token, setToken] = useState(initialToken);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [toast, setToast] = useState<Notification | null>(null);
+  const [items, setItems] = useState<AppNotification[]>(initialItems);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [toast, setToast] = useState<AppNotification | null>(null);
   const [open, setOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -87,15 +107,16 @@ export default function NotificationBell({ token: initialToken, actionNeeded }: 
         try {
           const payload = JSON.parse(event.data);
           if (payload.type !== "NOTIFICATION") return;
-          const notif: Notification = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          const notif: AppNotification = {
+            id: payload.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             title: payload.title,
             message: payload.message,
             level: payload.level || "info",
-            receivedAt: Date.now(),
+            createdAt: payload.createdAt || new Date().toISOString(),
+            readAt: null,
           };
-          setNotifications((prev) => [notif, ...prev].slice(0, 20));
-          setUnread((n) => n + 1);
+          setItems((prev) => [notif, ...prev].slice(0, DISPLAY_LIMIT));
+          setUnreadCount((n) => n + 1);
           setToast(notif);
         } catch {
           // ignore malformed frames
@@ -140,28 +161,54 @@ export default function NotificationBell({ token: initialToken, actionNeeded }: 
     };
   }, [token]);
 
-  const levelDot: Record<Notification["level"], string> = {
+  const levelDot: Record<AppNotification["level"], string> = {
     info: "bg-county-blue",
     success: "bg-county-green",
     error: "bg-county-red",
   };
 
-  const badgeCount = unread + (actionNeeded?.count || 0);
+  const handleOpen = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && unreadCount > 0) {
+      const now = new Date().toISOString();
+      // Optimistic: reflect "read" immediately rather than waiting on the
+      // round trip, since this is exactly the kind of thing that should
+      // never visibly lag behind the click that caused it.
+      setItems((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: now })));
+      setUnreadCount(0);
+      markNotificationsReadAction().then((result) => {
+        // Reconcile with the server's real count in case something
+        // else (another tab, a live push that arrived mid-request)
+        // changed it — the optimistic 0 above is a UI convenience, not
+        // the source of truth.
+        if (typeof result.unreadCount === "number") setUnreadCount(result.unreadCount);
+      });
+    }
+  };
 
   return (
     <div className="relative">
       <button
-        onClick={() => {
-          setOpen((v) => !v);
-          setUnread(0);
-        }}
+        onClick={handleOpen}
         className="relative h-9 w-9 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center transition-colors"
         aria-label="Notifications"
       >
         <span className="text-base">🔔</span>
-        {badgeCount > 0 && (
-          <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-county-red text-white text-[9px] font-bold flex items-center justify-center">
-            {badgeCount > 9 ? "9+" : badgeCount}
+        {unreadCount > 0 && (
+          <span
+            className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-county-red text-white text-[9px] font-bold flex items-center justify-center"
+            title={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+        {actionNeeded && actionNeeded.count > 0 && (
+          <span
+            className="absolute -bottom-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-county-yellow text-yellow-900 text-[9px] font-bold flex items-center justify-center ring-1 ring-white"
+            title={`${actionNeeded.count} action${actionNeeded.count === 1 ? "" : "s"} needed`}
+          >
+            {actionNeeded.count > 9 ? "9+" : actionNeeded.count}
           </span>
         )}
       </button>
@@ -201,17 +248,17 @@ export default function NotificationBell({ token: initialToken, actionNeeded }: 
             </Link>
           )}
 
-          {notifications.length === 0 ? (
-            <div className="p-6 text-center text-xs text-black/40">Nothing yet — you'll see live updates here.</div>
+          {items.length === 0 ? (
+            <div className="p-6 text-center text-xs text-black/40">Nothing yet — you'll see updates here.</div>
           ) : (
             <div className="divide-y divide-black/5">
-              {notifications.map((n) => (
-                <div key={n.id} className="p-3 flex items-start gap-2.5">
+              {items.map((n) => (
+                <div key={n.id} className={`p-3 flex items-start gap-2.5 ${n.readAt ? "" : "bg-county-blue/[0.04]"}`}>
                   <span className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${levelDot[n.level]}`} />
                   <div className="min-w-0">
                     <div className="font-bold text-xs text-county-black">{n.title}</div>
                     <p className="text-[11px] text-black/60 mt-0.5">{n.message}</p>
-                    <p className="text-[10px] text-black/30 mt-1">{new Date(n.receivedAt).toLocaleTimeString()}</p>
+                    <p className="text-[10px] text-black/30 mt-1">{new Date(n.createdAt).toLocaleString()}</p>
                   </div>
                 </div>
               ))}

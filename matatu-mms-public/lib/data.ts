@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, NotificationHistory, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -10,6 +10,19 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 /**
  * Helper to perform authenticated HTTP requests to the Python FastAPI backend.
  */
+export async function getNotificationHistory(): Promise<NotificationHistory> {
+  try {
+    return await apiFetch<NotificationHistory>("/api/notifications");
+  } catch (err: any) {
+    // Never let this block the whole portal layout from rendering — the
+    // bell degrades to "no history yet", same as before this existed.
+    // A redirect() thrown by apiFetch's own 401 handling still needs to
+    // propagate, not get swallowed here.
+    if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
+    return { items: [], unreadCount: 0 };
+  }
+}
+
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const session = readSession();
   const headers = {

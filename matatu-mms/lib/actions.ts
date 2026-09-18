@@ -875,6 +875,15 @@ export async function markBroadcastReadAction(broadcastId: string): Promise<{ er
   return {};
 }
 
+export async function markNotificationsReadAction(): Promise<{ error?: string; unreadCount?: number }> {
+  try {
+    const result = await apiWrite<{ unreadCount: number }>("/api/notifications/read", "POST");
+    return { unreadCount: result.unreadCount };
+  } catch (err: any) {
+    return { error: err.message || "Could not mark notifications read." };
+  }
+}
+
 const PUBLIC_BACKEND_URL = BACKEND_URL;
 
 export async function publicLookupCaseAction(caseReference: string): Promise<{ error?: string; caseData?: any }> {

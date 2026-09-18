@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { readSession } from "@/lib/session";
-import { getSaccos } from "@/lib/data";
+import { getSaccos, getNotificationHistory } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import AppShell from "@/components/AppShell";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
@@ -14,6 +14,8 @@ export const metadata: Metadata = {
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = readSession();
   if (!session) redirect("/login");
+
+  const notificationHistory = session.token ? await getNotificationHistory() : { items: [], unreadCount: 0 };
 
   let actionNeeded: { count: number; message: string; href: string } | undefined;
   if (can(session.role, "verify_saccos") || can(session.role, "view_operator_verification")) {
@@ -35,7 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {session.impersonatedBy && (
         <ImpersonationBanner targetName={session.name} impersonatorName={session.impersonatedBy.name} />
       )}
-      <AppShell role={session.role} additionalRoles={session.additionalRoles} name={session.name} token={session.token} actionNeeded={actionNeeded}>
+      <AppShell role={session.role} additionalRoles={session.additionalRoles} name={session.name} token={session.token} actionNeeded={actionNeeded} notificationHistory={notificationHistory}>
         {children}
       </AppShell>
     </>
