@@ -74,6 +74,18 @@ services:
     # subscription or self-hosting Postgres on Render's own compute
     # instead of its managed Postgres product — a real cost/ops decision,
     # not something this file can decide on your behalf).
+    #
+    # Live-verified (2026-09-18): a FRESH volume needs nothing extra — the
+    # image's own docker-entrypoint-initdb.d scripts set
+    # shared_preload_libraries automatically. An EXISTING postgres_data
+    # volume created before this image swap does not: Postgres init
+    # scripts only ever run once, against an empty data directory, so an
+    # old volume keeps its original postgresql.conf with no preload
+    # entry, and `CREATE EXTENSION timescaledb` fails with "must be
+    # preloaded" until you add it by hand and restart:
+    #   docker exec <container> sh -c "echo \"shared_preload_libraries = 'timescaledb'\" >> /var/lib/postgresql/data/postgresql.conf"
+    #   docker restart <container>
+    # One-time, only for a volume that predates this change.
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     environment:
@@ -119,10 +131,24 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms
+      # Without this, the image defaults its own listen_port to whatever
+      # port DATABASE_URL points at (5432) — same port Postgres itself
+      # uses, just confusing, not broken, since this container has no
+      # ports: mapping of its own (only reachable inside the compose
+      # network). Set explicitly to the conventional PgBouncer port so
+      # `pgbouncer:6432` in a DATABASE_URL actually means something.
+      LISTEN_PORT: 6432
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 200
       DEFAULT_POOL_SIZE: 20
-      AUTH_TYPE: scram-sha-256
+      # scram-sha-256 needs a real SCRAM verifier in userlist.txt; this
+      # image's entrypoint only ever writes the plaintext password it
+      # parsed out of DATABASE_URL there, which made every connection
+      # fail auth against the mismatch (confirmed live). "plain" matches
+      # what's actually in that file — acceptable here since this proxy
+      # is reachable only from other containers on the internal
+      # docker-compose network, never from outside it.
+      AUTH_TYPE: plain
     depends_on:
       postgres:
         condition: service_healthy

@@ -2258,50 +2258,74 @@ whoever has capacity rather than sequencing:
 2. **A read replica for reporting** (Cross-Cutting Theme #2) — raised
    independently by six roles (§1, §3, §9, §19, §36, §39); unblocks the
    read-only DB browser (§Ops Centre Rebuild) and a BI tool connection
-   target (§39, §40). **Self-hosted stack: done (2026-09-17)** —
-   `docker-compose.yml` now runs a real streaming-replication Postgres
-   replica (`postgres-replica`, via `postgres/replica-entrypoint.sh`'s
-   `pg_basebackup`), and `app/database.py`'s new `get_read_db()` routes
-   the read-heavy `/api/analytics/timeseries` endpoint to it, falling
-   back to the primary automatically when unconfigured — verified with
-   `docker compose config` (valid) and the full `test_backend.py` suite
-   (unaffected, since it runs on SQLite where this is a no-op); **not
-   live-tested end-to-end with real replication traffic** — Docker
-   Desktop would not finish starting in this sandbox, so run `docker
-   compose up postgres postgres-replica pgbouncer` yourself and confirm
-   before trusting it under load. **Render: still not done** — no
-   read-replica add-on on the free/standard tiers, a plan-upgrade
-   decision only you can make.
+   target (§39, §40). **Self-hosted stack: done and live-verified
+   (2026-09-18)**, once Docker Desktop itself got fixed (its WSL2 engine
+   distro was stuck — unrelated to this repo). `docker-compose.yml` runs
+   a real streaming-replication Postgres replica (`postgres-replica`,
+   via `postgres/replica-entrypoint.sh`'s `pg_basebackup`). Verified live
+   with `docker compose up`: wrote a row on the primary, read it back on
+   the replica within 2 seconds via its real compose-network hostname
+   (`postgres-replica:5432`, the exact address `app/database.py`'s
+   default `DATABASE_URL_READONLY` points at), confirmed the replica
+   hard-rejects a write (`cannot execute INSERT in a read-only
+   transaction` — a genuine hot-standby, not a lookalike copy), and
+   confirmed the delete of that same row propagated too.
+   `get_read_db()`'s engine-selection logic (distinct engine only when
+   `DATABASE_URL_READONLY` is set, same engine otherwise) also confirmed
+   directly. **Render: still not done** — no read-replica add-on on the
+   free/standard tiers, a plan-upgrade decision only you can make.
 3. **PgBouncer / connection pooling** (§9, §29) — before Kubernetes
    autoscaling multiplies backend pod count along with raw Postgres
-   connections. **Self-hosted stack: done (2026-09-17)** — a `pgbouncer`
-   service now sits in front of Postgres in `docker-compose.yml`
+   connections. **Self-hosted stack: done and live-verified
+   (2026-09-18)** — a `pgbouncer` service sits in front of Postgres
    (transaction-pooling mode); the primary `DATABASE_URL` deliberately
    still points at Postgres directly, not through it, since Alembic
    migrations run on that same URL and DDL doesn't reliably survive
    transaction pooling — point it at `pgbouncer:6432` instead once
    connection-count pressure, not migrations, is the actual bottleneck.
-   Same Docker-Desktop caveat as item 2 above. **Render: still not
-   done** — same plan-tier gate as `DATA_LAYER_SCALING_STATUS.md` already
-   documented.
+   **Two real bugs found and fixed during live verification, not caught
+   by the earlier config-only check**: (a) the `edoburu/pgbouncer` image
+   defaults its listen port to whatever port `DATABASE_URL` itself uses
+   (5432) unless told otherwise — added `LISTEN_PORT: 6432` so
+   `pgbouncer:6432` actually means something; (b) `AUTH_TYPE:
+   scram-sha-256` doesn't work with this image, because its entrypoint
+   only ever writes the *plaintext* password into `userlist.txt`, never
+   a real SCRAM verifier — every connection failed auth against that
+   mismatch. Switched to `AUTH_TYPE: plain`, which matches what's
+   actually in that file (acceptable since this proxy is reachable only
+   from other containers on the internal compose network). After both
+   fixes: a real query proxied through `pgbouncer:6432` returned real
+   data from the primary. **Render: still not done** — same plan-tier
+   gate as `DATA_LAYER_SCALING_STATUS.md` already documented.
 4. **The telemetry ingest carve-out** (§16, mapped in
    `SERVICE_EXTRACTION_READINESS.md`) — sequenced after the WebSocket
    gateway per §16/§20/§28's explicit ranking. Not attempted, same
    reasoning as item 1.
 5. **A Timescale-licensed Postgres** (self-hosted or Timescale Cloud),
    replacing Render's Apache build once telemetry volume justifies it
-   (§3). **Self-hosted stack: done (2026-09-17)** — `docker-compose.yml`'s
-   `postgres` service now runs `timescale/timescaledb:latest-pg16`
-   instead of plain `postgres:16-alpine`; a drop-in image (same Postgres
-   underneath) with the extension actually present, so the existing
-   `enable_timescaledb` migration's hypertable conversion can now
-   actually succeed instead of silently no-op'ing. Not live-verified in
-   this sandbox (same Docker Desktop caveat) — check for "TimescaleDB
-   extension enabled successfully" in the logs per that migration's own
-   note. **Render: still not done** — its Postgres offering has no
-   Timescale extension; needs either a Timescale Cloud subscription or
-   self-hosting Postgres on Render's compute instead of its managed
-   product, a cost/ops decision I can't make for you.
+   (§3). **Self-hosted stack: done and live-verified (2026-09-18)** —
+   `docker-compose.yml`'s `postgres` service runs
+   `timescale/timescaledb:latest-pg16` instead of plain
+   `postgres:16-alpine`. **One real gotcha found during live
+   verification**: on a volume that predates this image swap (like this
+   session's own local test volume, first created back in August),
+   `CREATE EXTENSION timescaledb` fails with "must be preloaded" — the
+   image's own init scripts set `shared_preload_libraries`, but those
+   only run against a brand-new empty data directory, so an old volume's
+   `postgresql.conf` never got that line. Documented the one-time manual
+   fix directly in `docker-compose.yml`'s comment (append the config
+   line, restart). On a genuinely fresh volume this needs nothing extra.
+   After the manual fix: `CREATE EXTENSION timescaledb` succeeded for
+   real (`timescaledb 2.29.2` now active) — the capability
+   `DATA_LAYER_SCALING_STATUS.md` said was blocked by the image is
+   confirmed actually unblocked. (This local test volume predates the
+   `vehicle_positions` table/migration entirely, so the hypertable
+   conversion itself wasn't re-exercised here — the extension-enablement
+   step, which was the actual blocker, is what's now proven.) **Render:
+   still not done** — its Postgres offering has no Timescale extension;
+   needs either a Timescale Cloud subscription or self-hosting Postgres
+   on Render's compute instead of its managed product, a cost/ops
+   decision I can't make for you.
 6. **Multi-replica-aware circuit breaker state** — **already done**
    (found during this session's Phase 2/3 pass, 2026-09-17; this item
    predates `app/ops_breakers.py`, which resolves it). Breaker *state*
