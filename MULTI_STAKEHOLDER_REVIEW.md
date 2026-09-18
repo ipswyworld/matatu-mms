@@ -2112,7 +2112,14 @@ actually running that harness against the new database as a follow-up,
 since it checks things (full-text search path, TimescaleDB licensing)
 the migration verification didn't.
 
-### Phase 2 — Independent fixes, no architecture change needed
+### Phase 2 — Independent fixes, no architecture change needed — ✅ MARKED DONE (2026-09-18)
+
+Signed off by the project owner. Every item below is done except the
+least-privilege Postgres role (documented with exact SQL, not applied —
+needs Render dashboard access) and the Turnstile Cloudflare
+account/site-key creation itself (the code on both ends is built and
+inert until those keys exist). Both are accepted as out of scope for
+this phase rather than blockers on calling it done.
 
 Nothing here depends on anything else in this list — split across
 whoever has capacity rather than sequencing:
@@ -2238,7 +2245,21 @@ whoever has capacity rather than sequencing:
   enforcement mobile app build (§Mobile Apps) inherits the same
   ambiguity onto a second surface.
 
-### Phase 3 — Top real-time and data-infrastructure priorities
+### Phase 3 — Top real-time and data-infrastructure priorities — ✅ MARKED DONE (2026-09-18)
+
+Signed off by the project owner. The self-hosted stack's PgBouncer, read
+replica, and TimescaleDB are real, live-verified infrastructure, not
+stubs. Accepted as out of scope for this phase, each requiring the
+project owner's own follow-through rather than something left unfinished
+here: the equivalent Render (production) work for those three, which
+needs a plan upgrade or a Timescale Cloud subscription; the WebSocket
+gateway carve-out and telemetry ingest carve-out, both deliberately not
+attempted (cutting a live, working feature to a second process is a real
+regression risk gated on a hosting decision — see item 1 below); and a
+full production-scale disaster-recovery drill (a live-scale Redis-outage
+drill against this session's own dev environment was completed and is
+documented under item 9 below, which is different from a
+production/staging rehearsal).
 
 1. **The WebSocket gateway carve-out** (Cross-Cutting Theme #7) — ranked
    first because it degrades the live product on *every deploy today*.
