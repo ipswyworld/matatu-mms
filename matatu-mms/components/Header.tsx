@@ -48,7 +48,7 @@ export default function Header({
   const pathname = usePathname();
   const { t } = useLanguage();
   const segment = pathname?.split("/")[1] || "dashboard";
-  const title = TITLES[segment] || "Matatu Management System";
+  const title = TITLES[segment] || "Mji-Move";
   const initials = name.split(" ").map((n) => n[0]).slice(0, 2).join("");
   const firstName = name.split(" ")[0];
 

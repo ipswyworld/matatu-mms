@@ -23,7 +23,7 @@ export default function NotFound() {
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-county-green">Error 404</div>
             <h1 className="text-3xl font-black tracking-tight text-county-ink mt-2">This route doesn&apos;t exist</h1>
             <p className="text-sm text-county-ink/60 mt-3 leading-relaxed">
-              The page you&apos;re looking for isn&apos;t part of the Matatu Management System, or you may not
+              The page you&apos;re looking for isn&apos;t part of Mji-Move, or you may not
               have the right terminus for it. Let&apos;s get you back on route.
             </p>
           </div>

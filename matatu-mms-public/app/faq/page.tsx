@@ -5,7 +5,7 @@ import PublicLegalLayout from "@/components/PublicLegalLayout";
 
 export const metadata: Metadata = {
   title: "Help & FAQ",
-  description: "Answers to common questions about registering matatus, booking seats, paying fines, and using the Nairobi County Matatu Management System.",
+  description: "Answers to common questions about registering matatus, booking seats, paying fines, and using Nairobi County's Mji-Move platform.",
 };
 
 interface QA {
@@ -120,7 +120,7 @@ export default function FaqPage() {
       icon={HelpCircle}
       eyebrow="Help Centre"
       title="Frequently Asked Questions"
-      subtitle="Answers for Drivers & Conductors, and for Commuters using the Nairobi Matatu Management System."
+      subtitle="Answers for Drivers & Conductors, and for Commuters using Mji-Move."
     >
       <div className="space-y-10">
         <FaqSection title="For Drivers & Conductors (Crew)" items={crewFaqs} />

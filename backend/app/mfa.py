@@ -16,7 +16,7 @@ from cryptography.fernet import Fernet
 
 from app.config import SECRET_KEY
 
-MFA_ISSUER = "Nairobi Matatu MMS"
+MFA_ISSUER = "Mji-Move"
 BACKUP_CODE_COUNT = 8
 
 

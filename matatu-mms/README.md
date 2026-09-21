@@ -1,4 +1,4 @@
-# NCCG Matatu Management System
+# Mji-Move
 
 A Next.js 14 (App Router + TypeScript + Tailwind) prototype for Nairobi City County
 Government to track matatu (PSV) fleet compliance, activity, and fines, with

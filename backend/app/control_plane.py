@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="NCCG Matatu MMS — Ops Control Plane",
+    title="Mji-Move — Ops Control Plane",
     description=(
         "Internal operations control plane. Not a public API: exposes only "
         "the ops console's read and action endpoints, in its own process so "

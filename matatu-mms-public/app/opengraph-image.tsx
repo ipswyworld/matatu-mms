@@ -7,7 +7,7 @@ import { join } from "node:path";
 // own deployed URL just to render an image of itself.
 export const runtime = "nodejs";
 
-export const alt = "Matatu Management System — book, track, and pay in Nairobi";
+export const alt = "Mji-Move — book, track, and pay in Nairobi";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -48,7 +48,7 @@ export default function Image() {
           Book, track, and pay
         </div>
         <div style={{ marginTop: 14, fontSize: 28, color: "#C7D9CC" }}>
-          Nairobi City County — Matatu Management System
+          Nairobi City County — Mji-Move
         </div>
       </div>
     ),

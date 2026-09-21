@@ -1,5 +1,5 @@
 ---
-name: NCCG Matatu Management System
+name: Mji-Move
 description: Nairobi City County's real-time matatu compliance, booking, and fleet system
 colors:
   county-green: "#068930"
@@ -59,7 +59,7 @@ components:
     rounded: "{rounded.md}"
 ---
 
-# Design System: NCCG Matatu Management System
+# Design System: Mji-Move
 
 ## 1. Overview
 

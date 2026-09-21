@@ -11,8 +11,8 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Matatu Management System | Nairobi City County Government",
-    template: "%s | Matatu Management System",
+    default: "Mji-Move | Nairobi City County Government",
+    template: "%s | Mji-Move",
   },
   description: "Fleet registration, live GPS telemetry, seat booking, fare compliance and enforcement for Nairobi County's matatu sector.",
   // Installable on a phone (Readiness List §11) — lower friction than an
@@ -41,7 +41,7 @@ const governmentOfficeSchema = {
   "@context": "https://schema.org",
   "@type": "GovernmentOffice",
   name: "Nairobi City County Transport Department",
-  alternateName: "Matatu Management System",
+  alternateName: "Mji-Move",
   url: SITE_URL,
   logo: `${SITE_URL}/nairobi-crest.jpg`,
   telephone: "+254-20-222-4411",

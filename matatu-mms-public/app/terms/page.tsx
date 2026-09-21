@@ -4,7 +4,7 @@ import PublicLegalLayout from "@/components/PublicLegalLayout";
 
 export const metadata: Metadata = {
   title: "Terms & Conditions",
-  description: "Terms and conditions governing use of the Nairobi City County Matatu Management System by passengers, crew, operators, and enforcement officers.",
+  description: "Terms and conditions governing use of Nairobi City County's Mji-Move platform by passengers, crew, operators, and enforcement officers.",
 };
 
 function Section({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
@@ -24,12 +24,12 @@ export default function TermsPage() {
       icon={ScrollText}
       eyebrow="Legal"
       title="Terms & Conditions"
-      subtitle="Governing use of the Nairobi City County Matatu Management System, with dedicated obligations for Crew (drivers and conductors). Last updated: 2026."
+      subtitle="Governing use of Nairobi City County's Mji-Move platform, with dedicated obligations for Crew (drivers and conductors). Last updated: 2026."
     >
       <div className="space-y-8">
         <Section n="1" title="Acceptance of these Terms">
           <p>
-            By creating an account or otherwise using the Nairobi City County Matatu Management System (&quot;the System&quot;), you
+            By creating an account or otherwise using Nairobi City County's Mji-Move platform (&quot;the System&quot;), you
             agree to these Terms & Conditions. If you do not agree, do not register for or use the System. These Terms apply to all
             account types: County Admin, Enforcement Officers, Operators, Crew (drivers and conductors), and Passengers, with
             additional obligations for Crew set out in Section 4.
@@ -157,7 +157,7 @@ export default function TermsPage() {
         <Section n="14" title="Contact">
           <p>
             Crew members should direct questions about their account or these Terms to their Operator in the first instance.
-            Operators may escalate system-wide concerns to the Nairobi City County Government's Matatu Management System
+            Operators may escalate system-wide concerns to the Nairobi City County Government's Mji-Move
             administration.
           </p>
         </Section>

@@ -1,7 +1,7 @@
 import { Role } from "./types";
 
 /**
- * Central RBAC permission matrix for the NCCG Matatu Management System.
+ * Central RBAC permission matrix for Mji-Move.
  */
 
 export type Action =

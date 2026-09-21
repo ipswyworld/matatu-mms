@@ -1,4 +1,4 @@
-# NCCG Matatu Management System (matatu-mms)
+# Mji-Move (matatu-mms)
 
 A Nairobi City County Government (NCCG) system for managing matatu (minibus
 PSV) fleet operations end to end: vehicle registration, live GPS telemetry,

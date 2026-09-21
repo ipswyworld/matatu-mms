@@ -1,5 +1,7 @@
 # Docs index
 
+> **Naming:** this system is now called **Mji-Move** (formerly "Matatu Management System" / "Matatu MMS"). The dated audit and decision documents below still use the old name on purpose: they record what the system was called when they were written. Repo folders, package names, Render service names and environment variables also keep the old `matatu-mms` identifiers until a separate infrastructure rename.
+
 The root of this repo has accumulated a lot of standalone `.md` files from
 past audit/design sessions. This is the map: what each one is, and whether
 it's a living reference (kept current, safe to trust today) or a

@@ -620,7 +620,7 @@ async def register(request: Request, credentials: UserCreate, response: Response
         # delivery channel today (see app/sms.py).
         approval_link = f"{PUBLIC_FRONTEND_URL}/guardian-approve?token={guardian_approval_token}"
         message = (
-            f"{user.name} used your phone number to register a Matatu MMS account. "
+            f"{user.name} used your phone number to register a Mji-Move account. "
             f"If you approve, confirm here: {approval_link} "
             f"(link expires in 7 days)"
         )
@@ -741,7 +741,7 @@ async def forgot_password_phone(request: Request, payload: PhoneForgotPasswordRe
         user.phone_otp_code = otp
         user.phone_otp_expires_at = expires_at
         await db.commit()
-        await send_sms(phone, f"Your Matatu MMS password reset code is {otp}. It expires in {PHONE_OTP_TTL_MINUTES} minutes.")
+        await send_sms(phone, f"Your Mji-Move password reset code is {otp}. It expires in {PHONE_OTP_TTL_MINUTES} minutes.")
 
     return {"message": "If that phone number is registered, a reset code has been sent."}
 

@@ -5,7 +5,7 @@ import PublicLegalLayout from "@/components/PublicLegalLayout";
 
 export const metadata: Metadata = {
   title: "Mandatory Operator Registration",
-  description: "Nairobi City County requires every matatu Sacco and operator to register on the Matatu Management System.",
+  description: "Nairobi City County requires every matatu Sacco and operator to register on Mji-Move.",
 };
 
 export default function ComplianceNoticePage() {
@@ -14,7 +14,7 @@ export default function ComplianceNoticePage() {
       icon={ShieldAlert}
       eyebrow="Nairobi City County · Compliance Notice"
       title="Every Operator Must Register"
-      subtitle="If you received an SMS from Nairobi City County about this page, your Sacco or operator has been identified as not yet registered on the Matatu Management System."
+      subtitle="If you received an SMS from Nairobi City County about this page, your Sacco or operator has been identified as not yet registered on Mji-Move."
     >
       <div className="space-y-6 text-sm text-county-ink/70 leading-relaxed">
         <p>

@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ops Console | Nairobi Matatu MMS",
-  description: "Superadmin-only infrastructure and access-control console for the Nairobi City County Matatu Management System.",
+  title: "Ops Console | Mji-Move",
+  description: "Superadmin-only infrastructure and access-control console for Nairobi City County's Mji-Move platform.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

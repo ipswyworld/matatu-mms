@@ -7,7 +7,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "Matatu MMS backend is unreachable"
+          summary: "Mji-Move backend is unreachable"
           description: "Prometheus has failed to scrape the FastAPI backend for over 1 minute."
 
       - alert: HighErrorRate

@@ -1,7 +1,7 @@
 {
-  "name": "Matatu MMS — Ops Console",
+  "name": "Mji-Move — Ops Console",
   "short_name": "Matatu Ops",
-  "description": "Superadmin-only infrastructure and access-control console for the Nairobi City County Matatu Management System.",
+  "description": "Superadmin-only infrastructure and access-control console for Nairobi City County's Mji-Move platform.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

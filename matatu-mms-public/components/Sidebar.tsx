@@ -115,7 +115,7 @@ export default function Sidebar({
           </div>
           <div className={`leading-tight min-w-0 flex-1 ${effectiveCollapsed ? "md:hidden" : ""}`}>
             <div className="font-black tracking-tight text-white text-[15px] truncate">Nairobi City County</div>
-            <div className="text-[10px] font-bold text-county-yellow tracking-[0.18em] uppercase mt-0.5">Matatu MMS</div>
+            <div className="text-[10px] font-bold text-county-yellow tracking-[0.18em] uppercase mt-0.5">Mji-Move</div>
           </div>
           <button
             type="button"

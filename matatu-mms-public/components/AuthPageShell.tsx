@@ -58,7 +58,7 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
 
         <div className="relative">
           <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-county-yellow mb-3">
-            Matatu Management System
+            Mji-Move
           </div>
           <h1 className="text-[42px] leading-[1.05] font-black tracking-tight text-balance">
             {heading}
@@ -106,7 +106,7 @@ export default function AuthPageShell({ eyebrow, heading, subheading, showLeaveC
               </div>
               <div className="leading-tight">
                 <div className="font-black text-county-ink">Nairobi City County</div>
-                <div className="text-[10px] font-bold text-county-green tracking-widest uppercase">Matatu MMS</div>
+                <div className="text-[10px] font-bold text-county-green tracking-widest uppercase">Mji-Move</div>
               </div>
             </div>
 

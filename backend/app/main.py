@@ -185,7 +185,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete.")
 
 app = FastAPI(
-    title="NCCG Matatu Management System API",
+    title="Mji-Move API",
     description="Asynchronous Python FastAPI backend prototype for Nairobi City County Government Matatu compliance tracking.",
     version="1.0.0",
     lifespan=lifespan
@@ -362,7 +362,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 async def root():
     return {
         "status": "online",
-        "system": "NCCG Matatu Management System (Python Prototype)",
+        "system": "Mji-Move (Python Prototype)",
         "docs_url": "/docs"
     }
 

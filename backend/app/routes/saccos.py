@@ -223,7 +223,7 @@ async def invite_shadow_sacco(
     deadline_note = f" by {sacco.compliance_deadline.strftime('%d %b %Y')}" if sacco.compliance_deadline else ""
     await send_sms(
         sacco.shadow_contact_phone,
-        f"Nairobi City County: {sacco.name} is required to register on the Matatu Management System{deadline_note}. "
+        f"Nairobi City County: {sacco.name} is required to register on Mji-Move{deadline_note}. "
         f"Start here: {PUBLIC_FRONTEND_URL}/compliance-notice",
     )
     return sacco

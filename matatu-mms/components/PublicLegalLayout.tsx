@@ -36,7 +36,7 @@ export default function PublicLegalLayout({
             </div>
             <div className="leading-tight">
               <div className="font-black text-white text-sm">Nairobi City County</div>
-              <div className="text-[10px] font-bold text-county-yellow tracking-[0.18em] uppercase mt-0.5">Matatu MMS</div>
+              <div className="text-[10px] font-bold text-county-yellow tracking-[0.18em] uppercase mt-0.5">Mji-Move</div>
             </div>
           </div>
           <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-county-yellow">{eyebrow}</div>

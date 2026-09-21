@@ -95,7 +95,7 @@ function GuardianApproveForm() {
                 <div className="flex items-start gap-3 rounded-lg border border-county-ink/10 bg-county-cream/60 p-3.5">
                   <ShieldCheck size={20} strokeWidth={2} className="text-county-green shrink-0 mt-0.5" />
                   <p className="text-sm text-county-ink/80 leading-relaxed">
-                    <span className="font-bold">{info.minorName}</span> used this phone number to register a Matatu MMS passenger account, listing you (<span className="font-bold">{info.guardianName}</span>) as their guardian.
+                    <span className="font-bold">{info.minorName}</span> used this phone number to register a Mji-Move passenger account, listing you (<span className="font-bold">{info.guardianName}</span>) as their guardian.
                   </p>
                 </div>
                 <p className="text-xs text-county-ink/55">

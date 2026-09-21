@@ -9,7 +9,7 @@ metadata:
   name: matatu-mms
   namespace: argocd
 spec:
-  description: Nairobi County Matatu Management System — backend, control plane, worker, and three frontends.
+  description: Nairobi County's Mji-Move platform — backend, control plane, worker, and three frontends.
 
   sourceRepos:
     - https://github.com/ipswyworld/matatu-mms.git

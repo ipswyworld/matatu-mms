@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-07-23T00:00:00Z",
-  "title": "Design System: NCCG Matatu Management System",
+  "title": "Design System: Mji-Move",
   "extensions": {
     "colorMeta": {
       "county-black": { "role": "primary", "displayName": "County Black", "canonical": "#121824", "tonalRamp": ["#0a0d12", "#121824", "#1c2436", "#2d3852", "#4a5678", "#6b7aa0", "#9aa5c2", "#c8cede"] },
