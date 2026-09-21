@@ -22,6 +22,53 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Light-only design. Declaring it stops browser auto-dark-mode (Samsung
+   Internet, Chrome "force dark", Edge auto-dark) from darkening field
+   backgrounds while leaving their inherited dark text alone, which left
+   typed text invisible. */
+:root {
+  color-scheme: light;
+}
+
+@layer base {
+  /* Every text field states its own text and background color instead of
+     inheriting one from whatever container it happens to sit in.
+     Element selectors on purpose: Tailwind's reset sets
+     `input { color: inherit }` (specificity 0,0,1), which a :where() rule
+     (0,0,0) cannot beat. Plain element selectors tie with it and win by
+     coming later, yet still lose to every utility class (0,1,0), so
+     deliberately styled fields (text-white, bg-white/10, ...) are untouched. */
+  input,
+  textarea,
+  select {
+    color: var(--county-ink);
+    caret-color: var(--county-ink);
+  }
+
+  input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="submit"]):not([type="button"])),
+  textarea,
+  select {
+    background-color: #fff;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(13 30 20 / 0.45);
+    opacity: 1;
+  }
+
+  /* Autofill paints its own background; without this the typed/filled text
+     can end up dark-on-dark. */
+  input:-webkit-autofill,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--county-ink);
+    caret-color: var(--county-ink);
+    box-shadow: 0 0 0 1000px #fff inset;
+  }
+}
+
+
 .badge {
   @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold transition-all duration-200;
 }
