@@ -3,6 +3,8 @@ import { readSession } from "./session";
 import {
   SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview,
   OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery, SystemControls,
+  ApiClient, ApiScope, ApiClientUsageDay, SaccoOption, MessagingSpendSummary, SyntheticCheckTarget, CiScanStatus,
+  CostSnapshot,
 } from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
@@ -99,4 +101,44 @@ export async function getWebhookDeliveries(): Promise<WebhookDelivery[]> {
 
 export async function getSystemControls(): Promise<SystemControls> {
   return apiFetch<SystemControls>("/api/control/system-controls");
+}
+
+// --- Partner API client management ------------------------------------
+
+export async function getApiClients(): Promise<ApiClient[]> {
+  return apiFetch<ApiClient[]>("/api/control/api-clients");
+}
+
+export async function getApiScopes(): Promise<{ scopes: ApiScope[]; quotaTiers: Record<string, string> }> {
+  return apiFetch("/api/control/api-clients/scopes");
+}
+
+export async function getApiClientUsageHistory(clientId: string): Promise<ApiClientUsageDay[]> {
+  const res = await apiFetch<{ clientId: string; days: ApiClientUsageDay[] }>(
+    `/api/control/api-clients/${encodeURIComponent(clientId)}/usage-history`
+  );
+  return res.days;
+}
+
+// Minimal id+name only — this console needs a Sacco picker for scoping a
+// new API client, nothing more of the full Sacco record.
+export async function getSaccoOptions(): Promise<SaccoOption[]> {
+  const saccos = await apiFetch<Array<{ id: string; name: string }>>("/api/saccos");
+  return saccos.map((s) => ({ id: s.id, name: s.name }));
+}
+
+export async function getMessagingSpend(days = 30): Promise<MessagingSpendSummary> {
+  return apiFetch<MessagingSpendSummary>(`/api/messaging/spend?days=${days}`);
+}
+
+export async function getSyntheticChecks(): Promise<SyntheticCheckTarget[]> {
+  return apiFetch<SyntheticCheckTarget[]>("/api/control/synthetic-checks");
+}
+
+export async function getCiScanStatus(): Promise<CiScanStatus | null> {
+  return apiFetch<CiScanStatus | null>("/api/control/ci-status");
+}
+
+export async function getCostSnapshots(): Promise<CostSnapshot[]> {
+  return apiFetch<CostSnapshot[]>("/api/control/cost-snapshots");
 }

@@ -960,6 +960,19 @@ class WebhookSubscriptionResponse(BaseModelCamel):
     events: str
     active: bool
 
+class WebhookSecretResponse(BaseModelCamel):
+    """Returned only from create/rotate — WebhookSubscriptionResponse never
+    includes the secret, even though (unlike ApiClient's hashed secret) it
+    is stored in plaintext server-side, since signing every delivery needs
+    the real value, not just something to hash-compare against."""
+    id: int
+    secret: str
+    warning: str = "Copy this secret now — it will not be shown again on this screen."
+
+class WebhookSubscriptionCreateResponse(WebhookSubscriptionResponse):
+    secret: str
+    warning: str = "Copy this secret now — it will not be shown again on this screen."
+
 # --- Webhook Log Schemas ---
 class WebhookLogResponse(BaseModelCamel):
     id: int
@@ -1234,4 +1247,69 @@ class NotificationHistoryResponse(BaseModelCamel):
     (a list capped at N items can't tell you the true unread count once
     the number of unread notifications exceeds N)."""
     items: List[NotificationResponse]
+
+
+# --- Favorites / Recents ---
+class FavoriteSaccoCreate(BaseModelCamel):
+    sacco_id: str
+
+class UserFavoriteResponse(BaseModelCamel):
+    id: str
+    sacco_id: str
+    created_at: datetime.datetime
+
+class RecentSaccoResponse(BaseModelCamel):
+    sacco_id: str
+    last_booked_at: datetime.datetime
+
+
+# --- Operator Terminals ---
+class OperatorTerminalCreate(BaseModelCamel):
+    route_id: str
+    label: str
+
+class OperatorTerminalResponse(BaseModelCamel):
+    id: str
+    sacco_id: str
+    route_id: str
+    label: str
+    stage_id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    geocoded: bool
+    match_status: str
+    created_at: datetime.datetime
+
+class OperatorTerminalResolveRequest(BaseModelCamel):
+    """Either link to an existing Stage, or hand-set a coordinate (which
+    creates a new Stage) — exactly one of the two, never both."""
+    stage_id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+# --- Trip Ratings ---
+class TripRatingCreate(BaseModelCamel):
+    booking_id: str
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = None
+
+class TripRatingResponse(BaseModelCamel):
+    id: str
+    booking_id: str
+    matatu_id: str
+    sacco_id: str
+    driver_user_id: Optional[str] = None
+    conductor_user_id: Optional[str] = None
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime.datetime
+
+class PendingRatingResponse(BaseModelCamel):
+    """A USED booking with no rating yet — drives the passenger app's
+    rating prompt."""
+    booking_id: str
+    reg_number: str
+    route_name: str
+    booked_at: datetime.datetime
     unread_count: int

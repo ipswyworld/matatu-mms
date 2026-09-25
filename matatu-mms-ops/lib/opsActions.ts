@@ -249,6 +249,60 @@ export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
       "Signs out every user everywhere. Your own session is revoked too — exempting it would leave one live session behind during a compromise response, and would defeat the action entirely if your account is the compromised one. You will need to sign in again.",
   },
 
+  // --- Cost dashboard (Phase 4) --------------------------------------------
+  "cost.record": {
+    id: "cost.record",
+    label: "Record monthly cost",
+    actionClass: "elevated",
+    affectedScope: "The cost dashboard's trend chart",
+    reversible: true,
+    reversalHint: "Record the month again with a corrected figure.",
+    detail: "A manual entry, not a live billing pull — Render's API has no billing endpoint to read this from automatically.",
+  },
+
+  // --- Partner API clients (Phase 2) --------------------------------------
+  "apiClient.create": {
+    id: "apiClient.create",
+    label: "Issue API client",
+    actionClass: "critical",
+    affectedScope: "New partner credentials, granted the scopes selected",
+    reversible: true,
+    reversalHint: "Revoke the client.",
+    detail:
+      "The client secret is shown exactly once, immediately after this — it is never stored in a form that can be shown again. If it's lost, revoke this client and issue a new one.",
+  },
+  "apiClient.revoke": {
+    id: "apiClient.revoke",
+    label: "Revoke API client",
+    actionClass: "critical",
+    affectedScope: "Every request this client makes, immediately",
+    reversible: false,
+    detail:
+      "Cuts off a partner's access at once — existing tokens stop working immediately, not when they expire. Revocation is permanent; issue a new client if access needs to be restored.",
+  },
+
+  // --- Render deploy control (Phase 4) ------------------------------------
+  "deploy.trigger": {
+    id: "deploy.trigger",
+    label: "Deploy latest commit",
+    actionClass: "critical",
+    affectedScope: "1 service — every request it serves while the new build starts",
+    reversible: "partial",
+    reversalHint: "Roll back to the previous deploy once the new one is live.",
+    detail:
+      "Deploys the latest commit on this service's configured branch, the same as clicking Manual Deploy in Render's own dashboard. The service is briefly unavailable while the new instance starts.",
+  },
+  "deploy.rollback": {
+    id: "deploy.rollback",
+    label: "Roll back deploy",
+    actionClass: "critical",
+    affectedScope: "1 service — reverts to a specific previous deploy",
+    reversible: "partial",
+    reversalHint: "Deploy forward again, or roll back to a different prior deploy.",
+    detail:
+      "Rolls this service back to the deploy you pick from its history. Whatever is live now is replaced immediately, including any data-shape changes the current deploy introduced.",
+  },
+
   "impersonate.start": {
     id: "impersonate.start",
     label: "Impersonate",

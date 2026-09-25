@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
-import { getCircuitBreakers, getWebhookDeliveries } from "@/lib/data";
+import { getCircuitBreakers, getWebhookDeliveries, getMessagingSpend } from "@/lib/data";
 import CircuitBreakerPanel from "@/components/CircuitBreakerPanel";
 import WebhookDeliveriesPanel from "@/components/WebhookDeliveriesPanel";
+import MessagingHealthPanel from "@/components/MessagingHealthPanel";
 import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Integrations | Ops Console" };
 export const dynamic = "force-dynamic";
 
 export default async function IntegrationsPage() {
-  const [breakers, deliveries] = await Promise.all([
+  const [breakers, deliveries, messaging] = await Promise.all([
     settle(getCircuitBreakers()),
     settle(getWebhookDeliveries()),
+    settle(getMessagingSpend()),
   ]);
 
   return (
@@ -32,6 +34,12 @@ export default async function IntegrationsPage() {
         <WebhookDeliveriesPanel deliveries={deliveries.data} />
       ) : (
         <PanelError title="Webhook deliveries" error={deliveries.error!} />
+      )}
+
+      {messaging.data ? (
+        <MessagingHealthPanel summary={messaging.data} />
+      ) : (
+        <PanelError title="Messaging health" error={messaging.error!} />
       )}
     </div>
   );

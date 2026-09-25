@@ -73,6 +73,48 @@ def is_configured() -> bool:
     return bool(ALLOWED_NETWORKS)
 
 
+def invalid_networks(entries: List[str]) -> List[str]:
+    """For validating a per-partner-client IP allowlist at creation time
+    (ApiClient.ip_allowlist) — unlike _parse_networks above (which silently
+    drops a malformed OPS_IP_ALLOWLIST entry and logs it), a client-supplied
+    allowlist should reject loudly with a 400 rather than quietly narrowing
+    to fewer entries than the operator typed. Returns the entries that
+    failed to parse; an empty list means all entries were valid CIDRs/IPs."""
+    bad: List[str] = []
+    for entry in entries:
+        try:
+            ipaddress.ip_network(entry.strip(), strict=False)
+        except ValueError:
+            bad.append(entry)
+    return bad
+
+
+def client_ip_allowed(client_host: Optional[str], allowlist_json: Optional[str]) -> bool:
+    """Same address-in-network check as is_allowed() above, but for one
+    ApiClient's own ip_allowlist column (JSON array of CIDR strings) rather
+    than the global OPS_IP_ALLOWLIST — a separate, per-partner control.
+    No allowlist configured on the client means unrestricted, matching
+    is_allowed()'s "unset means open" default."""
+    import json as _json
+
+    if not allowlist_json:
+        return True
+    try:
+        entries = _json.loads(allowlist_json)
+    except (ValueError, TypeError):
+        return True
+    networks = _parse_networks(",".join(entries))
+    if not networks:
+        return True
+    if not client_host:
+        return False
+    try:
+        address = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    return any(address in network for network in networks)
+
+
 def is_allowed(client_host: Optional[str]) -> bool:
     """Whether this client may reach the control plane."""
     if not ALLOWED_NETWORKS:

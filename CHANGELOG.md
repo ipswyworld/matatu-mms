@@ -1,0 +1,42 @@
+# Changelog
+
+Notable changes to this system, most recent first. Rendered directly on the
+ops console's Changelog page (`matatu-mms-ops/app/(console)/changelog`).
+
+## Unreleased
+
+### Added
+- Partner API client management UI in the ops console — issue, list, and
+  revoke credentials for third-party integrations, with sandbox/production
+  environments, per-client IP allowlisting, and usage-history graphs.
+- Developer documentation page for the partner API (`/api-clients/docs`).
+- Webhook delivery signing (HMAC-SHA256, `X-Webhook-Signature`) and secret
+  rotation — outgoing webhook deliveries were previously unsigned.
+- Zones page in the staff app, with map-drawn boundary editing
+  (`PolygonBoundaryEditor`, built on `terra-draw`).
+- This changelog.
+- Deploy/rollback control for the ops console's Infrastructure page — trigger
+  a fresh deploy or roll back to a prior one, Critical-tier (reason, typed
+  confirmation, re-auth), audited server-side.
+- Filterable search over the Overview page's in-memory server-error and
+  frontend-crash feeds.
+- Synthetic uptime/latency checks: this backend now probes each app's own
+  `/api/health` every 5 minutes and charts the result on Overview.
+- Dependency/CVE scan status panel, reading CI's existing pip-audit/npm
+  audit/Trivy job result via GitHub's Jobs API (no new scan runs from here).
+- Manually-entered monthly infrastructure cost dashboard with a trend chart
+  (Render's API has no billing endpoint to read this from automatically).
+- Service dependency/topology graph, changelog viewer, on-call directory,
+  and SMS/messaging health panel in the ops console.
+
+### Fixed
+- MFA enforcement: admin-tier accounts that had never completed enrollment
+  could sign into both the staff app and the ops console (the system's most
+  privileged surface) with no MFA prompt at all. Both now redirect to
+  enrollment until it's complete.
+- API client issuance/revocation now genuinely requires re-authentication
+  (`reauth_token`), matching the Critical-tier confirmation the console UI
+  already displayed for these actions.
+
+### Security
+- API client credentials can now be scoped to an IP allowlist.

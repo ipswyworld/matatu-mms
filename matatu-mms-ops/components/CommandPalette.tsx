@@ -24,6 +24,11 @@ const ACTION_ROUTES: Record<string, string> = {
   "user.unlock": "/sessions",
   "user.resetMfa": "/sessions",
   "impersonate.start": "/sessions",
+  "apiClient.create": "/api-clients",
+  "apiClient.revoke": "/api-clients",
+  "deploy.trigger": "/infrastructure",
+  "deploy.rollback": "/infrastructure",
+  "cost.record": "/infrastructure",
 };
 
 interface Entry {

@@ -43,6 +43,7 @@ from arq.worker import Worker
 
 from app.backup import run_scheduled_backup
 from app.config import REDIS_URL
+from app.synthetic_checks import run_scheduled_synthetic_checks
 
 logger = logging.getLogger("app.worker")
 
@@ -61,7 +62,7 @@ async def get_arq_pool():
     return _pool
 
 
-async def deliver_webhook_job(ctx, subscription_id: int, url: str, event_type: str, payload: dict) -> str:
+async def deliver_webhook_job(ctx, subscription_id: int, url: str, event_type: str, payload: dict, secret: str | None = None) -> str:
     """ARQ job wrapping the existing resilient webhook delivery — real
     retries (ARQ re-runs a failed job up to WorkerSettings.max_tries) and a
     dead-letter path (a job that exhausts retries is recorded in ARQ's
@@ -74,7 +75,7 @@ async def deliver_webhook_job(ctx, subscription_id: int, url: str, event_type: s
         subscription_breakers[subscription_id] = CircuitBreaker(failure_threshold=3, recovery_time=30.0)
     breaker = subscription_breakers[subscription_id]
 
-    await deliver_webhook_with_resilience(subscription_id, url, event_type, payload, breaker)
+    await deliver_webhook_with_resilience(subscription_id, url, event_type, payload, breaker, secret)
     return "delivered"
 
 
@@ -86,7 +87,13 @@ class WorkerSettings:
     # A dump reads every row in every table; running it against live
     # traffic would only ever make it slower or more contended, never
     # meaningfully safer, so there's no reason to run it at peak instead.
-    cron_jobs = [cron(run_scheduled_backup, hour=3, minute=0)]
+    cron_jobs = [
+        cron(run_scheduled_backup, hour=3, minute=0),
+        # Every 5 minutes — frequent enough that a real outage shows up on
+        # the Overview page within one or two operator glances, not so
+        # frequent it meaningfully adds to each frontend's own request load.
+        cron(run_scheduled_synthetic_checks, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+    ]
     redis_settings = _redis_settings()
     max_tries = 3
     # Required for the ops console's "cancel job" action (Ops Console

@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, CircleDashed, PowerOff, Radio, WifiOff, XCircle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, CircleDashed, PowerOff, Radio, Search, WifiOff, XCircle } from "lucide-react";
 import { useOpsStream } from "@/lib/useOpsStream";
 import type { DependencyState, OpsSnapshot, SeriesPoint } from "@/lib/types";
 
@@ -12,6 +13,21 @@ import type { DependencyState, OpsSnapshot, SeriesPoint } from "@/lib/types";
  */
 export default function OverviewLive({ initial }: { initial: OpsSnapshot | null }) {
   const { snapshot, status, lastEventAt } = useOpsStream(initial);
+  const [logQuery, setLogQuery] = useState("");
+
+  const q = logQuery.trim().toLowerCase();
+  const filteredErrors = useMemo(() => {
+    if (!snapshot || !q) return snapshot?.recentErrors ?? [];
+    return snapshot.recentErrors.filter(
+      (e) => e.path.toLowerCase().includes(q) || e.method.toLowerCase().includes(q) || String(e.status).includes(q),
+    );
+  }, [snapshot, q]);
+  const filteredClientErrors = useMemo(() => {
+    if (!snapshot || !q) return snapshot?.recentClientErrors ?? [];
+    return snapshot.recentClientErrors.filter(
+      (e) => e.message.toLowerCase().includes(q) || e.url.toLowerCase().includes(q) || e.app.toLowerCase().includes(q),
+    );
+  }, [snapshot, q]);
 
   if (!snapshot) {
     return (
@@ -111,16 +127,33 @@ export default function OverviewLive({ initial }: { initial: OpsSnapshot | null 
         <Sparkline series={snapshot.series} />
       </div>
 
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30" />
+        <input
+          type="text"
+          value={logQuery}
+          onChange={(e) => setLogQuery(e.target.value)}
+          placeholder="Filter recent errors by path, method, status, or message…"
+          className="input text-xs pl-8"
+        />
+        <p className="text-[10px] text-black/35 mt-1">
+          Filters the last 50 server errors and 50 frontend crashes kept in memory below — not a persistent,
+          queryable log store (none is deployed alongside this console yet).
+        </p>
+      </div>
+
       <div className="card p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-sm text-county-black">Recent server errors</h3>
           <span className="text-[10px] font-bold text-black/40">5xx ONLY</span>
         </div>
-        {snapshot.recentErrors.length === 0 ? (
-          <p className="text-xs text-black/40 italic">No server errors recorded in this window.</p>
+        {filteredErrors.length === 0 ? (
+          <p className="text-xs text-black/40 italic">
+            {snapshot.recentErrors.length === 0 ? "No server errors recorded in this window." : "No matches."}
+          </p>
         ) : (
           <div className="space-y-1.5 max-h-72 overflow-y-auto">
-            {snapshot.recentErrors.map((e, i) => (
+            {filteredErrors.map((e, i) => (
               <div key={`${e.at}-${i}`} className="flex items-center justify-between gap-3 text-[11px] py-1.5 border-b border-black/5 last:border-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="badge bg-county-red/10 text-county-red text-[9px] font-extrabold shrink-0">{e.status}</span>
@@ -142,11 +175,13 @@ export default function OverviewLive({ initial }: { initial: OpsSnapshot | null 
           <h3 className="font-bold text-sm text-county-black">Frontend crashes</h3>
           <span className="text-[10px] font-bold text-black/40">BROWSER-SIDE</span>
         </div>
-        {snapshot.recentClientErrors.length === 0 ? (
-          <p className="text-xs text-black/40 italic">No frontend crashes recorded in this window.</p>
+        {filteredClientErrors.length === 0 ? (
+          <p className="text-xs text-black/40 italic">
+            {snapshot.recentClientErrors.length === 0 ? "No frontend crashes recorded in this window." : "No matches."}
+          </p>
         ) : (
           <div className="space-y-1.5 max-h-72 overflow-y-auto">
-            {snapshot.recentClientErrors.map((e, i) => (
+            {filteredClientErrors.map((e, i) => (
               <div key={`${e.at}-${i}`} className="flex items-start justify-between gap-3 text-[11px] py-1.5 border-b border-black/5 last:border-0">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">

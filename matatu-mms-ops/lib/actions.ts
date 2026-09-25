@@ -6,7 +6,7 @@ import {
   setSessionCookie, clearSessionCookie, readSession,
   setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
 } from "./session";
-import { FeatureFlag } from "./types";
+import { FeatureFlag, ApiClientIssuedSecret, CostSnapshot } from "./types";
 
 // Same backend as the staff app — this console doesn't have its own user
 // accounts, it authenticates against the same SUPERADMIN accounts and
@@ -74,11 +74,15 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
       return { error: "This console is for Superadmin accounts only." };
     }
 
-    // MFA is opt-in, not required, to reach this console — a Superadmin who
-    // hasn't enrolled just signs straight in. Anyone who does enable MFA
-    // (via the staff app) still goes through the mfaRequired branch above
-    // on their next login, same as any other account.
-    await setSessionCookie({ userId: data.user.id, name: data.user.name, role: "SUPERADMIN", token: data.accessToken });
+    // A never-enrolled Superadmin still gets a session (matching auth.py's
+    // behaviour), but middleware.ts now redirects them to the staff app's
+    // enrollment flow before they can reach anything else in this console —
+    // this is the most destructive surface in the whole system, so "opt-in"
+    // MFA here specifically was the gap, not a deliberate choice.
+    await setSessionCookie({
+      userId: data.user.id, name: data.user.name, role: "SUPERADMIN", token: data.accessToken,
+      mfaSetupRequired: !!data.mfaSetupRequired,
+    });
     redirect("/");
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
@@ -114,7 +118,10 @@ export async function verifyMfaAction(_prevState: { error?: string } | undefined
       return { error: "This console is for Superadmin accounts only." };
     }
 
-    await setSessionCookie({ userId: data.user.id, name: data.user.name, role: "SUPERADMIN", token: data.accessToken });
+    await setSessionCookie({
+      userId: data.user.id, name: data.user.name, role: "SUPERADMIN", token: data.accessToken,
+      mfaSetupRequired: !!data.mfaSetupRequired,
+    });
     redirect("/");
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
@@ -223,6 +230,55 @@ export async function startImpersonationAction(userId: string): Promise<{ url?: 
 
 /** Shared shape so every panel handles failure identically. */
 type ActionResult = { error?: string };
+
+// --- Partner API client management (Critical tier — see lib/opsActions.ts) -
+
+export interface CreateApiClientInput {
+  name: string;
+  saccoId?: string;
+  scopes: string[];
+  quotaTier: string;
+  effectiveRole: string;
+  environment: "sandbox" | "production";
+  ipAllowlist: string[];
+}
+
+export async function createApiClientAction(
+  input: CreateApiClientInput,
+  reason: string,
+  reauthToken?: string,
+): Promise<{ issued?: ApiClientIssuedSecret; error?: string }> {
+  try {
+    const issued = await apiWrite<ApiClientIssuedSecret>("/api/control/api-clients", "POST", {
+      name: input.name,
+      saccoId: input.saccoId || undefined,
+      scopes: input.scopes,
+      quotaTier: input.quotaTier,
+      effectiveRole: input.effectiveRole,
+      environment: input.environment,
+      ipAllowlist: input.ipAllowlist,
+      reason,
+      reauthToken,
+    });
+    revalidatePath("/api-clients");
+    return { issued };
+  } catch (err: any) {
+    return { error: err.message || "Could not issue this API client." };
+  }
+}
+
+export async function revokeApiClientAction(clientId: string, reason: string, reauthToken?: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/api-clients/${encodeURIComponent(clientId)}/revoke`, "POST", { reason, reauthToken }),
+    "Could not revoke this API client.",
+    "/api-clients",
+  );
+}
+
+export async function getApiClientUsageHistoryAction(clientId: string) {
+  const { getApiClientUsageHistory } = await import("./data");
+  return getApiClientUsageHistory(clientId);
+}
 
 async function runAction(fn: () => Promise<unknown>, fallback: string, revalidate = "/"): Promise<ActionResult> {
   try {
@@ -395,6 +451,70 @@ export async function setKillSwitchAction(
     "Could not change this kill switch.",
     "/config",
   );
+}
+
+// --- Cost dashboard (Phase 4, Elevated tier) --------------------------------
+
+export async function recordCostSnapshotAction(
+  month: string,
+  amountKes: string,
+  note: string,
+  reason: string,
+): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/cost-snapshots", "POST", { month, amount_kes: amountKes, note: note || undefined, reason }),
+    "Could not record this month's cost.",
+    "/infrastructure",
+  );
+}
+
+export async function getCostSnapshotsAction(): Promise<CostSnapshot[]> {
+  const { getCostSnapshots } = await import("./data");
+  return getCostSnapshots();
+}
+
+// --- Render deploy control (Phase 4, Critical tier) ------------------------
+
+export async function triggerDeployAction(
+  serviceId: string,
+  reason: string,
+  reauthToken?: string,
+): Promise<{ deploy?: { id: string; status: string }; error?: string }> {
+  try {
+    const deploy = await apiWrite<{ id: string; status: string }>(
+      `/api/control/render/${encodeURIComponent(serviceId)}/deploy`,
+      "POST",
+      { reason, reauth_token: reauthToken },
+    );
+    revalidatePath("/infrastructure");
+    return { deploy };
+  } catch (err: any) {
+    return { error: err.message || "Could not trigger this deploy." };
+  }
+}
+
+export async function rollbackDeployAction(
+  serviceId: string,
+  deployId: string,
+  reason: string,
+  reauthToken?: string,
+): Promise<{ deploy?: { id: string; status: string }; error?: string }> {
+  try {
+    const deploy = await apiWrite<{ id: string; status: string }>(
+      `/api/control/render/${encodeURIComponent(serviceId)}/rollback`,
+      "POST",
+      { deploy_id: deployId, reason, reauth_token: reauthToken },
+    );
+    revalidatePath("/infrastructure");
+    return { deploy };
+  } catch (err: any) {
+    return { error: err.message || "Could not roll back this deploy." };
+  }
+}
+
+export async function getRenderDeployHistoryAction(serviceId: string) {
+  const { getRenderDeployHistory } = await import("./render");
+  return getRenderDeployHistory(serviceId);
 }
 
 export async function revokeAllSessionsAction(

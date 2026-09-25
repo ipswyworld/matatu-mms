@@ -62,6 +62,7 @@ class Sacco(Base):
 
     users = relationship("User", back_populates="sacco", foreign_keys="User.sacco_id")
     matatus = relationship("Matatu", back_populates="sacco")
+    terminals = relationship("OperatorTerminal", back_populates="sacco")
 
 class User(Base):
     __tablename__ = "users"
@@ -223,6 +224,7 @@ class User(Base):
     sacco = relationship("Sacco", back_populates="users", foreign_keys=[sacco_id])
     favorite_sacco = relationship("Sacco", foreign_keys=[favorite_sacco_id])
     assigned_zone = relationship("Zone")
+    favorites = relationship("UserFavorite", back_populates="user")
 
 class Route(Base):
     __tablename__ = "routes"
@@ -578,6 +580,7 @@ class Booking(Base):
 
     matatu = relationship("Matatu")
     route = relationship("Route")
+    rating = relationship("TripRating", back_populates="booking", uselist=False)
 
 class PassengerReport(Base):
     __tablename__ = "passenger_reports"
@@ -850,6 +853,17 @@ class ApiClient(Base):
     # JSON list of scope strings from api_clients.SCOPES.
     scopes = Column(Text, nullable=False, default="[]")
     quota_tier = Column(String, nullable=False, default="partner")
+
+    # sandbox | production — a labeling/filtering concern distinct from
+    # quota_tier (a sandbox client is always force-assigned the "sandbox"
+    # quota tier at creation, but the two are separate fields so a
+    # production client could in principle also sit on a low tier).
+    environment = Column(String, nullable=False, default="production")
+    # JSON array of CIDR/IP strings. Null/empty means unrestricted — checked
+    # by app/quota.py's enforce_quota() on every partner request, separate
+    # from the global OPS_IP_ALLOWLIST in app/network_gate.py which gates
+    # the whole ops control plane rather than one partner client.
+    ip_allowlist = Column(Text, nullable=True)
 
     created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
@@ -1331,6 +1345,13 @@ class WebhookSubscription(Base):
     sacco_id = Column(String, ForeignKey("saccos.id"), nullable=False)
     events = Column(String, nullable=False)
     active = Column(Boolean, default=True)
+    # HMAC-SHA256 signing secret for outgoing deliveries (app/listeners.py's
+    # post_webhook sets X-Webhook-Signature from this) — plaintext, not
+    # hashed, because unlike a login credential the backend itself has to
+    # hold the real value to compute a signature on every delivery. Shown to
+    # the operator once at creation/rotation, same UX as ApiClient's secret,
+    # even though the storage model necessarily differs.
+    secret = Column(String, nullable=True)
 
 class WebhookLog(Base):
     __tablename__ = "webhook_logs"
@@ -1343,6 +1364,46 @@ class WebhookLog(Base):
     error_message = Column(Text, nullable=True)
     attempt = Column(Integer, default=1)
     timestamp = Column(DateTime(timezone=True), nullable=False)
+
+
+class SyntheticCheckResult(Base):
+    """One synthetic uptime/latency probe of a public health endpoint
+    (Ops Console Rebuild Spec's Phase 4 item — see app/synthetic_checks.py).
+
+    Proves a check ran from inside this same process/cluster, not true
+    external network independence — a real third-party uptime monitor is an
+    infra decision outside this codebase. Kept deliberately small: no FK,
+    no join target, just enough rows for an Overview sparkline and "last
+    checked" freshness.
+    """
+    __tablename__ = "synthetic_check_results"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    target_name = Column(String, nullable=False, index=True)
+    url = Column(String, nullable=False)
+    ok = Column(Boolean, nullable=False)
+    latency_ms = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+    checked_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class CostSnapshot(Base):
+    """Manually-entered monthly infrastructure cost (Ops Console Rebuild
+    Spec's Phase 4 cost-dashboard item). Render's public API has no billing
+    endpoint to read this from automatically, so this is the plan's own
+    documented fallback — one entry per month, a human types in what the
+    invoice actually said, and the ops console charts the trend.
+    """
+    __tablename__ = "cost_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # "YYYY-MM" — one entry per calendar month, not a timestamped log, since
+    # cloud invoices are themselves monthly.
+    month = Column(String, nullable=False, unique=True, index=True)
+    amount_kes = Column(Numeric(12, 2), nullable=False)
+    note = Column(Text, nullable=True)
+    recorded_by = Column(String, ForeignKey("users.id"), nullable=False)
+    recorded_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class UploadedFile(Base):
@@ -1362,3 +1423,78 @@ class UploadedFile(Base):
     content_type = Column(String, nullable=False)
     data = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class UserFavorite(Base):
+    """A passenger's favorited operator — the real, multi-value replacement
+    for the single `User.favorite_sacco_id` column. That column stays in
+    place (existing rows are backfilled into this table by this feature's
+    migration) but is no longer written to going forward; this table is the
+    source of truth from here on."""
+    __tablename__ = "user_favorites"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    sacco_id = Column(String, ForeignKey("saccos.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "sacco_id", name="uq_user_favorites_user_sacco"),)
+
+    user = relationship("User", back_populates="favorites")
+    sacco = relationship("Sacco")
+
+
+class OperatorTerminal(Base):
+    """An operator's real, self-declared designated pick-up & drop-off area
+    for one route they run (Nairobi City County PSV audit terms) — the
+    "terminal" concept. `label` is always the operator's raw text, kept even
+    once resolved. `stage_id`/`lat`/`lng` are only ever filled in with real
+    confidence (see app/terminal_matching.py) — never fabricated, same
+    ethos as `Stage.geocoded`.
+    match_status: PENDING (not yet run), MATCHED_EXISTING_STAGE (exact name
+    match to a known Stage), GEOCODED_NEW (TomTom-resolved, a new Stage was
+    created), MANUALLY_SET (a staff member resolved it by hand), UNRESOLVED
+    (automation couldn't confirm it — needs a staff fix)."""
+    __tablename__ = "operator_terminals"
+
+    id = Column(String, primary_key=True, index=True)
+    sacco_id = Column(String, ForeignKey("saccos.id"), nullable=False, index=True)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False, index=True)
+    label = Column(String, nullable=False)
+    stage_id = Column(String, ForeignKey("stages.id"), nullable=True, index=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    geocoded = Column(Boolean, nullable=False, default=False)
+    match_status = Column(String, nullable=False, default="PENDING", index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    sacco = relationship("Sacco", back_populates="terminals")
+    route = relationship("Route")
+    stage = relationship("Stage")
+
+
+class TripRating(Base):
+    """A passenger's 1-5 rating of one completed booking, attributed to the
+    crew (driver/conductor) who worked that vehicle at booking time and to
+    the sacco. `sacco_id` is denormalized from the matatu at write time so a
+    rating survives even if the vehicle is later reassigned. Driver/
+    conductor resolution is a best-effort join against CrewAssignment's
+    assigned_at/unassigned_at window — see app/routes/trip_ratings.py for
+    the exact tie-break when more than one assignment overlaps."""
+    __tablename__ = "trip_ratings"
+
+    id = Column(String, primary_key=True, index=True)
+    booking_id = Column(String, ForeignKey("bookings.id"), nullable=False, unique=True)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
+    sacco_id = Column(String, ForeignKey("saccos.id"), nullable=False, index=True)
+    driver_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    conductor_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    rating = Column(Integer, nullable=False)
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    booking = relationship("Booking", back_populates="rating")
+    matatu = relationship("Matatu")
+    sacco = relationship("Sacco")
+    driver = relationship("User", foreign_keys=[driver_user_id])
+    conductor = relationship("User", foreign_keys=[conductor_user_id])

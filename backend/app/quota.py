@@ -16,6 +16,7 @@ A quota is a fairness and cost control, not a security boundary — the
 security boundary is the scope check that already ran. Turning a cache
 outage into a partner-wide outage would trade a small problem for a large one.
 """
+import datetime
 import logging
 import time
 from typing import Optional
@@ -26,6 +27,14 @@ logger = logging.getLogger("app.quota")
 
 KEY_PREFIX = "api:quota:"
 _PERIOD_SECONDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+
+# Separate from KEY_PREFIX's fixed-window rate-limit counters, which expire
+# within seconds/minutes by design (window + 5s TTL) — there is nothing to
+# read back for a usage-history graph from those. This is a second, coarser
+# counter kept for 35 days specifically so the ops console can show a real
+# 30-day trend, not the current instant only.
+DAILY_KEY_PREFIX = "api:usage:daily:"
+DAILY_TTL_SECONDS = 35 * 86400
 
 
 def _limit_for(principal) -> tuple[int, int]:
@@ -43,7 +52,8 @@ def _limit_for(principal) -> tuple[int, int]:
 
 
 async def enforce_quota(principal, request: Optional[Request] = None) -> None:
-    """Counts one request against a machine principal's quota.
+    """Counts one request against a machine principal's quota, and enforces
+    that principal's own IP allowlist if it has one.
 
     Human callers are unaffected: they are already governed by the per-IP
     limiter and their own role, and double-charging them against a partner
@@ -54,7 +64,31 @@ async def enforce_quota(principal, request: Optional[Request] = None) -> None:
     if not is_machine(principal):
         return
 
+    # Per-partner-client IP restriction — separate from the global
+    # OPS_IP_ALLOWLIST (network_gate.py, which gates the whole ops control
+    # plane); this is one client's own allowlist, checked here since
+    # enforce_quota already runs on every partner request.
+    from app import network_gate
+
+    client_host = request.client.host if request and request.client else None
+    if not network_gate.client_ip_allowed(client_host, getattr(principal, "ip_allowlist", None)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This client's credentials are not authorized from this IP address.",
+        )
+
     from app.realtime import get_redis
+
+    # Daily counter for the usage-history graph — separate key from the
+    # fixed-window counter below, kept 35 days instead of expiring within
+    # the rate-limit window.
+    today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    try:
+        r = await get_redis()
+        await r.incr(f"{DAILY_KEY_PREFIX}{principal.client_id}:{today}")
+        await r.expire(f"{DAILY_KEY_PREFIX}{principal.client_id}:{today}", DAILY_TTL_SECONDS)
+    except Exception as e:
+        logger.warning("Daily usage counter skipped (Redis unavailable): %s", e)
 
     max_requests, window = _limit_for(principal)
     # Fixed windows rather than a sliding log: one INCR and one EXPIRE per
@@ -111,3 +145,28 @@ async def current_usage(client_id: str, tier: str) -> dict:
         used = 0
 
     return {"used": used, "limit": count_limit, "windowSeconds": window}
+
+
+async def usage_history(client_id: str, days: int = 30) -> list[dict]:
+    """Real daily request counts for the last `days` days, from the
+    DAILY_KEY_PREFIX counters enforce_quota() writes on every request —
+    not fabricated, and not derived from the fixed-window rate-limit
+    counters (those expire within seconds/minutes by design)."""
+    from app.realtime import get_redis
+
+    try:
+        r = await get_redis()
+    except Exception:
+        return []
+
+    out: list[dict] = []
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    for offset in range(days - 1, -1, -1):
+        day = today - datetime.timedelta(days=offset)
+        key = f"{DAILY_KEY_PREFIX}{client_id}:{day.isoformat()}"
+        try:
+            raw = await r.get(key)
+        except Exception:
+            raw = None
+        out.append({"date": day.isoformat(), "requests": int(raw) if raw else 0})
+    return out

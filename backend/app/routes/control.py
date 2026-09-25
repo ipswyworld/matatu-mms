@@ -45,7 +45,8 @@ from app.ops_metrics import metrics
 from app.realtime import get_redis
 from app import api_clients
 from app import mfa as mfa_lib
-from app import ops_breakers, ops_controls, ops_limits, ops_metrics, ops_reauth
+from app import network_gate
+from app import ops_breakers, ops_controls, ops_limits, ops_metrics, ops_reauth, render_control
 
 logger = logging.getLogger("app.routes.control")
 router = APIRouter(prefix="/api/control", tags=["Ops Control Plane"])
@@ -105,6 +106,10 @@ class MaintenanceBody(CriticalBody):
 
 class KillSwitchBody(CriticalBody):
     killed: bool
+
+
+class RollbackDeployBody(CriticalBody):
+    deploy_id: str
 
 
 def require_reauth(token: str, user: User) -> None:
@@ -527,7 +532,7 @@ async def replay_webhook(
 
     from app.worker import get_arq_pool
     pool = await get_arq_pool()
-    job = await pool.enqueue_job("deliver_webhook_job", sub.id, sub.url, log.event_type, payload)
+    job = await pool.enqueue_job("deliver_webhook_job", sub.id, sub.url, log.event_type, payload, sub.secret)
 
     stage_audit_log(
         db, resource_type="webhook_log", resource_id=str(log_id), action="REPLAY",
@@ -658,12 +663,14 @@ async def unlock_user(
 # Partner API clients (Readiness List §14)
 # --------------------------------------------------------------------------
 
-class ApiClientCreateBody(ReasonBody):
+class ApiClientCreateBody(CriticalBody):
     name: str = Field(min_length=2, max_length=120)
     sacco_id: Optional[str] = None
     scopes: List[str] = Field(default_factory=list)
     quota_tier: str = "partner"
     effective_role: str = "SACCO_OPERATOR"
+    environment: str = "production"  # sandbox | production
+    ip_allowlist: Optional[List[str]] = None  # CIDR strings; empty/None means unrestricted
 
 
 @router.get("/api-clients")
@@ -686,6 +693,8 @@ async def list_api_clients(
             "effectiveRole": c.effective_role,
             "scopes": c.scope_list(),
             "quotaTier": c.quota_tier,
+            "environment": c.environment,
+            "ipAllowlist": json.loads(c.ip_allowlist) if c.ip_allowlist else [],
             "createdAt": c.created_at.isoformat() if c.created_at else None,
             "lastUsedAt": c.last_used_at.isoformat() if c.last_used_at else None,
             "revokedAt": c.revoked_at.isoformat() if c.revoked_at else None,
@@ -694,6 +703,28 @@ async def list_api_clients(
             "usage": usage,
         })
     return out
+
+
+@router.get("/api-clients/{client_id}/usage-history")
+async def api_client_usage_history(
+    client_id: str,
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily request-count history for one client, for the usage graph on
+    its detail view. Reads from the same quota-tracking keys
+    enforce_quota() already writes on every partner request — no separate
+    analytics pipeline, just a different read of data that already exists."""
+    from app.models import ApiClient
+    from app.quota import usage_history
+
+    record = (
+        await db.execute(select(ApiClient).where(ApiClient.client_id == client_id))
+    ).scalars().first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="No API client with that id")
+
+    return {"clientId": client_id, "days": await usage_history(client_id, days=30)}
 
 
 @router.get("/api-clients/scopes")
@@ -718,12 +749,21 @@ async def create_api_client(
     """
     from app.models import ApiClient, Sacco
 
+    require_reauth(body.reauth_token, current_user)
+
     try:
         api_clients.validate_scopes(body.scopes)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    if body.quota_tier not in api_clients.QUOTA_TIERS:
+    if body.environment not in ("sandbox", "production"):
+        raise HTTPException(status_code=400, detail="environment must be 'sandbox' or 'production'")
+
+    # A sandbox client always gets the sandbox tier regardless of what was
+    # requested — the point of "sandbox" is a low, fixed ceiling a partner
+    # can't accidentally (or deliberately) raise by asking for a bigger tier.
+    quota_tier = "sandbox" if body.environment == "sandbox" else body.quota_tier
+    if quota_tier not in api_clients.QUOTA_TIERS:
         raise HTTPException(
             status_code=400,
             detail=f"Unknown quota tier. Valid: {', '.join(api_clients.QUOTA_TIERS)}",
@@ -743,6 +783,12 @@ async def create_api_client(
         if sacco is None:
             raise HTTPException(status_code=404, detail="No Sacco with that id")
 
+    ip_allowlist = [cidr.strip() for cidr in (body.ip_allowlist or []) if cidr.strip()]
+    if ip_allowlist:
+        invalid = network_gate.invalid_networks(ip_allowlist)
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Not a valid CIDR/IP: {', '.join(invalid)}")
+
     client_id, client_secret = api_clients.generate_credentials()
     record = ApiClient(
         id=f"apc-{uuid.uuid4().hex[:10]}",
@@ -752,7 +798,9 @@ async def create_api_client(
         sacco_id=body.sacco_id,
         effective_role=body.effective_role,
         scopes=json.dumps(body.scopes),
-        quota_tier=body.quota_tier,
+        quota_tier=quota_tier,
+        environment=body.environment,
+        ip_allowlist=json.dumps(ip_allowlist) if ip_allowlist else None,
         created_by=current_user.id,
         created_at=datetime.datetime.now(datetime.timezone.utc),
     )
@@ -763,7 +811,8 @@ async def create_api_client(
         user_id=current_user.id,
         new_values={
             "name": body.name, "saccoId": body.sacco_id, "scopes": body.scopes,
-            "quotaTier": body.quota_tier, "reason": body.reason,
+            "quotaTier": quota_tier, "environment": body.environment,
+            "ipAllowlist": ip_allowlist, "reason": body.reason,
         },
     )
     await db.commit()
@@ -777,6 +826,8 @@ async def create_api_client(
         "saccoId": record.sacco_id,
         "scopes": body.scopes,
         "quotaTier": record.quota_tier,
+        "environment": record.environment,
+        "ipAllowlist": ip_allowlist,
         "warning": "Copy this secret now — it is not stored and cannot be shown again.",
     }
 
@@ -784,7 +835,7 @@ async def create_api_client(
 @router.post("/api-clients/{client_id}/revoke")
 async def revoke_api_client(
     client_id: str,
-    body: ReasonBody,
+    body: CriticalBody,
     current_user: User = Depends(requires_permission("manage_system_config")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -796,6 +847,8 @@ async def revoke_api_client(
     every request rather than trusting the token's lifetime.
     """
     from app.models import ApiClient
+
+    require_reauth(body.reauth_token, current_user)
 
     record = (
         await db.execute(select(ApiClient).where(ApiClient.client_id == client_id))
@@ -816,6 +869,137 @@ async def revoke_api_client(
     await db.commit()
     logger.warning("API client %s revoked by %s: %s", client_id, current_user.id, body.reason)
     return {"clientId": client_id, "revoked": True}
+
+
+@router.get("/synthetic-checks")
+async def get_synthetic_checks(
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Latest synthetic uptime/latency probe per target, plus a short recent
+    history for a sparkline (app/synthetic_checks.py runs the actual probes
+    on a cron; this just reads what it recorded)."""
+    from app.models import SyntheticCheckResult
+
+    rows = (
+        await db.execute(
+            select(SyntheticCheckResult).order_by(SyntheticCheckResult.checked_at.desc()).limit(300)
+        )
+    ).scalars().all()
+
+    by_target: dict = {}
+    for row in rows:
+        by_target.setdefault(row.target_name, []).append(row)
+
+    return [
+        {
+            "targetName": name,
+            "url": entries[0].url,
+            "latest": {
+                "ok": entries[0].ok,
+                "latencyMs": entries[0].latency_ms,
+                "error": entries[0].error,
+                "checkedAt": entries[0].checked_at.isoformat(),
+            },
+            "recent": [
+                {"ok": e.ok, "latencyMs": e.latency_ms, "checkedAt": e.checked_at.isoformat()}
+                for e in reversed(entries[:20])
+            ],
+        }
+        for name, entries in by_target.items()
+    ]
+
+
+class CostSnapshotBody(ReasonBody):
+    month: str  # "YYYY-MM"
+    amount_kes: str
+    note: Optional[str] = None
+
+
+@router.get("/cost-snapshots")
+async def list_cost_snapshots(
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually-entered monthly cost figures (Render has no billing API to
+    read this from automatically — see CostSnapshot's docstring)."""
+    from app.models import CostSnapshot
+
+    rows = (
+        await db.execute(select(CostSnapshot).order_by(CostSnapshot.month.asc()))
+    ).scalars().all()
+    return [
+        {
+            "id": r.id, "month": r.month, "amountKes": str(r.amount_kes),
+            "note": r.note, "recordedBy": r.recorded_by, "recordedAt": r.recorded_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
+@router.post("/cost-snapshots")
+async def create_cost_snapshot(
+    body: CostSnapshotBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Records (or overwrites) one month's cost figure — Elevated, not
+    Critical: it's a data entry with no operational blast radius, same tier
+    as a rate-limit change."""
+    from app.models import CostSnapshot
+    import re
+    import decimal
+
+    if not re.match(r"^\d{4}-(0[1-9]|1[0-2])$", body.month):
+        raise HTTPException(status_code=400, detail="month must be in YYYY-MM form.")
+    try:
+        amount = decimal.Decimal(body.amount_kes)
+    except decimal.InvalidOperation:
+        raise HTTPException(status_code=400, detail="amount_kes must be a valid number.")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    existing = (
+        await db.execute(select(CostSnapshot).where(CostSnapshot.month == body.month))
+    ).scalars().first()
+    old_amount = str(existing.amount_kes) if existing else None
+    if existing:
+        existing.amount_kes = amount
+        existing.note = body.note
+        existing.recorded_by = current_user.id
+        existing.recorded_at = now
+    else:
+        db.add(CostSnapshot(
+            month=body.month, amount_kes=amount, note=body.note,
+            recorded_by=current_user.id, recorded_at=now,
+        ))
+
+    stage_audit_log(
+        db, resource_type="cost_snapshot", resource_id=body.month, action="SET",
+        user_id=current_user.id,
+        old_values={"amountKes": old_amount} if old_amount else None,
+        new_values={"amountKes": body.amount_kes, "reason": body.reason},
+    )
+    await db.commit()
+    return {"month": body.month, "amountKes": body.amount_kes}
+
+
+@router.get("/ci-status")
+async def get_ci_status(
+    current_user: User = Depends(requires_permission("view_system_health")),
+):
+    """Latest dependency/CVE scan result from CI (app/ci_status.py) — reads
+    the existing pipeline's own Jobs API result rather than running any scan
+    from here."""
+    from app import ci_status
+
+    if not ci_status.GITHUB_BACKUP_TOKEN or not ci_status.GITHUB_BACKUP_REPO:
+        return None
+
+    try:
+        return await ci_status.get_latest_scan_status()
+    except Exception as exc:
+        logger.warning("Could not fetch CI scan status: %s", exc)
+        raise HTTPException(status_code=502, detail="Could not reach GitHub's Actions API.")
 
 
 # --------------------------------------------------------------------------
@@ -976,6 +1160,70 @@ async def set_kill_switch(
         feature, "ENGAGED" if body.killed else "RELEASED", current_user.id, body.reason,
     )
     return ops_controls.snapshot()
+
+
+@router.post("/render/{service_id}/deploy")
+async def trigger_render_deploy(
+    service_id: str,
+    body: CriticalBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deploys a service's latest commit — the highest blast-radius action
+    in the ops console, so it goes through the same Critical gate as
+    maintenance mode and kill switches: reason, typed confirmation, and
+    step-up re-auth, all enforced here rather than trusted from the UI."""
+    require_reauth(body.reauth_token, current_user)
+
+    if not render_control.RENDER_API_KEY:
+        raise HTTPException(status_code=503, detail="RENDER_API_KEY is not configured on this service.")
+
+    try:
+        result = await render_control.trigger_deploy(service_id)
+    except render_control.RenderApiError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+    stage_audit_log(
+        db, resource_type="render_deploy", resource_id=service_id, action="TRIGGER",
+        user_id=current_user.id, old_values=None,
+        new_values={"reason": body.reason, "deployId": result.get("id")},
+    )
+    await db.commit()
+    logger.warning("Render deploy triggered for service %s by %s: %s", service_id, current_user.id, body.reason)
+    return {"id": result.get("id"), "status": result.get("status")}
+
+
+@router.post("/render/{service_id}/rollback")
+async def rollback_render_deploy(
+    service_id: str,
+    body: RollbackDeployBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rolls a service back to a specific previous deploy — Critical for the
+    same reason as trigger_render_deploy above, plus it targets a
+    caller-supplied deploy_id rather than "whatever's newest"."""
+    require_reauth(body.reauth_token, current_user)
+
+    if not render_control.RENDER_API_KEY:
+        raise HTTPException(status_code=503, detail="RENDER_API_KEY is not configured on this service.")
+
+    try:
+        result = await render_control.rollback_deploy(service_id, body.deploy_id)
+    except render_control.RenderApiError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+    stage_audit_log(
+        db, resource_type="render_deploy", resource_id=service_id, action="ROLLBACK",
+        user_id=current_user.id, old_values=None,
+        new_values={"reason": body.reason, "rolledBackToDeployId": body.deploy_id},
+    )
+    await db.commit()
+    logger.warning(
+        "Render rollback for service %s to deploy %s by %s: %s",
+        service_id, body.deploy_id, current_user.id, body.reason,
+    )
+    return {"id": result.get("id"), "status": result.get("status")}
 
 
 @router.post("/sessions/revoke-all")

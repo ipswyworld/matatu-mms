@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Briefcase, Users, Plug, SlidersHorizontal, ScrollText, Server } from "lucide-react";
+import { Activity, Briefcase, Users, Plug, SlidersHorizontal, ScrollText, Server, KeyRound, History, Phone } from "lucide-react";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: Activity, hint: "What is wrong right now" },
@@ -10,8 +10,11 @@ export const NAV_ITEMS = [
   { href: "/sessions", label: "Sessions", icon: Users, hint: "Sign-ins, account locks, MFA resets" },
   { href: "/integrations", label: "Integrations", icon: Plug, hint: "Circuit breakers and webhook deliveries" },
   { href: "/config", label: "Config", icon: SlidersHorizontal, hint: "Feature flags and live rate limits" },
+  { href: "/api-clients", label: "API Clients", icon: KeyRound, hint: "Issue and revoke partner credentials" },
   { href: "/audit", label: "Audit", icon: ScrollText, hint: "Every recorded action" },
   { href: "/infrastructure", label: "Infrastructure", icon: Server, hint: "Deployed versions, alerting, metrics" },
+  { href: "/changelog", label: "Changelog", icon: History, hint: "What shipped, when" },
+  { href: "/on-call", label: "On-Call", icon: Phone, hint: "Who to page" },
 ];
 
 export default function OpsNav() {

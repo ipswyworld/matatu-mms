@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Download } from "lucide-react";
 import { AuditLog, StaffUser } from "@/lib/types";
 import { loadMoreAuditLogsAction } from "@/lib/actions";
+import { downloadCsv, downloadExcel } from "@/lib/csvExport";
 
 export default function AuditLogViewer({
   initialLogs,
@@ -39,6 +41,29 @@ export default function AuditLogViewer({
     });
   }
 
+  // Exports exactly what's currently visible (respecting the search/action
+  // filters) — not the full unfiltered history, which could be much larger
+  // than what's loaded on the page at all.
+  const exportRows = (): { headers: string[]; rows: (string | number)[][] } => ({
+    headers: ["Timestamp", "User", "Action", "Resource"],
+    rows: filtered.map((log) => [
+      new Date(log.timestamp).toLocaleString(),
+      nameFor(log.userId),
+      log.action,
+      `${log.resourceType}/${log.resourceId}`,
+    ]),
+  });
+
+  function exportCsv() {
+    const { headers, rows } = exportRows();
+    downloadCsv("audit-trail", headers, rows);
+  }
+
+  function exportExcel() {
+    const { headers, rows } = exportRows();
+    downloadExcel("audit-trail", headers, rows);
+  }
+
   return (
     <div className="card overflow-hidden">
       <div className="p-5 pb-0">
@@ -62,6 +87,26 @@ export default function AuditLogViewer({
           ))}
         </select>
         <span className="text-xs font-bold text-black/40">{filtered.length} of {logs.length} loaded</span>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className="rounded-lg border border-black/10 bg-black/[0.02] hover:bg-black/5 px-2.5 py-1.5 text-[11px] font-bold text-county-black flex items-center gap-1 disabled:opacity-40"
+          >
+            <Download size={12} strokeWidth={2.5} />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={exportExcel}
+            disabled={filtered.length === 0}
+            className="rounded-lg border border-black/10 bg-black/[0.02] hover:bg-black/5 px-2.5 py-1.5 text-[11px] font-bold text-county-black flex items-center gap-1 disabled:opacity-40"
+          >
+            <Download size={12} strokeWidth={2.5} />
+            Excel
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">

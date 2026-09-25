@@ -4,18 +4,25 @@ import { verifyAndExtractPayload } from "./lib/sessionSign";
 const SESSION_COOKIE_NAME = "mms_ops_session";
 const PUBLIC_PATHS = ["/login", "/mfa-verify"];
 
-async function readVerifiedRole(request: NextRequest): Promise<string | null> {
+async function readVerifiedSession(request: NextRequest): Promise<{ role: string | null; mfaSetupRequired: boolean }> {
   const raw = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (!raw) return null;
+  if (!raw) return { role: null, mfaSetupRequired: false };
   const payloadBase64 = await verifyAndExtractPayload(raw);
-  if (!payloadBase64) return null;
+  if (!payloadBase64) return { role: null, mfaSetupRequired: false };
   try {
     const json = Buffer.from(payloadBase64, "base64").toString("utf-8");
-    return (JSON.parse(json).role as string) ?? null;
+    const parsed = JSON.parse(json);
+    return { role: (parsed.role as string) ?? null, mfaSetupRequired: !!parsed.mfaSetupRequired };
   } catch {
-    return null;
+    return { role: null, mfaSetupRequired: false };
   }
 }
+
+// This console has no MFA-setup UI of its own — enrollment happens in the
+// staff app, which every SUPERADMIN also has an account on. Same env var
+// pattern already used for the impersonation ticket-consume redirect
+// (lib/actions.ts) and the operator-onboarding launcher.
+const STAFF_APP_URL = process.env.STAFF_APP_URL || "http://localhost:3000";
 
 // Two layers of RBAC by design: this middleware (fast, edge-runtime reject
 // on a tampered/absent/non-SUPERADMIN cookie) plus the backend's own
@@ -43,12 +50,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const role = await readVerifiedRole(request);
+  const { role, mfaSetupRequired } = await readVerifiedSession(request);
 
   if (role !== "SUPERADMIN") {
     const response = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.delete(SESSION_COOKIE_NAME);
     return response;
+  }
+
+  if (mfaSetupRequired) {
+    return NextResponse.redirect(`${STAFF_APP_URL}/mfa/setup`);
   }
 
   return NextResponse.next();

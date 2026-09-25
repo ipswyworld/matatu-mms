@@ -169,6 +169,7 @@ class ApiClientPrincipal:
         self.sacco_id = record.sacco_id
         self.role = record.effective_role
         self.tier = record.quota_tier or DEFAULT_TIER
+        self.ip_allowlist = record.ip_allowlist
         self.scopes = record.scope_list()
         self.permissions = permissions_for(self.scopes)
         # Present so code written against User objects does not blow up on

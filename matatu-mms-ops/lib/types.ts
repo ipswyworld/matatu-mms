@@ -3,6 +3,11 @@ export interface OpsSessionData {
   name: string;
   role: "SUPERADMIN";
   token: string;
+  /** Set from auth.py's login response for a never-enrolled admin-tier
+   * account — see middleware.ts, which redirects to the staff app's real
+   * enrollment flow (this console has no MFA-setup UI of its own) until
+   * enrollment completes. */
+  mfaSetupRequired?: boolean;
 }
 
 export interface AbacPolicy {
@@ -37,6 +42,14 @@ export interface SystemHealth {
 export interface RenderIpAllowEntry {
   cidrBlock: string;
   description: string;
+}
+
+export interface RenderDeploy {
+  id: string;
+  status: string;
+  commitId: string | null;
+  commitMessage: string | null;
+  finishedAt: string | null;
 }
 
 export interface RenderServiceStatus {
@@ -79,6 +92,74 @@ export interface FeatureFlag {
   updatedAt: string;
 }
 
+export interface MessagingSpendBreakdown {
+  category: string;
+  status: string;
+  messages: number;
+  segments: number;
+  costKes: string;
+}
+
+export interface MessagingSpendSummary {
+  windowDays: number;
+  totalMessages: number;
+  totalCostKes: string;
+  breakdown: MessagingSpendBreakdown[];
+}
+
+export interface SaccoOption {
+  id: string;
+  name: string;
+}
+
+export interface ApiClientUsage {
+  used: number;
+  limit: number;
+  windowSeconds: number;
+}
+
+export interface ApiClient {
+  id: string;
+  name: string;
+  clientId: string;
+  saccoId: string | null;
+  effectiveRole: string;
+  scopes: string[];
+  quotaTier: string;
+  environment: "sandbox" | "production";
+  ipAllowlist: string[];
+  createdAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  revokedReason: string | null;
+  active: boolean;
+  usage: ApiClientUsage;
+}
+
+export interface ApiScope {
+  scope: string;
+  description: string;
+  permissions: string[];
+}
+
+export interface ApiClientIssuedSecret {
+  id: string;
+  name: string;
+  clientId: string;
+  clientSecret: string;
+  saccoId: string | null;
+  scopes: string[];
+  quotaTier: string;
+  environment: string;
+  ipAllowlist: string[];
+  warning: string;
+}
+
+export interface ApiClientUsageDay {
+  date: string;
+  requests: number;
+}
+
 export interface JobSummary {
   jobId: string;
   function: string;
@@ -109,6 +190,38 @@ export interface FailedLoginBurst {
 export interface LoginOverview {
   recentPrivilegedLogins: PrivilegedLogin[];
   failedLoginBursts: FailedLoginBurst[];
+}
+
+export interface SyntheticCheckPoint {
+  ok: boolean;
+  latencyMs: number | null;
+  checkedAt: string;
+}
+
+export interface CostSnapshot {
+  id: number;
+  month: string;
+  amountKes: string;
+  note: string | null;
+  recordedBy: string;
+  recordedAt: string;
+}
+
+export interface CiScanStatus {
+  runId: number;
+  runUrl: string;
+  runCreatedAt: string;
+  headSha: string;
+  scanJobFound: boolean;
+  scanConclusion: string | null;
+  scanUrl: string;
+}
+
+export interface SyntheticCheckTarget {
+  targetName: string;
+  url: string;
+  latest: { ok: boolean; latencyMs: number | null; error: string | null; checkedAt: string };
+  recent: SyntheticCheckPoint[];
 }
 
 // --- Ops control plane (Ops Console Rebuild Spec §6) -----------------------

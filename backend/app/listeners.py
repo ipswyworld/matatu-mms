@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import datetime
 import time
@@ -55,7 +57,7 @@ async def notification_listener(event_type: str, data: dict):
             f"New booking on {reg_number} by {passenger_name} for seat(s) {seat_numbers}."
         )
 
-async def post_webhook(client: httpx.AsyncClient, url: str, payload: dict) -> httpx.Response:
+async def post_webhook(client: httpx.AsyncClient, url: str, payload: dict, secret: str | None = None) -> httpx.Response:
     """Performs the actual POST request to the subscriber's webhook endpoint."""
     # httpx's `json=` kwarg serializes with the stdlib json.dumps and no
     # custom encoder, which can't handle the datetime/date/Decimal objects
@@ -63,10 +65,19 @@ async def post_webhook(client: httpx.AsyncClient, url: str, payload: dict) -> ht
     # (e.g. Fine.issued_at, Fine.amount_kes). Serialize explicitly with
     # default=str instead, so a real delivery never silently "fails" with
     # a TypeError before it even reaches the network.
+    body = json.dumps(payload, default=str)
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        # Signs the exact bytes sent, so the subscriber verifies against the
+        # same serialization rather than re-encoding the payload themselves
+        # and risking a mismatch from key ordering/float formatting.
+        headers["X-Webhook-Signature"] = "sha256=" + hmac.new(
+            secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
     response = await client.post(
         url,
-        content=json.dumps(payload, default=str),
-        headers={"Content-Type": "application/json"},
+        content=body,
+        headers=headers,
         timeout=5.0,
     )
     response.raise_for_status()
@@ -77,14 +88,15 @@ async def deliver_webhook_with_resilience(
     url: str,
     event_type: str,
     payload: dict,
-    breaker: CircuitBreaker
+    breaker: CircuitBreaker,
+    secret: str | None = None,
 ):
     """Delivers webhook using circuit breaker & retry with exponential backoff."""
     timestamp = datetime.datetime.now(datetime.timezone.utc)  # WebhookLog.timestamp is a real DateTime column
-    
+
     async def make_attempt():
         async with httpx.AsyncClient() as client:
-            return await post_webhook(client, url, payload)
+            return await post_webhook(client, url, payload, secret)
 
     status_code = None
     error_message = None
@@ -176,7 +188,7 @@ async def webhook_dispatcher_listener(event_type: str, data: dict):
 
         # Schedule delivery concurrently in background
         asyncio.create_task(
-            deliver_webhook_with_resilience(sub.id, sub.url, event_type, payload, breaker)
+            deliver_webhook_with_resilience(sub.id, sub.url, event_type, payload, breaker, sub.secret)
         )
 
 # --- Register Listeners with Dispatcher ---

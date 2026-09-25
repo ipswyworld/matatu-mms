@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import { getOpsOverview } from "@/lib/data";
+import { getOpsOverview, getSyntheticChecks } from "@/lib/data";
 import OverviewLive from "@/components/OverviewLive";
+import SyntheticChecksPanel from "@/components/SyntheticChecksPanel";
+import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Overview | Ops Console" };
 export const dynamic = "force-dynamic";
@@ -18,6 +20,8 @@ export default async function OverviewPage() {
     fetchError = err?.message || "Could not reach the control plane.";
   }
 
+  const checks = await settle(getSyntheticChecks());
+
   return (
     <>
       {fetchError && (
@@ -26,6 +30,13 @@ export default async function OverviewPage() {
         </div>
       )}
       <OverviewLive initial={initial} />
+      <div className="mt-5">
+        {checks.data ? (
+          <SyntheticChecksPanel targets={checks.data} />
+        ) : (
+          <PanelError title="Synthetic uptime checks" error={checks.error!} />
+        )}
+      </div>
     </>
   );
 }

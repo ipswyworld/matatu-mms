@@ -41,6 +41,32 @@ async function renderFetch<T>(path: string): Promise<T> {
 }
 
 /**
+ * The last N deploys for one service, for the rollback picker — "which
+ * deploy do you want to roll back to" needs a real list, not just the
+ * currently-live one ServiceHealthMatrix already shows. Read-only, so it
+ * stays in this file alongside getRenderServiceMatrix below; the actual
+ * trigger/rollback writes live in the backend instead (see
+ * backend/app/render_control.py) so they get the same require_reauth +
+ * stage_audit_log every other Critical action in this console has — this
+ * file has no re-auth or audit mechanism of its own to give them.
+ */
+export async function getRenderDeployHistory(serviceId: string, limit = 10): Promise<Array<{ id: string; status: string; commitId: string | null; commitMessage: string | null; finishedAt: string | null }>> {
+  const raw = await renderFetch<Array<{ deploy?: RawRenderDeploy & { id?: string } } & RawRenderDeploy & { id?: string }>>(
+    `/services/${serviceId}/deploys?limit=${limit}`
+  );
+  return raw.map((item) => {
+    const d = item.deploy ?? item;
+    return {
+      id: (d as any).id ?? "",
+      status: d.status ?? "unknown",
+      commitId: d.commit?.id ?? null,
+      commitMessage: d.commit?.message ?? null,
+      finishedAt: d.finishedAt ?? d.createdAt ?? null,
+    };
+  });
+}
+
+/**
  * Service Health Matrix (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.3) — every
  * service under this Render account/workspace, with its currently-deployed
  * commit. Derived live from the Render API rather than a hand-maintained

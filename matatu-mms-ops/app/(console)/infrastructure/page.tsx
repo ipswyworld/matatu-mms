@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { CheckCircle2, XCircle } from "lucide-react";
-import { getSystemHealth } from "@/lib/data";
+import { getSystemHealth, getCiScanStatus, getCostSnapshots } from "@/lib/data";
 import { getRenderServiceMatrix } from "@/lib/render";
 import ServiceHealthMatrix from "@/components/ServiceHealthMatrix";
+import DeployControlPanel from "@/components/DeployControlPanel";
+import CiScanStatusPanel from "@/components/CiScanStatusPanel";
+import CostDashboardPanel from "@/components/CostDashboardPanel";
+import ServiceTopologyGraph from "@/components/ServiceTopologyGraph";
 import AlertingSummary from "@/components/AlertingSummary";
 import OperatorOnboardingLauncher from "@/components/OperatorOnboardingLauncher";
 import PanelError, { settle } from "@/components/PanelError";
@@ -30,9 +34,11 @@ function StatusBadge({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; 
 }
 
 export default async function InfrastructurePage() {
-  const [health, renderServices] = await Promise.all([
+  const [health, renderServices, ciScan, costSnapshots] = await Promise.all([
     settle(getSystemHealth()),
     settle(getRenderServiceMatrix()),
+    settle(getCiScanStatus()),
+    settle(getCostSnapshots()),
   ]);
 
   return (
@@ -46,10 +52,27 @@ export default async function InfrastructurePage() {
       </div>
 
       {renderServices.data ? (
-        <ServiceHealthMatrix services={renderServices.data} />
+        <>
+          <ServiceHealthMatrix services={renderServices.data} />
+          <DeployControlPanel services={renderServices.data} />
+        </>
       ) : (
         <PanelError title="Service health matrix" error={renderServices.error!} />
       )}
+
+      {ciScan.data !== undefined ? (
+        <CiScanStatusPanel status={ciScan.data} />
+      ) : (
+        <PanelError title="Dependency & CVE scan" error={ciScan.error!} />
+      )}
+
+      {costSnapshots.data ? (
+        <CostDashboardPanel snapshots={costSnapshots.data} />
+      ) : (
+        <PanelError title="Infrastructure cost" error={costSnapshots.error!} />
+      )}
+
+      <ServiceTopologyGraph />
 
       <AlertingSummary />
 

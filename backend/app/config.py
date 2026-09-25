@@ -141,6 +141,24 @@ GITHUB_BACKUP_TOKEN = secrets_provider.get("GITHUB_BACKUP_TOKEN")
 GITHUB_BACKUP_REPO = os.getenv("GITHUB_BACKUP_REPO")
 BACKUP_RETENTION_DAYS = int(os.getenv("BACKUP_RETENTION_DAYS", "30"))
 
+# Render API (app/render_control.py) — deploy trigger/rollback from the ops
+# console. Deliberately a separate key from matatu-mms-ops's own
+# RENDER_API_KEY (which only ever reads Render's API for the service health
+# matrix): this one lives on the backend service specifically because the
+# write path needs require_reauth + stage_audit_log, which only exist here.
+# Unset means the control-plane endpoints return a clear 503 rather than a
+# confusing failure deep inside an httpx call.
+RENDER_API_KEY = secrets_provider.get("RENDER_API_KEY")
+
+# Synthetic uptime checks (app/synthetic_checks.py) — each frontend's own
+# /api/health, hit from this backend on a schedule. Unset targets are
+# skipped individually rather than failing the whole check run: a fresh
+# deployment that hasn't set the public app's URL yet still gets checks for
+# whichever apps it has configured.
+STAFF_APP_URL = os.getenv("STAFF_APP_URL")
+PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL")
+OPS_APP_URL = os.getenv("OPS_APP_URL")
+
 # Cloudflare Turnstile — bot protection on login/register/password-reset
 # (Security Checklist #12). Unset by default: local dev and any deploy
 # that hasn't created a Turnstile site yet keeps working exactly as
