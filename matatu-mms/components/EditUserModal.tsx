@@ -104,7 +104,11 @@ export default function EditUserModal({ user, saccos, viewerRole }: { user: User
       setError(result.error);
       return;
     }
-    setSuccess(newPassword ? "Saved — password updated." : "Saved.");
+    if (result.pendingRoleGrantId) {
+      setSuccess("Saved. The role change to " + role + " needs a second Super Admin's approval before it takes effect — see the ops console's Sessions page.");
+    } else {
+      setSuccess(newPassword ? "Saved — password updated." : "Saved.");
+    }
     setNewPassword("");
   }
 

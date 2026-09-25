@@ -1422,14 +1422,15 @@ export async function addUserAction(_prevState: { error?: string } | undefined, 
 export async function updateUserAction(
   userId: string,
   input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean; extraPermissions?: string[]; additionalRoles?: string[] }
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; pendingRoleGrantId?: number }> {
+  let response: { pendingRoleGrantId?: number };
   try {
-    await apiWrite(`/api/users/${userId}`, "PATCH", input);
+    response = await apiWrite(`/api/users/${userId}`, "PATCH", input);
   } catch (err: any) {
     return { error: err.message || "Could not update user." };
   }
   revalidatePath("/users");
-  return {};
+  return { pendingRoleGrantId: response.pendingRoleGrantId };
 }
 
 export async function setUserActiveAction(userId: string, isActive: boolean): Promise<{ error?: string }> {
@@ -1447,6 +1448,23 @@ export async function revokeUserSessionsAction(userId: string): Promise<{ error?
     await apiWrite(`/api/users/${userId}/revoke-sessions`, "POST");
   } catch (err: any) {
     return { error: err.message || "Could not revoke this account's sessions." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
+// Reuses the ops console's control-plane endpoint (backend/app/routes/
+// control.py's reset_user_mfa) rather than duplicating it under /api/users
+// — reachable from here today only because this is a single-process
+// deployment (BACKEND_URL serves both). If the control plane ever splits
+// into its own process (Ops Console Rebuild Spec §3.1 Path A), this call
+// needs a CONTROL_PLANE_URL of its own, the same split lib/data.ts already
+// has in matatu-mms-ops.
+export async function resetUserMfaAction(userId: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/control/users/${userId}/reset-mfa`, "POST", { reason });
+  } catch (err: any) {
+    return { error: err.message || "Could not reset MFA for this account." };
   }
   revalidatePath("/users");
   return {};
@@ -1598,4 +1616,45 @@ export async function updateZoneAction(zoneId: string, input: ZoneUpsertInput): 
   } catch (err: any) {
     return { error: err.message || "Could not update this zone." };
   }
+}
+
+export interface CreateSupportTicketInput {
+  subject: string;
+  description: string;
+  priority: string;
+  reporterName: string;
+  reporterContact: string;
+}
+
+export async function createSupportTicketAction(input: CreateSupportTicketInput): Promise<{ error?: string }> {
+  try {
+    await apiWrite("/api/support-tickets", "POST", {
+      subject: input.subject,
+      description: input.description,
+      priority: input.priority,
+      reporter_name: input.reporterName,
+      reporter_contact: input.reporterContact,
+    });
+  } catch (err: any) {
+    return { error: err.message || "Could not create this ticket." };
+  }
+  revalidatePath("/support");
+  return {};
+}
+
+export async function updateSupportTicketAction(
+  ticketId: number,
+  input: { status?: string; priority?: string; assigneeId?: string | null },
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/support-tickets/${ticketId}`, "PATCH", {
+      status: input.status,
+      priority: input.priority,
+      assignee_id: input.assigneeId,
+    });
+  } catch (err: any) {
+    return { error: err.message || "Could not update this ticket." };
+  }
+  revalidatePath("/support");
+  return {};
 }

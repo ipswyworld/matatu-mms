@@ -229,6 +229,15 @@ export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
     reversible: true,
     reversalHint: "Enable maintenance mode again.",
   },
+  "maintenance.announce": {
+    id: "maintenance.announce",
+    label: "Update announcement",
+    actionClass: "elevated",
+    affectedScope: "The public status page and site-wide banner in the passenger app",
+    reversible: true,
+    reversalHint: "Clear the announcement, or set a new one.",
+    detail: "Never takes the system down by itself — only changes what visitors are told. Enabling maintenance mode is a separate, Critical action.",
+  },
   "killSwitch.toggle": {
     id: "killSwitch.toggle",
     label: "Toggle kill switch",
@@ -358,6 +367,26 @@ export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
     reversalHint: "Deploy forward again, or roll back to a different prior deploy.",
     detail:
       "Rolls this service back to the deploy you pick from its history. Whatever is live now is replaced immediately, including any data-shape changes the current deploy introduced.",
+  },
+
+  // --- Two-person role-grant approval (Phase 7) -----------------------------
+  "roleGrant.approve": {
+    id: "roleGrant.approve",
+    label: "Approve role grant",
+    actionClass: "critical",
+    affectedScope: "1 account, promoted into the Admin tier",
+    reversible: true,
+    reversalHint: "Demote the account back from the Users page.",
+    detail:
+      "A standing privilege change, not an incident response — the requesting Super Admin cannot also approve their own request.",
+  },
+  "roleGrant.reject": {
+    id: "roleGrant.reject",
+    label: "Reject role grant",
+    actionClass: "elevated",
+    affectedScope: "1 pending request, closed without applying",
+    reversible: true,
+    reversalHint: "The requester can submit a new request.",
   },
 
   "impersonate.start": {

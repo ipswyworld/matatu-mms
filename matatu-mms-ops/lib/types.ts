@@ -200,6 +200,18 @@ export interface SyntheticCheckPoint {
   checkedAt: string;
 }
 
+export interface PendingRoleGrant {
+  id: number;
+  userId: string;
+  requestedRole: "ADMIN" | "SUPERADMIN";
+  requestedBy: string;
+  requestedAt: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  decidedBy: string | null;
+  decidedAt: string | null;
+  reason: string | null;
+}
+
 export interface DataQualityCheck {
   checkName: string;
   issueCount: number | null;
@@ -379,8 +391,15 @@ export interface KillSwitchState {
   killed: boolean;
 }
 
+export interface MaintenanceAnnouncement {
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  message: string | null;
+}
+
 export interface SystemControls {
   maintenance: MaintenanceState;
+  announcement: MaintenanceAnnouncement | null;
   killSwitches: KillSwitchState[];
 }
 

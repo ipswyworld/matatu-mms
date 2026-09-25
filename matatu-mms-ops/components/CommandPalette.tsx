@@ -34,6 +34,9 @@ const ACTION_ROUTES: Record<string, string> = {
   "retention.scanNow": "/compliance",
   "dsr.update": "/compliance",
   "dataQuality.scanNow": "/compliance",
+  "roleGrant.approve": "/sessions",
+  "roleGrant.reject": "/sessions",
+  "maintenance.announce": "/config",
 };
 
 interface Entry {

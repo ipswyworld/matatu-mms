@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, OperatorTerminal, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, OperatorTerminal, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone, SupportTicket } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -48,6 +48,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 export async function getUsers(): Promise<User[]> {
   return apiFetch<User[]>("/api/users");
+}
+
+export async function getSupportTickets(): Promise<SupportTicket[]> {
+  return apiFetch<SupportTicket[]>("/api/support-tickets");
 }
 
 export async function getUserById(id: string): Promise<User | undefined> {

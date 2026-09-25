@@ -98,6 +98,14 @@ class CriticalBody(ReasonBody):
     reauth_token: str
 
 
+class MaintenanceAnnouncementBody(ReasonBody):
+    # All optional; omitting scheduled_start/end (or leaving both blank on
+    # an update) clears the announcement entirely.
+    scheduled_start: Optional[datetime.datetime] = None
+    scheduled_end: Optional[datetime.datetime] = None
+    message: Optional[str] = None
+
+
 class MaintenanceBody(CriticalBody):
     enabled: bool
     scope: str = "public"
@@ -1173,6 +1181,35 @@ async def set_maintenance_mode(
     return ops_controls.snapshot()
 
 
+@router.post("/maintenance-announcement")
+async def set_maintenance_announcement(
+    body: MaintenanceAnnouncementBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Announces (or clears) an upcoming maintenance window — Elevated, not
+    Critical: this never takes the system down by itself, it only changes
+    what the public status page shows. Actually enabling maintenance mode
+    stays a separate, Critical, re-auth-gated action."""
+    has_window = body.scheduled_start is not None and body.scheduled_end is not None
+    value = {
+        "scheduledStart": body.scheduled_start.isoformat() if body.scheduled_start else None,
+        "scheduledEnd": body.scheduled_end.isoformat() if body.scheduled_end else None,
+        "message": body.message,
+    }
+    await _persist_control(db, ops_controls.ANNOUNCEMENT_KEY, has_window, value, body.reason, current_user.id)
+    stage_audit_log(
+        db, resource_type="system_control", resource_id=ops_controls.ANNOUNCEMENT_KEY,
+        action="ANNOUNCE" if has_window else "CLEAR",
+        user_id=current_user.id, new_values={**value, "reason": body.reason},
+    )
+    await db.commit()
+
+    ops_controls.apply_local(ops_controls.ANNOUNCEMENT_KEY, has_window, value)
+    await ops_controls.publish_to_redis()
+    return ops_controls.get_announcement()
+
+
 @router.post("/kill-switch/{feature}")
 async def set_kill_switch(
     feature: str,
@@ -1225,6 +1262,106 @@ class DsrIntakeBody(BaseModel):
 class DsrUpdateBody(ReasonBody):
     status: str
     resolution_notes: Optional[str] = None
+
+
+class RoleGrantRejectBody(ReasonBody):
+    pass
+
+
+@router.get("/role-grants")
+async def list_role_grants(
+    current_user: User = Depends(requires_permission("manage_admins")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Two-person sign-off queue for promotions into the Admin tier
+    (app/routes/users.py's update_user defers these instead of applying
+    them immediately)."""
+    from app.models import PendingRoleGrant
+
+    rows = (
+        await db.execute(select(PendingRoleGrant).order_by(PendingRoleGrant.requested_at.desc()).limit(100))
+    ).scalars().all()
+    return [
+        {
+            "id": r.id, "userId": r.user_id, "requestedRole": r.requested_role,
+            "requestedBy": r.requested_by, "requestedAt": r.requested_at.isoformat(),
+            "status": r.status, "decidedBy": r.decided_by,
+            "decidedAt": r.decided_at.isoformat() if r.decided_at else None, "reason": r.reason,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/role-grants/{grant_id}/approve")
+async def approve_role_grant(
+    grant_id: int,
+    body: CriticalBody,
+    current_user: User = Depends(requires_permission("manage_admins")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Applies the role change a second Super Admin is signing off on.
+    Critical (reauth) on top of the two-person requirement itself — this
+    is a standing privilege grant, not an incident response, so there's no
+    "nobody's reachable at 3am" cost to paying for both."""
+    require_reauth(body.reauth_token, current_user)
+
+    from app.models import PendingRoleGrant
+
+    grant = (await db.execute(select(PendingRoleGrant).where(PendingRoleGrant.id == grant_id))).scalars().first()
+    if grant is None:
+        raise HTTPException(status_code=404, detail="No role grant request with that id")
+    if grant.status != "PENDING":
+        raise HTTPException(status_code=400, detail=f"This request is already {grant.status.lower()}")
+    if grant.requested_by == current_user.id:
+        raise HTTPException(status_code=403, detail="The Super Admin who requested this grant cannot also approve it")
+
+    user = (await db.execute(select(User).where(User.id == grant.user_id))).scalars().first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="The account this request was for no longer exists")
+
+    old_role = user.role
+    user.role = grant.requested_role
+    now = datetime.datetime.now(datetime.timezone.utc)
+    grant.status = "APPROVED"
+    grant.decided_by = current_user.id
+    grant.decided_at = now
+    grant.reason = body.reason
+
+    stage_audit_log(
+        db, resource_type="pending_role_grant", resource_id=str(grant.id), action="APPROVE",
+        user_id=current_user.id, old_values={"role": old_role},
+        new_values={"role": grant.requested_role, "reason": body.reason, "requestedBy": grant.requested_by},
+    )
+    await db.commit()
+    return {"id": grant.id, "status": "APPROVED", "userId": user.id, "role": user.role}
+
+
+@router.post("/role-grants/{grant_id}/reject")
+async def reject_role_grant(
+    grant_id: int,
+    body: RoleGrantRejectBody,
+    current_user: User = Depends(requires_permission("manage_admins")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import PendingRoleGrant
+
+    grant = (await db.execute(select(PendingRoleGrant).where(PendingRoleGrant.id == grant_id))).scalars().first()
+    if grant is None:
+        raise HTTPException(status_code=404, detail="No role grant request with that id")
+    if grant.status != "PENDING":
+        raise HTTPException(status_code=400, detail=f"This request is already {grant.status.lower()}")
+
+    grant.status = "REJECTED"
+    grant.decided_by = current_user.id
+    grant.decided_at = datetime.datetime.now(datetime.timezone.utc)
+    grant.reason = body.reason
+
+    stage_audit_log(
+        db, resource_type="pending_role_grant", resource_id=str(grant.id), action="REJECT",
+        user_id=current_user.id, new_values={"reason": body.reason},
+    )
+    await db.commit()
+    return {"id": grant.id, "status": "REJECTED"}
 
 
 @router.get("/dsr")

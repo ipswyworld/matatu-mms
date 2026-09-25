@@ -26,6 +26,15 @@ REFRESH_INTERVAL_SECONDS = 5
 
 MAINTENANCE_KEY = "maintenance_mode"
 
+# A separate key from MAINTENANCE_KEY on purpose: this announces an
+# upcoming window (Ops Console Rebuild Spec's Phase 8 item) without
+# actually taking the system down — turning maintenance mode on/off stays
+# the manual, Critical, re-auth-gated action it already is. An announcement
+# can exist with no maintenance mode active yet ("this Saturday, 2-4am"),
+# and stays informational even while it's happening — it never triggers
+# MAINTENANCE_KEY itself.
+ANNOUNCEMENT_KEY = "maintenance_announcement"
+
 # Scope decides who a maintenance window actually stops. Defaulting to
 # "public" rather than "all" is deliberate: enforcement officers and county
 # staff frequently need to keep working through an incident that only
@@ -68,6 +77,16 @@ def maintenance_message() -> str:
     )
 
 
+def get_announcement() -> Optional[dict]:
+    """The current maintenance-window announcement, or None if cleared.
+    Enabled/disabled here just means "does an announcement exist" — it has
+    nothing to do with MAINTENANCE_KEY's own enabled state."""
+    entry = _entry(ANNOUNCEMENT_KEY)
+    if not entry["enabled"]:
+        return None
+    return entry["value"]
+
+
 def is_killed(feature: str) -> bool:
     """Call-site check for a kill switch. Unknown features are never
     considered killed, so a typo disables nothing rather than silently
@@ -85,6 +104,7 @@ def snapshot() -> dict:
             "message": maintenance_message(),
             "scopes": list(MAINTENANCE_SCOPES),
         },
+        "announcement": get_announcement(),
         "killSwitches": [
             {
                 "feature": feature,
@@ -172,6 +192,9 @@ MAINTENANCE_EXEMPT_PREFIXES = (
     "/healthz",
     "/health",
     "/metrics",
+    # The public status page must stay reachable especially *during* a
+    # maintenance window — that's the one time anyone actually needs it.
+    "/api/status",
     # The control plane itself.
     "/api/control",
     # Everything matatu-mms-ops/lib/data.ts reads.

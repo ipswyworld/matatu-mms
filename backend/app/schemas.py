@@ -222,6 +222,11 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: str
+    # Set (transiently, not a real column — see User model) only when a
+    # PATCH's role field was deferred into a two-person-approval request
+    # rather than applied, so the frontend can tell "nothing changed" apart
+    # from "waiting on a second Super Admin."
+    pending_role_grant_id: Optional[int] = None
     phone: Optional[str] = None
     terms_accepted: Optional[bool] = False
     terms_accepted_at: Optional[datetime.datetime] = None

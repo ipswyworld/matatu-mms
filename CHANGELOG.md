@@ -44,6 +44,25 @@ ops console's Changelog page (`matatu-mms-ops/app/(console)/changelog`).
   into a dedicated scratch database (never production) and records
   pass/fail, with a manual "run now" trigger.
 
+- Bulk user actions (deactivate/reactivate/revoke sessions) on the staff
+  app's Users list — loops the existing per-user actions, one audit entry
+  per account.
+- Reset-MFA added to the staff app's per-account actions menu.
+- Two-person sign-off for promoting an account into the Admin tier: the
+  role change is held as a pending request until a *different* Super Admin
+  approves it, reviewable from the ops console's Sessions page.
+- Dedicated impersonation-session-log view on the ops console's Sessions
+  page — a filtered read over already-captured audit events.
+
+- Lightweight support-ticket triage in the staff app (`/support`) — status,
+  priority, and assignee, not a full helpdesk system.
+- Public, no-login system status page (`/status` in the passenger app) and
+  a site-wide maintenance-window banner, backed by a new deliberately
+  reduced `GET /api/status/public` endpoint (up/down per dependency only).
+- Maintenance-window announcements, separate from actually enabling
+  maintenance mode — set from the ops console's Config page, shown on the
+  public status page and banner ahead of a planned window.
+
 ### Fixed
 - Nightly database backups had run since first introduced but had never
   once been restored anywhere — there was no evidence they actually worked.

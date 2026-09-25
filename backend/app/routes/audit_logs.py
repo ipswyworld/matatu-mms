@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/audit-logs", tags=["Audit Trail"])
 async def get_audit_logs(
     limit: int = Query(100, ge=1, le=500),
     before_id: Optional[int] = Query(None, description="Keyset cursor — return records with id < before_id, for paging further back."),
+    action: Optional[str] = Query(None, description="Comma-separated action names to filter to, e.g. IMPERSONATION_START,IMPERSONATION_END."),
     current_user: User = Depends(requires_permission("view_audit_logs")),
     db: AsyncSession = Depends(get_db)
 ):
@@ -28,10 +29,17 @@ async def get_audit_logs(
     O(1) regardless of table size — unlike OFFSET, which gets slower the
     deeper you page. Pass `before_id` (the last id from the previous page)
     to continue further back; omit it for the most recent page.
+
+    `action` exists specifically for the ops console's dedicated
+    impersonation-session-log view (a filtered read over already-captured
+    IMPERSONATION_START/END events, not new capture) — nothing else in this
+    codebase needed action-filtering until that view did.
     """
     query = select(AuditLog).order_by(AuditLog.id.desc())
     if before_id is not None:
         query = query.where(AuditLog.id < before_id)
+    if action:
+        query = query.where(AuditLog.action.in_([a.strip() for a in action.split(",") if a.strip()]))
     query = query.limit(limit)
     result = await db.execute(query)
     return result.scalars().all()

@@ -1413,6 +1413,55 @@ class CostSnapshot(Base):
     recorded_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class SupportTicket(Base):
+    """Lightweight support triage (Ops Console Rebuild Spec's Phase 8 item)
+    — a status/assignee/priority list, deliberately not a full helpdesk
+    system (no SLAs, no email integration, no customer-facing portal).
+    Gated by manage_users rather than a new permission: reusing what
+    ADMIN/SUPERADMIN already have avoids adding a permission to
+    app/rbac.py's ROLE_MATRIX for a feature this small.
+    """
+    __tablename__ = "support_tickets"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    subject = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="OPEN")  # OPEN, IN_PROGRESS, RESOLVED, CLOSED
+    priority = Column(String, nullable=False, default="MEDIUM")  # LOW, MEDIUM, HIGH, URGENT
+    assignee_id = Column(String, ForeignKey("users.id"), nullable=True)
+    reporter_name = Column(String, nullable=False)
+    reporter_contact = Column(String, nullable=False)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PendingRoleGrant(Base):
+    """Two-person sign-off for promoting an account into the Admin tier
+    (Ops Console Rebuild Spec's Phase 7 item — the one genuinely new
+    workflow, everything else in that phase reuses existing actions).
+
+    Two-person approval was explicitly dropped for the ops console's own
+    Critical actions (see lib/opsActions.ts's ACTION_CLASS_META comment —
+    "nobody reachable at 3am" during an incident) but a role grant is a
+    standing privilege change, not an incident response, so requiring a
+    second Super Admin doesn't have that same cost. The requester can never
+    approve their own request (enforced in the endpoint, not just the UI).
+    """
+    __tablename__ = "pending_role_grants"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    requested_role = Column(String, nullable=False)  # ADMIN or SUPERADMIN
+    requested_by = Column(String, ForeignKey("users.id"), nullable=False)
+    requested_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String, nullable=False, default="PENDING")  # PENDING, APPROVED, REJECTED
+    decided_by = Column(String, ForeignKey("users.id"), nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    reason = Column(Text, nullable=True)
+
+
 class DataSubjectRequest(Base):
     """A Kenya Data Protection Act request (access, correction, deletion, or
     objection) from someone whose data this system holds — a passenger, a

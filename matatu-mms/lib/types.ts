@@ -621,6 +621,26 @@ export interface Stage {
   lng: number;
 }
 
+export type OperatorTerminalMatchStatus =
+  | "PENDING"
+  | "MATCHED_EXISTING_STAGE"
+  | "GEOCODED_NEW"
+  | "MANUALLY_SET"
+  | "UNRESOLVED";
+
+export interface OperatorTerminal {
+  id: string;
+  saccoId: string;
+  routeId: string;
+  label: string;
+  stageId?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  geocoded: boolean;
+  matchStatus: OperatorTerminalMatchStatus;
+  createdAt: string;
+}
+
 export type ReportStatus = "PENDING" | "REVIEWED" | "ESCALATED" | "DISMISSED";
 
 export interface PassengerReport {
@@ -660,4 +680,19 @@ export interface TimeseriesResponse {
   metric: string;
   grouping: string;
   points: TimeseriesPoint[];
+}
+
+export interface SupportTicket {
+  id: number;
+  subject: string;
+  description: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  assigneeId: string | null;
+  reporterName: string;
+  reporterContact: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
 }

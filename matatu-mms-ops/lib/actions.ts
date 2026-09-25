@@ -268,14 +268,14 @@ export async function createApiClientAction(
   try {
     const issued = await apiWrite<ApiClientIssuedSecret>("/api/control/api-clients", "POST", {
       name: input.name,
-      saccoId: input.saccoId || undefined,
+      sacco_id: input.saccoId || undefined,
       scopes: input.scopes,
-      quotaTier: input.quotaTier,
-      effectiveRole: input.effectiveRole,
+      quota_tier: input.quotaTier,
+      effective_role: input.effectiveRole,
       environment: input.environment,
-      ipAllowlist: input.ipAllowlist,
+      ip_allowlist: input.ipAllowlist,
       reason,
-      reauthToken,
+      reauth_token: reauthToken,
     });
     revalidatePath("/api-clients");
     return { issued };
@@ -286,7 +286,7 @@ export async function createApiClientAction(
 
 export async function revokeApiClientAction(clientId: string, reason: string, reauthToken?: string): Promise<ActionResult> {
   return runAction(
-    () => apiWrite(`/api/control/api-clients/${encodeURIComponent(clientId)}/revoke`, "POST", { reason, reauthToken }),
+    () => apiWrite(`/api/control/api-clients/${encodeURIComponent(clientId)}/revoke`, "POST", { reason, reauth_token: reauthToken }),
     "Could not revoke this API client.",
     "/api-clients",
   );
@@ -452,6 +452,25 @@ export async function setMaintenanceModeAction(
   );
 }
 
+export async function setMaintenanceAnnouncementAction(
+  scheduledStart: string | null,
+  scheduledEnd: string | null,
+  message: string | null,
+  reason: string,
+): Promise<ActionResult> {
+  return runAction(
+    () =>
+      apiWrite("/api/control/maintenance-announcement", "POST", {
+        scheduled_start: scheduledStart || undefined,
+        scheduled_end: scheduledEnd || undefined,
+        message: message || undefined,
+        reason,
+      }),
+    "Could not update the maintenance announcement.",
+    "/config",
+  );
+}
+
 export async function setKillSwitchAction(
   feature: string,
   killed: boolean,
@@ -595,6 +614,24 @@ export async function scanDataQualityNowAction(reason: string): Promise<ActionRe
     () => apiWrite("/api/control/data-quality/scan-now", "POST", { reason }),
     "Could not run the data-quality scan.",
     "/compliance",
+  );
+}
+
+// --- Two-person role-grant approval (Phase 7) --------------------------------
+
+export async function approveRoleGrantAction(grantId: number, reason: string, reauthToken?: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/role-grants/${grantId}/approve`, "POST", { reason, reauth_token: reauthToken }),
+    "Could not approve this role grant.",
+    "/sessions",
+  );
+}
+
+export async function rejectRoleGrantAction(grantId: number, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/role-grants/${grantId}/reject`, "POST", { reason }),
+    "Could not reject this role grant.",
+    "/sessions",
   );
 }
 

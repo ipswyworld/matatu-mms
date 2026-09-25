@@ -61,6 +61,10 @@ from app.routes.telemetry import broadcaster as telemetry_broadcaster
 from app.routes.system import router as system_router
 from app.routes.crew import router as crew_router
 from app.routes.fare_stages import router as fare_stages_router
+from app.routes.operator_terminals import router as operator_terminals_router
+from app.routes.trip_ratings import router as trip_ratings_router
+from app.routes.support_tickets import router as support_tickets_router
+from app.routes.status_public import router as status_public_router
 from app.routes.beats import router as beats_router
 from app.routes.duty import router as duty_router
 from app.routes.broadcasts import router as broadcasts_router
@@ -319,6 +323,10 @@ app.include_router(notifications_router)
 app.include_router(system_router)
 app.include_router(crew_router)
 app.include_router(fare_stages_router)
+app.include_router(operator_terminals_router)
+app.include_router(trip_ratings_router)
+app.include_router(support_tickets_router)
+app.include_router(status_public_router)
 app.include_router(beats_router)
 app.include_router(duty_router)
 app.include_router(broadcasts_router)

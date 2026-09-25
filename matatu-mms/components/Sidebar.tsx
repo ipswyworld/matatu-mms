@@ -112,6 +112,7 @@ export default function Sidebar({
     { href: "/revenue", label: t("nav.revenueFines"), action: "view_revenue", section: "Revenue" },
     { href: "/passengers", label: t("nav.passengerFeedback"), action: "view_passengers", section: "Revenue" },
     { href: "/users", label: t("nav.users"), action: "view_users", section: "Administration" },
+    { href: "/support", label: "Support Tickets", action: "manage_users", section: "Administration" },
     { href: "/system", label: "System", action: "view_system_health", section: "Administration" },
   ];
 

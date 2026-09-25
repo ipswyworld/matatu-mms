@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import { LanguageProvider } from "@/components/LanguageProvider";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import MaintenanceBanner from "@/components/MaintenanceBanner";
 
 // Set NEXT_PUBLIC_SITE_URL once this deploys to a real domain — canonical
 // URLs and Open Graph images resolve against it.
@@ -73,6 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-screen">
+        <MaintenanceBanner />
         <LanguageProvider>{children}</LanguageProvider>
         <ServiceWorkerRegistrar />
       </body>

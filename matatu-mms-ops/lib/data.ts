@@ -5,6 +5,7 @@ import {
   OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery, SystemControls,
   ApiClient, ApiScope, ApiClientUsageDay, SaccoOption, MessagingSpendSummary, SyntheticCheckTarget, CiScanStatus,
   CostSnapshot, ConfigHistoryEntry, BackupRestoreTest, RetentionReviewRow, DataSubjectRequest, DataQualityCheck,
+  PendingRoleGrant,
 } from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
@@ -54,6 +55,13 @@ export async function getAuditLogsPage(beforeId?: number): Promise<{ logs: Audit
   const logs = await apiFetch<AuditLog[]>(`/api/audit-logs${qs}`);
   const nextCursor = logs.length === AUDIT_LOG_PAGE_SIZE ? logs[logs.length - 1].id : null;
   return { logs, nextCursor };
+}
+
+// A filtered read over already-captured IMPERSONATION_START/END events
+// (auth.py stages both under resource_type="user") — the dedicated
+// impersonation-session-log view, not new capture.
+export async function getImpersonationLog(): Promise<AuditLog[]> {
+  return apiFetch<AuditLog[]>("/api/audit-logs?limit=100&action=IMPERSONATION_START,IMPERSONATION_END");
 }
 
 // id->name lookup for the audit viewer's "performed by" column — AuditLog
@@ -162,4 +170,8 @@ export async function getDataSubjectRequests(): Promise<DataSubjectRequest[]> {
 
 export async function getDataQualityChecks(): Promise<DataQualityCheck[]> {
   return apiFetch<DataQualityCheck[]>("/api/control/data-quality");
+}
+
+export async function getRoleGrants(): Promise<PendingRoleGrant[]> {
+  return apiFetch<PendingRoleGrant[]>("/api/control/role-grants");
 }

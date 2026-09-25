@@ -1,14 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { AlertOctagon, PowerOff } from "lucide-react";
+import { AlertOctagon, PowerOff, Megaphone } from "lucide-react";
 import type { SystemControls } from "@/lib/types";
 import {
   revokeAllSessionsAction,
   setKillSwitchAction,
   setMaintenanceModeAction,
+  setMaintenanceAnnouncementAction,
 } from "@/lib/actions";
 import ActionButton from "./ActionButton";
+
+function toLocalInputValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 /**
  * Critical-tier incident levers (Ops Console Rebuild Spec §21.3).
@@ -18,9 +26,12 @@ import ActionButton from "./ActionButton";
  * requires a typed confirmation, a reason, and a password re-check.
  */
 export default function SystemControlsPanel({ controls }: { controls: SystemControls }) {
-  const { maintenance, killSwitches } = controls;
+  const { maintenance, killSwitches, announcement } = controls;
   const [scope, setScope] = useState(maintenance.scope);
   const [message, setMessage] = useState("");
+  const [announceStart, setAnnounceStart] = useState(toLocalInputValue(announcement?.scheduledStart ?? null));
+  const [announceEnd, setAnnounceEnd] = useState(toLocalInputValue(announcement?.scheduledEnd ?? null));
+  const [announceMessage, setAnnounceMessage] = useState(announcement?.message || "");
 
   const engaged = killSwitches.filter((k) => k.killed).length;
 
@@ -127,6 +138,50 @@ export default function SystemControlsPanel({ controls }: { controls: SystemCont
             </ActionButton>
           </div>
         )}
+      </div>
+
+      {/* Maintenance-window announcement — never touches maintenance mode
+          itself, only what the public status page and passenger-app
+          banner say. */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Megaphone size={13} className="text-amber-700" />
+          <span className="text-xs font-bold text-county-ink">Maintenance announcement</span>
+          {announcement && <span className="badge text-[9px] font-extrabold bg-amber-100 text-amber-800">SET</span>}
+        </div>
+        <p className="text-[11px] text-black/55 max-w-xl">
+          Shown on the public status page and as a banner across the passenger app. Doesn&apos;t take the system down —
+          set this ahead of a planned window, or leave both times blank to clear it.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="label text-[10px]">Starts</label>
+            <input type="datetime-local" value={announceStart} onChange={(e) => setAnnounceStart(e.target.value)} className="input !py-1.5 text-xs" />
+          </div>
+          <div>
+            <label className="label text-[10px]">Ends</label>
+            <input type="datetime-local" value={announceEnd} onChange={(e) => setAnnounceEnd(e.target.value)} className="input !py-1.5 text-xs" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="label text-[10px]">Message (optional)</label>
+            <input value={announceMessage} onChange={(e) => setAnnounceMessage(e.target.value)} placeholder="What's happening" className="input !py-1.5 text-xs" />
+          </div>
+          <ActionButton
+            actionId="maintenance.announce"
+            target="maintenance announcement"
+            onConfirm={(reason) =>
+              setMaintenanceAnnouncementAction(
+                announceStart ? new Date(announceStart).toISOString() : null,
+                announceEnd ? new Date(announceEnd).toISOString() : null,
+                announceMessage || null,
+                reason,
+              )
+            }
+            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 hover:bg-amber-100"
+          >
+            {announceStart || announceEnd ? "Save announcement" : "Clear announcement"}
+          </ActionButton>
+        </div>
       </div>
 
       {/* Kill switches */}

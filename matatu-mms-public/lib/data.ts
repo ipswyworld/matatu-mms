@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, NotificationHistory, OfficerAssignment, OffenceType, PassengerReport, Route, Sacco, SystemHealth, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, NotificationHistory, OfficerAssignment, OffenceType, OperatorTerminal, PassengerReport, PendingRating, RecentSacco, Route, Sacco, Stage, SystemHealth, TimeseriesResponse, User, UserFavorite, Zone, PublicStatus } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -10,6 +10,17 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 /**
  * Helper to perform authenticated HTTP requests to the Python FastAPI backend.
  */
+// No-auth endpoint — apiFetch works fine here since it only attaches an
+// Authorization header when a session cookie happens to exist, and never
+// requires one.
+export async function getPublicStatus(): Promise<PublicStatus | null> {
+  try {
+    return await apiFetch<PublicStatus>("/api/status/public");
+  } catch {
+    return null;
+  }
+}
+
 export async function getNotificationHistory(): Promise<NotificationHistory> {
   try {
     return await apiFetch<NotificationHistory>("/api/notifications");
@@ -96,6 +107,30 @@ export async function getMatatus(): Promise<Matatu[]> {
 
 export async function getMatatuById(id: string): Promise<Matatu | undefined> {
   return apiFetch<Matatu>(`/api/matatus/${id}`);
+}
+
+export async function getMyFavorites(): Promise<UserFavorite[]> {
+  return apiFetch<UserFavorite[]>("/api/users/me/favorites");
+}
+
+export async function getMyRecents(): Promise<RecentSacco[]> {
+  return apiFetch<RecentSacco[]>("/api/users/me/recents");
+}
+
+export async function getOperatorTerminals(params?: { routeId?: string; matchStatus?: string }): Promise<OperatorTerminal[]> {
+  const query = new URLSearchParams();
+  if (params?.routeId) query.set("route_id", params.routeId);
+  if (params?.matchStatus) query.set("match_status", params.matchStatus);
+  const qs = query.toString();
+  return apiFetch<OperatorTerminal[]>(`/api/operator-terminals${qs ? `?${qs}` : ""}`);
+}
+
+export async function getPendingRatings(): Promise<PendingRating[]> {
+  return apiFetch<PendingRating[]>("/api/trip-ratings/pending");
+}
+
+export async function getStages(): Promise<Stage[]> {
+  return apiFetch<Stage[]>("/api/search/stages");
 }
 
 export async function getCrewAssignments(activeOnly = true): Promise<CrewAssignment[]> {

@@ -331,8 +331,12 @@ export interface Seat {
 export interface Stage {
   id: string;
   name: string;
-  code: string;
-  zone: string;
+  // Only the original 7 hardcoded NAIROBI_STAGES entries (GisMap.tsx) carry
+  // a code/zone — real backend Stage rows (GET /api/search/stages) don't
+  // have either, so both are optional rather than backfilled with a fake
+  // value.
+  code?: string;
+  zone?: string;
   lat: number;
   lng: number;
 }
@@ -366,6 +370,70 @@ export interface Booking {
   status: "CONFIRMED" | "USED" | "CANCELLED";
 }
 
+export interface UserFavorite {
+  id: string;
+  saccoId: string;
+  createdAt: string;
+}
+
+export interface RecentSacco {
+  saccoId: string;
+  lastBookedAt: string;
+}
+
+export type OperatorTerminalMatchStatus =
+  | "PENDING"
+  | "MATCHED_EXISTING_STAGE"
+  | "GEOCODED_NEW"
+  | "MANUALLY_SET"
+  | "UNRESOLVED";
+
+export interface OperatorTerminal {
+  id: string;
+  saccoId: string;
+  routeId: string;
+  label: string;
+  stageId?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  geocoded: boolean;
+  matchStatus: OperatorTerminalMatchStatus;
+  createdAt: string;
+}
+
+export interface TripRating {
+  id: string;
+  bookingId: string;
+  matatuId: string;
+  saccoId: string;
+  driverUserId?: string | null;
+  conductorUserId?: string | null;
+  rating: number;
+  comment?: string | null;
+  createdAt: string;
+}
+
+export interface PendingRating {
+  bookingId: string;
+  regNumber: string;
+  routeName: string;
+  bookedAt: string;
+}
+
+export interface OriginDestinationResult {
+  matatuId: string;
+  regNumber: string;
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  fromStageName: string;
+  toStageName: string;
+  fareKes: number;
+  capacity: number;
+  seatsAvailable: number;
+  direction: string;
+}
+
 export interface TimeseriesPoint {
   bucket: string;
   count: number;
@@ -390,4 +458,10 @@ export interface AppNotification {
 export interface NotificationHistory {
   items: AppNotification[];
   unreadCount: number;
+}
+
+export interface PublicStatus {
+  services: { name: string; up: boolean }[];
+  maintenanceActive: boolean;
+  maintenanceAnnouncement: { scheduledStart: string | null; scheduledEnd: string | null; message: string | null } | null;
 }

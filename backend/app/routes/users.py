@@ -6,14 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 
 import json
 
 from app.database import get_db
-from app.models import User, Sacco, LoginEvent, AuditLog
+from app.models import User, Sacco, LoginEvent, AuditLog, UserFavorite, Booking, Matatu
 from app.schemas import (
     UserResponse, UserCreate, UserUpdate, FavoriteSaccoRequest, UserActivityResponse,
     LoginOverviewResponse, PrivilegedLoginResponse, FailedLoginBurstResponse,
+    FavoriteSaccoCreate, UserFavoriteResponse, RecentSaccoResponse,
 )
 from app.auth import get_current_user, requires_permission, get_password_hash
 from app.audit import stage_audit_log
@@ -118,6 +120,83 @@ async def set_favorite_sacco(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+@router.get("/me/favorites", response_model=List[UserFavoriteResponse])
+async def list_my_favorites(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The real, multi-value favorites list — supersedes the single
+    favorite_sacco_id column above, which is left in place (backfilled into
+    user_favorites by this feature's migration) but no longer written to."""
+    result = await db.execute(select(UserFavorite).where(UserFavorite.user_id == current_user.id))
+    return result.scalars().all()
+
+
+@router.post("/me/favorites", response_model=UserFavoriteResponse, status_code=status.HTTP_201_CREATED)
+async def add_my_favorite(
+    payload: FavoriteSaccoCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    sacco_result = await db.execute(select(Sacco).where(Sacco.id == payload.sacco_id))
+    if not sacco_result.scalars().first():
+        raise HTTPException(status_code=404, detail="Operator not found")
+
+    existing = await db.execute(
+        select(UserFavorite).where(
+            UserFavorite.user_id == current_user.id, UserFavorite.sacco_id == payload.sacco_id
+        )
+    )
+    already = existing.scalars().first()
+    if already:
+        return already
+
+    favorite = UserFavorite(
+        id=f"fav-{uuid.uuid4().hex[:8]}",
+        user_id=current_user.id,
+        sacco_id=payload.sacco_id,
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(favorite)
+    await db.commit()
+    await db.refresh(favorite)
+    return favorite
+
+
+@router.delete("/me/favorites/{sacco_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_my_favorite(
+    sacco_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserFavorite).where(UserFavorite.user_id == current_user.id, UserFavorite.sacco_id == sacco_id)
+    )
+    favorite = result.scalars().first()
+    if favorite:
+        await db.delete(favorite)
+        await db.commit()
+
+
+@router.get("/me/recents", response_model=List[RecentSaccoResponse])
+async def list_my_recents(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recently-used operators, derived straight from booking history — no
+    separate tracking table needed. Most recently booked first."""
+    result = await db.execute(
+        select(Matatu.sacco_id, func.max(Booking.booked_at).label("last_booked_at"))
+        .join(Booking, Booking.matatu_id == Matatu.id)
+        .where(Booking.passenger_user_id == current_user.id)
+        .group_by(Matatu.sacco_id)
+        .order_by(func.max(Booking.booked_at).desc())
+        .limit(10)
+    )
+    return [RecentSaccoResponse(sacco_id=row.sacco_id, last_booked_at=row.last_booked_at) for row in result.all()]
+
 
 @router.get("", response_model=List[UserResponse])
 async def get_users(
@@ -260,6 +339,7 @@ async def update_user(
             user.name = payload.name.strip()
             new_values["name"] = user.name
 
+        pending_role_grant_id = None
         if payload.role is not None:
             role = payload.role.upper().strip()
             if role == "SACCO_OPERATOR" and not (payload.sacco_id or user.sacco_id):
@@ -268,8 +348,31 @@ async def update_user(
                 other_superadmins = await db.execute(select(User).where(User.role == "SUPERADMIN", User.id != user.id))
                 if not other_superadmins.scalars().first():
                     raise HTTPException(status_code=400, detail="Cannot demote the last remaining Super Admin")
-            user.role = role
-            new_values["role"] = user.role
+
+            # Promoting someone INTO the Admin tier needs a second Super
+            # Admin's sign-off (Ops Console Rebuild Spec's Phase 7 item) —
+            # a standing privilege change, not an incident-response action,
+            # so the "nobody's reachable at 3am" reason Critical actions
+            # skip two-person approval doesn't apply here. Demotions, and
+            # edits to accounts already in the tier, aren't gated: only the
+            # escalation itself is.
+            if role in ADMIN_TIER_ROLES and user.role not in ADMIN_TIER_ROLES:
+                from app.models import PendingRoleGrant
+                grant = PendingRoleGrant(
+                    user_id=user.id, requested_role=role, requested_by=current_user.id,
+                    requested_at=datetime.datetime.now(datetime.timezone.utc), status="PENDING",
+                )
+                db.add(grant)
+                await db.flush()
+                pending_role_grant_id = grant.id
+                stage_audit_log(
+                    db, resource_type="pending_role_grant", resource_id=str(grant.id), action="REQUEST",
+                    user_id=current_user.id,
+                    new_values={"userId": user.id, "requestedRole": role},
+                )
+            else:
+                user.role = role
+                new_values["role"] = user.role
 
         if payload.sacco_id is not None:
             user.sacco_id = payload.sacco_id or None
@@ -341,6 +444,7 @@ async def update_user(
             await db.rollback()
             raise HTTPException(status_code=400, detail="Another user already has that email")
     await db.refresh(user)
+    user.pending_role_grant_id = pending_role_grant_id
     return user
 
 @router.get("/{user_id}/activity", response_model=UserActivityResponse)
