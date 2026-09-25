@@ -72,6 +72,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(homeForRole(role), request.url));
   }
 
+  // "/login" isn't a real route here — "/" is the sign-in page directly —
+  // but it's a natural URL to type or link to from the staff app's own
+  // "/login", so redirect rather than 404 on it.
+  if (pathname === "/login") {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
