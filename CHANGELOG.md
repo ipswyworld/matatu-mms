@@ -28,8 +28,25 @@ ops console's Changelog page (`matatu-mms-ops/app/(console)/changelog`).
   (Render's API has no billing endpoint to read this from automatically).
 - Service dependency/topology graph, changelog viewer, on-call directory,
   and SMS/messaging health panel in the ops console.
+- First real feature-flag consumer: the staff app's Role Matrix panel is now
+  gated behind `staff_role_matrix_enabled` (seeded on).
+- Config history timeline with one-click revert for rate limits, circuit
+  breakers, and feature flags, in the ops console's Config page.
+- Scheduled feature-flag enable/disable times, applied by a new per-minute
+  ARQ cron.
+- Git-diff-styled before/after preview (`ConfigDiff`) for rate-limit changes
+  and config-history reverts.
+- New Compliance page in the ops console: weekly data-retention review
+  (review-only — never deletes), Kenya DPA data-subject-request intake and
+  tracking, weekly orphaned-foreign-key data-quality checks, and a
+  read-only DB browser embed slot (unconfigured by default).
+- Weekly backup-restore verification: a new cron restores the latest backup
+  into a dedicated scratch database (never production) and records
+  pass/fail, with a manual "run now" trigger.
 
 ### Fixed
+- Nightly database backups had run since first introduced but had never
+  once been restored anywhere — there was no evidence they actually worked.
 - MFA enforcement: admin-tier accounts that had never completed enrollment
   could sign into both the staff app and the ops console (the system's most
   privileged surface) with no MFA prompt at all. Both now redirect to

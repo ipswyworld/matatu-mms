@@ -29,6 +29,11 @@ const ACTION_ROUTES: Record<string, string> = {
   "deploy.trigger": "/infrastructure",
   "deploy.rollback": "/infrastructure",
   "cost.record": "/infrastructure",
+  "config.revert": "/config",
+  "backup.testRestore": "/infrastructure",
+  "retention.scanNow": "/compliance",
+  "dsr.update": "/compliance",
+  "dataQuality.scanNow": "/compliance",
 };
 
 interface Entry {

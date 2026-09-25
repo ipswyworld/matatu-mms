@@ -676,6 +676,13 @@ class FeatureFlag(Base):
     enabled = Column(Boolean, nullable=False, default=False)
     updated_by = Column(String, ForeignKey("users.id"), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=False)
+    # Scheduled toggles (Ops Console Rebuild Spec's Phase 5 item) — flipped
+    # by app/feature_flag_scheduler.py's ARQ cron, not by any request
+    # handler. Cleared back to NULL once acted on, so a stale past-due
+    # timestamp left over from a cancelled schedule can never look "still
+    # pending" days later.
+    scheduled_enable_at = Column(DateTime(timezone=True), nullable=True)
+    scheduled_disable_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class RateLimitOverride(Base):
@@ -1404,6 +1411,83 @@ class CostSnapshot(Base):
     note = Column(Text, nullable=True)
     recorded_by = Column(String, ForeignKey("users.id"), nullable=False)
     recorded_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class DataSubjectRequest(Base):
+    """A Kenya Data Protection Act request (access, correction, deletion, or
+    objection) from someone whose data this system holds — a passenger, a
+    Sacco operator, anyone in PassengerReport/Booking/User, not necessarily
+    a staff account. Intake-and-track only: fulfilling a DELETION request
+    still means a human finds and handles the actual records by hand, the
+    same as the retention review above never auto-deletes anything. This
+    just makes sure a request is never only a WhatsApp message someone
+    forgot about.
+    """
+    __tablename__ = "data_subject_requests"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    request_type = Column(String, nullable=False)  # ACCESS, CORRECTION, DELETION, OBJECTION
+    subject_name = Column(String, nullable=False)
+    subject_contact = Column(String, nullable=False)  # phone or email — however they reached out
+    description = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="RECEIVED")  # RECEIVED, IN_PROGRESS, FULFILLED, REJECTED
+    received_at = Column(DateTime(timezone=True), nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(String, ForeignKey("users.id"), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+
+
+class DataQualityCheckResult(Base):
+    """One sanity check's result from app/data_quality.py's weekly scan —
+    orphaned foreign keys mostly, since dev SQLite (and even Postgres, for
+    nullable FK columns populated outside the ORM) doesn't guarantee these
+    can never happen. No remediation runs from here; this only counts and
+    surfaces problems for a human to look into.
+    """
+    __tablename__ = "data_quality_check_results"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    check_name = Column(String, nullable=False, index=True)
+    checked_at = Column(DateTime(timezone=True), nullable=False)
+    issue_count = Column(Integer, nullable=False)
+    sample_ids = Column(Text, nullable=True)  # JSON list, first few offending row ids
+
+
+class RetentionReviewSnapshot(Base):
+    """One table's retention-review result (app/retention.py's weekly scan)
+    — review-only, this table is never written to by anything that deletes
+    a row. Kenya's Data Protection Act sets a floor, not a ceiling, on how
+    long records like these must be kept; this surfaces what's now old
+    enough to be a genuine deletion candidate for a human (with legal/
+    records-retention sign-off) to decide on, in a future, separately-
+    gated phase — it does not decide or act on its own.
+    """
+    __tablename__ = "retention_review_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    scanned_at = Column(DateTime(timezone=True), nullable=False)
+    table_name = Column(String, nullable=False, index=True)
+    eligible_count = Column(Integer, nullable=False)
+    oldest_eligible_date = Column(DateTime(timezone=True), nullable=True)
+
+
+class BackupRestoreTest(Base):
+    """One run of the weekly backup-restore-test cron
+    (app/restore_verify.py) — proves a real backup can actually be restored,
+    not just that upload_backup() succeeded. Recorded in the MAIN database
+    (this table describes the test, it isn't part of what gets restored);
+    the restore itself happens against RESTORE_VERIFY_DATABASE_URL, a
+    separate scratch database.
+    """
+    __tablename__ = "backup_restore_tests"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    tested_at = Column(DateTime(timezone=True), nullable=False)
+    success = Column(Boolean, nullable=False)
+    duration_seconds = Column(Numeric(10, 2), nullable=False)
+    backup_tag = Column(String, nullable=True)
+    row_counts = Column(Text, nullable=True)  # JSON: {table: row_count}
+    error = Column(Text, nullable=True)
 
 
 class UploadedFile(Base):

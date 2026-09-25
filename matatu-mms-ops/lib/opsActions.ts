@@ -249,6 +249,18 @@ export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
       "Signs out every user everywhere. Your own session is revoked too — exempting it would leave one live session behind during a compromise response, and would defeat the action entirely if your account is the compromised one. You will need to sign in again.",
   },
 
+  // --- Config history revert (Phase 5) -------------------------------------
+  "config.revert": {
+    id: "config.revert",
+    label: "Revert to this value",
+    actionClass: "elevated",
+    affectedScope: "1 config value, restored to what it was at this point in history",
+    reversible: true,
+    reversalHint: "Change it again, or revert to a different historical entry.",
+    detail:
+      "Re-submits the prior value through the same endpoint a forward change would use. Only covers rate limits, circuit breakers, and feature flags — maintenance mode and kill switches stay Critical-gated and are not revertible from history.",
+  },
+
   // --- Cost dashboard (Phase 4) --------------------------------------------
   "cost.record": {
     id: "cost.record",
@@ -279,6 +291,51 @@ export const OPS_ACTIONS: Record<string, ActionDescriptor> = {
     reversible: false,
     detail:
       "Cuts off a partner's access at once — existing tokens stop working immediately, not when they expire. Revocation is permanent; issue a new client if access needs to be restored.",
+  },
+
+  // --- Data-subject requests (Phase 6) --------------------------------------
+  "dsr.update": {
+    id: "dsr.update",
+    label: "Update request",
+    actionClass: "elevated",
+    affectedScope: "1 data-subject request's tracked status",
+    reversible: true,
+    reversalHint: "Change the status again.",
+    detail: "Marking this fulfilled or rejected doesn't touch any actual records — finding and handling them is still a separate, manual step.",
+  },
+
+  "dataQuality.scanNow": {
+    id: "dataQuality.scanNow",
+    label: "Scan now",
+    actionClass: "elevated",
+    affectedScope: "Nothing changes — counts orphaned foreign keys for a human to look into",
+    reversible: true,
+    reversalHint: "Scanning again just refreshes the counts.",
+    detail: "Read-only sanity queries. No remediation runs from here — a real fix means someone looking at the specific rows.",
+  },
+
+  // --- Data retention review (Phase 6) --------------------------------------
+  "retention.scanNow": {
+    id: "retention.scanNow",
+    label: "Scan now",
+    actionClass: "elevated",
+    affectedScope: "Nothing changes — counts and records what's now old enough to review",
+    reversible: true,
+    reversalHint: "Scanning again just refreshes the counts.",
+    detail:
+      "Read-only: counts closed fines and enforcement cases past the 7-year statutory floor. Never deletes anything — an actual purge would need its own, separately-gated action with legal sign-off.",
+  },
+
+  // --- Backup restore test (Phase 6) ---------------------------------------
+  "backup.testRestore": {
+    id: "backup.testRestore",
+    label: "Run restore test now",
+    actionClass: "critical",
+    affectedScope: "The scratch verification database only — never production",
+    reversible: true,
+    reversalHint: "The scratch database is truncated and re-restored on every run; there's nothing to undo.",
+    detail:
+      "Downloads the latest backup and restores it into a dedicated scratch database to prove it's actually restorable. Runs automatically every Sunday; this is the on-demand version.",
   },
 
   // --- Render deploy control (Phase 4) ------------------------------------

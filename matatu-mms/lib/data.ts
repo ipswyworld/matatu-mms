@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, OperatorTerminal, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -55,6 +55,21 @@ export async function getUserById(id: string): Promise<User | undefined> {
   return users.find((u) => u.id === id);
 }
 
+// Any authenticated user can check a flag's state (backend's
+// /api/feature-flags/{key}/enabled is intentionally not gated behind
+// manage_system_config like the CRUD routes) — this is the first real
+// feature-flag consumer in the codebase, gating the Role Matrix panel.
+// Fails open (flag reads as enabled) rather than hiding the panel on a
+// transient backend error.
+export async function getFeatureFlagEnabled(key: string): Promise<boolean> {
+  try {
+    const res = await apiFetch<{ key: string; enabled: boolean }>(`/api/feature-flags/${encodeURIComponent(key)}/enabled`);
+    return res.enabled;
+  } catch {
+    return true;
+  }
+}
+
 export async function getSaccos(): Promise<Sacco[]> {
   return apiFetch<Sacco[]>("/api/saccos");
 }
@@ -70,6 +85,10 @@ export async function getSaccoById(id: string): Promise<Sacco | undefined> {
 
 export async function getRoutes(): Promise<Route[]> {
   return apiFetch<Route[]>("/api/routes");
+}
+
+export async function getOperatorTerminals(): Promise<OperatorTerminal[]> {
+  return apiFetch<OperatorTerminal[]>("/api/operator-terminals");
 }
 
 export async function getRouteById(id: string): Promise<Route | undefined> {

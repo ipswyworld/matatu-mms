@@ -6,7 +6,7 @@ import {
   setSessionCookie, clearSessionCookie, readSession,
   setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
 } from "./session";
-import { FeatureFlag, ApiClientIssuedSecret, CostSnapshot } from "./types";
+import { FeatureFlag, ApiClientIssuedSecret, CostSnapshot, ConfigHistoryEntry } from "./types";
 
 // Same backend as the staff app — this console doesn't have its own user
 // accounts, it authenticates against the same SUPERADMIN accounts and
@@ -167,6 +167,23 @@ export async function toggleFeatureFlagAction(key: string, enabled: boolean): Pr
     await apiWrite<FeatureFlag>(`/api/feature-flags/${encodeURIComponent(key)}`, "PATCH", { enabled });
   } catch (err: any) {
     return { error: err.message || "Could not update flag." };
+  }
+  revalidatePath("/");
+  return {};
+}
+
+export async function scheduleFeatureFlagAction(
+  key: string,
+  scheduledEnableAt: string | null,
+  scheduledDisableAt: string | null,
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite<FeatureFlag>(`/api/feature-flags/${encodeURIComponent(key)}`, "PATCH", {
+      scheduledEnableAt: scheduledEnableAt || null,
+      scheduledDisableAt: scheduledDisableAt || null,
+    });
+  } catch (err: any) {
+    return { error: err.message || "Could not schedule this flag." };
   }
   revalidatePath("/");
   return {};
@@ -453,6 +470,62 @@ export async function setKillSwitchAction(
   );
 }
 
+// --- Config history revert (Phase 5) ----------------------------------------
+// Registered as Elevated, not the plan's originally-sketched Critical, on
+// purpose: it re-submits through the same rate-limit/breaker/feature-flag
+// endpoints a forward change already uses, and none of those require
+// re-auth today. Marking this action Critical in opsActions.ts would mint
+// and collect a reauth token this call never checks — the exact "UI
+// promises a guardrail the backend doesn't enforce" bug already fixed once
+// this session for API client create/revoke. If those endpoints later gain
+// real re-auth, this should move to Critical alongside them.
+
+export async function revertConfigEntryAction(entry: ConfigHistoryEntry, reason: string): Promise<ActionResult> {
+  if (!entry.oldValues) {
+    return { error: "No prior value recorded for this entry — nothing to revert to." };
+  }
+
+  if (entry.resourceType === "rate_limit") {
+    return runAction(
+      () => apiWrite(`/api/control/rate-limits/${encodeURIComponent(entry.resourceId)}`, "PATCH", {
+        limit_value: entry.oldValues!.limitValue,
+        reason,
+      }),
+      "Could not revert this rate limit.",
+      "/config",
+    );
+  }
+
+  if (entry.resourceType === "circuit_breaker") {
+    return runAction(
+      () => apiWrite(`/api/control/circuit-breakers/${encodeURIComponent(entry.resourceId)}`, "POST", {
+        override: entry.oldValues!.override,
+        reason,
+      }),
+      "Could not revert this circuit breaker.",
+      "/config",
+    );
+  }
+
+  if (entry.resourceType === "feature_flag") {
+    return runAction(
+      () => apiWrite(`/api/feature-flags/${encodeURIComponent(entry.resourceId)}`, "PATCH", {
+        enabled: entry.oldValues!.enabled,
+        description: entry.oldValues!.description,
+      }),
+      "Could not revert this feature flag.",
+      "/config",
+    );
+  }
+
+  return { error: `Reverting a ${entry.resourceType} entry isn't supported.` };
+}
+
+export async function getConfigHistoryAction(beforeId?: number) {
+  const { getConfigHistory } = await import("./data");
+  return getConfigHistory(beforeId);
+}
+
 // --- Cost dashboard (Phase 4, Elevated tier) --------------------------------
 
 export async function recordCostSnapshotAction(
@@ -471,6 +544,68 @@ export async function recordCostSnapshotAction(
 export async function getCostSnapshotsAction(): Promise<CostSnapshot[]> {
   const { getCostSnapshots } = await import("./data");
   return getCostSnapshots();
+}
+
+// --- Data retention review (Phase 6, Elevated tier) -------------------------
+// Elevated, not Critical: the scan only ever counts and records, it never
+// deletes a row (see app/retention.py's module docstring).
+
+export async function scanRetentionNowAction(reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/retention/scan-now", "POST", { reason }),
+    "Could not run the retention scan.",
+    "/compliance",
+  );
+}
+
+// --- Data-subject requests (Phase 6) -----------------------------------------
+
+export interface CreateDsrInput {
+  requestType: string;
+  subjectName: string;
+  subjectContact: string;
+  description: string;
+}
+
+export async function createDsrAction(input: CreateDsrInput): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/dsr", "POST", {
+      request_type: input.requestType,
+      subject_name: input.subjectName,
+      subject_contact: input.subjectContact,
+      description: input.description,
+    }),
+    "Could not record this request.",
+    "/compliance",
+  );
+}
+
+export async function updateDsrAction(id: number, status: string, resolutionNotes: string, reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite(`/api/control/dsr/${id}`, "PATCH", { status, resolution_notes: resolutionNotes || undefined, reason }),
+    "Could not update this request.",
+    "/compliance",
+  );
+}
+
+// --- Data-quality checks (Phase 6, Elevated tier) ----------------------------
+
+export async function scanDataQualityNowAction(reason: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/data-quality/scan-now", "POST", { reason }),
+    "Could not run the data-quality scan.",
+    "/compliance",
+  );
+}
+
+// --- Backup restore test (Phase 6, Critical tier) ---------------------------
+
+export async function triggerRestoreTestAction(reason: string, reauthToken?: string): Promise<ActionResult> {
+  return runAction(
+    () => apiWrite("/api/control/backup/test-restore", "POST", { reason, reauth_token: reauthToken }),
+    "Could not run the restore test.",
+    "/infrastructure",
+  );
 }
 
 // --- Render deploy control (Phase 4, Critical tier) ------------------------

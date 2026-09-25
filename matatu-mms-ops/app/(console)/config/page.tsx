@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { getFeatureFlags, getRateLimits, getSystemControls } from "@/lib/data";
+import { getFeatureFlags, getRateLimits, getSystemControls, getConfigHistory } from "@/lib/data";
 import FeatureFlagsPanel from "@/components/FeatureFlagsPanel";
 import RateLimitsPanel from "@/components/RateLimitsPanel";
 import SystemControlsPanel from "@/components/SystemControlsPanel";
+import ConfigHistoryPanel from "@/components/ConfigHistoryPanel";
 import PanelError, { settle } from "@/components/PanelError";
 
 export const metadata: Metadata = { title: "Config | Ops Console" };
@@ -12,10 +13,11 @@ export default async function ConfigPage() {
   // Each panel's fetch is settled independently (Spec §21.4). One
   // unreachable source must not blank the page — least of all this page,
   // which holds the controls for turning maintenance mode back off.
-  const [flags, limits, controls] = await Promise.all([
+  const [flags, limits, controls, history] = await Promise.all([
     settle(getFeatureFlags()),
     settle(getRateLimits()),
     settle(getSystemControls()),
+    settle(getConfigHistory()),
   ]);
 
   return (
@@ -43,6 +45,12 @@ export default async function ConfigPage() {
         <FeatureFlagsPanel flags={flags.data} />
       ) : (
         <PanelError title="Feature flags" error={flags.error!} />
+      )}
+
+      {history.data ? (
+        <ConfigHistoryPanel initial={history.data} />
+      ) : (
+        <PanelError title="Config history" error={history.error!} />
       )}
     </div>
   );

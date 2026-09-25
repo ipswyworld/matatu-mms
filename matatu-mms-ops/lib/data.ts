@@ -4,7 +4,7 @@ import {
   SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview,
   OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery, SystemControls,
   ApiClient, ApiScope, ApiClientUsageDay, SaccoOption, MessagingSpendSummary, SyntheticCheckTarget, CiScanStatus,
-  CostSnapshot,
+  CostSnapshot, ConfigHistoryEntry, BackupRestoreTest, RetentionReviewRow, DataSubjectRequest, DataQualityCheck,
 } from "./types";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
@@ -141,4 +141,25 @@ export async function getCiScanStatus(): Promise<CiScanStatus | null> {
 
 export async function getCostSnapshots(): Promise<CostSnapshot[]> {
   return apiFetch<CostSnapshot[]>("/api/control/cost-snapshots");
+}
+
+export async function getConfigHistory(beforeId?: number): Promise<{ entries: ConfigHistoryEntry[]; nextCursor: number | null }> {
+  const qs = beforeId ? `?before_id=${beforeId}` : "";
+  return apiFetch(`/api/control/config-history${qs}`);
+}
+
+export async function getBackupRestoreTests(): Promise<BackupRestoreTest[]> {
+  return apiFetch<BackupRestoreTest[]>("/api/control/backup/restore-tests");
+}
+
+export async function getRetentionReview(): Promise<RetentionReviewRow[]> {
+  return apiFetch<RetentionReviewRow[]>("/api/control/retention/review");
+}
+
+export async function getDataSubjectRequests(): Promise<DataSubjectRequest[]> {
+  return apiFetch<DataSubjectRequest[]>("/api/control/dsr");
+}
+
+export async function getDataQualityChecks(): Promise<DataQualityCheck[]> {
+  return apiFetch<DataQualityCheck[]>("/api/control/data-quality");
 }

@@ -9,19 +9,25 @@ export default function UsersTabs({
   staffPanel,
   publicPanel,
   roleMatrixPanel,
+  showRoleMatrix = true,
 }: {
   staffCount: number;
   publicCount: number;
   staffPanel: ReactNode;
   publicPanel: ReactNode;
   roleMatrixPanel: ReactNode;
+  /** Gated by the staff_role_matrix_enabled feature flag — the first real
+   *  flag consumer in this codebase (backend/app/routes/feature_flags.py's
+   *  is_feature_enabled). Defaults to true so a call site that doesn't pass
+   *  this (or a flag-check failure) never silently hides the tab. */
+  showRoleMatrix?: boolean;
 }) {
   const [tab, setTab] = useState<"staff" | "public" | "matrix">("staff");
 
   const tabs = [
     { key: "staff" as const, label: "County Staff", count: staffCount },
     { key: "public" as const, label: "Public Directory", count: publicCount },
-    { key: "matrix" as const, label: "Role Matrix", count: null },
+    ...(showRoleMatrix ? [{ key: "matrix" as const, label: "Role Matrix", count: null }] : []),
   ];
 
   return (

@@ -40,7 +40,7 @@ from starlette.responses import StreamingResponse
 from app.audit import stage_audit_log
 from app.auth import requires_permission
 from app.database import engine, get_db
-from app.models import RateLimitOverride, User, WebhookLog, WebhookSubscription
+from app.models import AuditLog, RateLimitOverride, User, WebhookLog, WebhookSubscription
 from app.ops_metrics import metrics
 from app.realtime import get_redis
 from app import api_clients
@@ -261,6 +261,55 @@ async def get_overview(
     """One aggregated read for the incident overview's first paint. The SSE
     stream takes over for ongoing updates."""
     return await _collect_snapshot()
+
+
+CONFIG_HISTORY_RESOURCE_TYPES = ["rate_limit", "circuit_breaker", "feature_flag"]
+CONFIG_HISTORY_PAGE_SIZE = 50
+
+
+@router.get("/config-history")
+async def get_config_history(
+    resource_type: Optional[str] = None,
+    before_id: Optional[int] = None,
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    """A timeline over the config-CRUD slice of the audit log (rate limits,
+    circuit breakers, feature flags), for the one-click-revert panel.
+
+    Deliberately excludes system_control (maintenance mode, kill switches):
+    those already require re-auth to change forward, and reverting one
+    "sight unseen" from history without the operator re-reading current
+    cluster state is exactly the kind of action this console's Critical
+    tier exists to slow down, not speed up. Only the three resource types
+    with real historical values are covered.
+    """
+    types = [resource_type] if resource_type else CONFIG_HISTORY_RESOURCE_TYPES
+    for t in types:
+        if t not in CONFIG_HISTORY_RESOURCE_TYPES:
+            raise HTTPException(status_code=400, detail=f"resourceType must be one of: {', '.join(CONFIG_HISTORY_RESOURCE_TYPES)}")
+
+    query = select(AuditLog).where(AuditLog.resource_type.in_(types))
+    if before_id:
+        query = query.where(AuditLog.id < before_id)
+    query = query.order_by(AuditLog.id.desc()).limit(CONFIG_HISTORY_PAGE_SIZE)
+
+    rows = (await db.execute(query)).scalars().all()
+    entries = [
+        {
+            "id": r.id,
+            "resourceType": r.resource_type,
+            "resourceId": r.resource_id,
+            "action": r.action,
+            "oldValues": json.loads(r.old_values) if r.old_values else None,
+            "newValues": json.loads(r.new_values) if r.new_values else None,
+            "userId": r.user_id,
+            "timestamp": r.timestamp.isoformat(),
+        }
+        for r in rows
+    ]
+    next_cursor = rows[-1].id if len(rows) == CONFIG_HISTORY_PAGE_SIZE else None
+    return {"entries": entries, "nextCursor": next_cursor}
 
 
 @router.get("/stream")
@@ -1160,6 +1209,252 @@ async def set_kill_switch(
         feature, "ENGAGED" if body.killed else "RELEASED", current_user.id, body.reason,
     )
     return ops_controls.snapshot()
+
+
+DSR_TYPES = ["ACCESS", "CORRECTION", "DELETION", "OBJECTION"]
+DSR_STATUSES = ["RECEIVED", "IN_PROGRESS", "FULFILLED", "REJECTED"]
+
+
+class DsrIntakeBody(BaseModel):
+    request_type: str
+    subject_name: str = Field(min_length=1, max_length=200)
+    subject_contact: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=2000)
+
+
+class DsrUpdateBody(ReasonBody):
+    status: str
+    resolution_notes: Optional[str] = None
+
+
+@router.get("/dsr")
+async def list_dsr(
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Kenya DPA data-subject requests — intake and fulfillment tracking
+    only. Fulfilling one (finding and handling the actual records) is still
+    a human task; this makes sure the request itself is never only a
+    WhatsApp message someone forgot about."""
+    from app.models import DataSubjectRequest
+
+    rows = (
+        await db.execute(select(DataSubjectRequest).order_by(DataSubjectRequest.received_at.desc()))
+    ).scalars().all()
+    return [
+        {
+            "id": r.id, "requestType": r.request_type, "subjectName": r.subject_name,
+            "subjectContact": r.subject_contact, "description": r.description, "status": r.status,
+            "receivedAt": r.received_at.isoformat(),
+            "resolvedAt": r.resolved_at.isoformat() if r.resolved_at else None,
+            "resolvedBy": r.resolved_by, "resolutionNotes": r.resolution_notes,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/dsr")
+async def create_dsr(
+    body: DsrIntakeBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import DataSubjectRequest
+
+    if body.request_type not in DSR_TYPES:
+        raise HTTPException(status_code=400, detail=f"request_type must be one of: {', '.join(DSR_TYPES)}")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    record = DataSubjectRequest(
+        request_type=body.request_type, subject_name=body.subject_name,
+        subject_contact=body.subject_contact, description=body.description,
+        status="RECEIVED", received_at=now,
+    )
+    db.add(record)
+    await db.flush()
+    stage_audit_log(
+        db, resource_type="data_subject_request", resource_id=str(record.id), action="CREATE",
+        user_id=current_user.id, new_values={"requestType": body.request_type, "subjectName": body.subject_name},
+    )
+    await db.commit()
+    return {"id": record.id}
+
+
+@router.patch("/dsr/{dsr_id}")
+async def update_dsr(
+    dsr_id: int,
+    body: DsrUpdateBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import DataSubjectRequest
+
+    if body.status not in DSR_STATUSES:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(DSR_STATUSES)}")
+
+    record = (await db.execute(select(DataSubjectRequest).where(DataSubjectRequest.id == dsr_id))).scalars().first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="No data-subject request with that id")
+
+    old_status = record.status
+    record.status = body.status
+    record.resolution_notes = body.resolution_notes
+    if body.status in ("FULFILLED", "REJECTED") and record.resolved_at is None:
+        record.resolved_at = datetime.datetime.now(datetime.timezone.utc)
+        record.resolved_by = current_user.id
+
+    stage_audit_log(
+        db, resource_type="data_subject_request", resource_id=str(dsr_id), action="UPDATE",
+        user_id=current_user.id,
+        old_values={"status": old_status},
+        new_values={"status": body.status, "reason": body.reason},
+    )
+    await db.commit()
+    return {"id": dsr_id, "status": body.status}
+
+
+@router.get("/data-quality")
+async def get_data_quality(
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Latest result per check from app/data_quality.py's weekly scan."""
+    from app.data_quality import CHECKS
+    from app.models import DataQualityCheckResult
+
+    results = []
+    for name in CHECKS:
+        row = (
+            await db.execute(
+                select(DataQualityCheckResult)
+                .where(DataQualityCheckResult.check_name == name)
+                .order_by(DataQualityCheckResult.checked_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        results.append({
+            "checkName": name,
+            "issueCount": row.issue_count if row else None,
+            "sampleIds": json.loads(row.sample_ids) if row and row.sample_ids else [],
+            "checkedAt": row.checked_at.isoformat() if row else None,
+        })
+    return results
+
+
+@router.post("/data-quality/scan-now")
+async def trigger_data_quality_scan(
+    body: ReasonBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app import data_quality
+
+    results = await data_quality.run_checks()
+    stage_audit_log(
+        db, resource_type="data_quality_check", resource_id="*", action="SCAN",
+        user_id=current_user.id, new_values={"reason": body.reason, "results": results},
+    )
+    await db.commit()
+    return results
+
+
+@router.get("/retention/review")
+async def get_retention_review(
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Latest snapshot per table from app/retention.py's weekly scan —
+    review-only, this endpoint (like the scan itself) never deletes
+    anything."""
+    from app.models import RetentionReviewSnapshot
+    from app.retention import RETENTION_TABLES
+
+    results = []
+    for table in RETENTION_TABLES:
+        row = (
+            await db.execute(
+                select(RetentionReviewSnapshot)
+                .where(RetentionReviewSnapshot.table_name == table.name)
+                .order_by(RetentionReviewSnapshot.scanned_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        results.append({
+            "tableName": table.name,
+            "eligibleCount": row.eligible_count if row else None,
+            "oldestEligibleDate": row.oldest_eligible_date.isoformat() if row and row.oldest_eligible_date else None,
+            "scannedAt": row.scanned_at.isoformat() if row else None,
+        })
+    return results
+
+
+@router.post("/retention/scan-now")
+async def trigger_retention_scan(
+    body: ReasonBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Elevated, not Critical — this only ever counts and records, it never
+    deletes a row."""
+    from app import retention
+
+    results = await retention.scan_now()
+    stage_audit_log(
+        db, resource_type="retention_review", resource_id="*", action="SCAN",
+        user_id=current_user.id,
+        new_values={"reason": body.reason, "results": results},
+    )
+    await db.commit()
+    return results
+
+
+@router.get("/backup/restore-tests")
+async def list_restore_tests(
+    current_user: User = Depends(requires_permission("view_system_health")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import BackupRestoreTest
+
+    rows = (
+        await db.execute(
+            select(BackupRestoreTest).order_by(BackupRestoreTest.tested_at.desc()).limit(20)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": r.id, "testedAt": r.tested_at.isoformat(), "success": r.success,
+            "durationSeconds": float(r.duration_seconds), "backupTag": r.backup_tag,
+            "rowCounts": json.loads(r.row_counts) if r.row_counts else None, "error": r.error,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/backup/test-restore")
+async def trigger_restore_test(
+    body: CriticalBody,
+    current_user: User = Depends(requires_permission("manage_system_config")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually runs the same restore test the weekly cron does — Critical
+    because it's a real restore, even though it only ever touches the
+    scratch database (never production)."""
+    require_reauth(body.reauth_token, current_user)
+
+    from app import restore_verify
+
+    if not restore_verify.RESTORE_VERIFY_DATABASE_URL:
+        raise HTTPException(status_code=503, detail="RESTORE_VERIFY_DATABASE_URL is not configured on this service.")
+
+    result = await restore_verify.run_restore_test()
+
+    stage_audit_log(
+        db, resource_type="backup_restore_test", resource_id="manual", action="TRIGGER",
+        user_id=current_user.id,
+        new_values={"reason": body.reason, "success": result.get("success")},
+    )
+    await db.commit()
+    return result
 
 
 @router.post("/render/{service_id}/deploy")

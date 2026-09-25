@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Users as UsersIcon, ScrollText } from "lucide-react";
-import { getSaccos, getUsers } from "@/lib/data";
+import { getSaccos, getUsers, getFeatureFlagEnabled } from "@/lib/data";
 import { readSession } from "@/lib/session";
 import { STAFF_ROLES, can } from "@/lib/rbac";
 import NewUserForm from "./NewUserForm";
@@ -15,9 +15,10 @@ export const metadata: Metadata = { title: "Users & Roles" };
 
 export default async function UsersPage() {
   const session = readSession()!;
-  const [allUsers, saccos] = await Promise.all([
+  const [allUsers, saccos, showRoleMatrix] = await Promise.all([
     getUsers(),
     getSaccos(),
+    getFeatureFlagEnabled("staff_role_matrix_enabled"),
   ]);
 
   // County staff/government accounts vs public (Sacco/fleet/commuter)
@@ -62,6 +63,7 @@ export default async function UsersPage() {
         }
         publicPanel={<PublicDirectoryTable users={publicUsers} saccos={saccos} />}
         roleMatrixPanel={<RoleMatrix />}
+        showRoleMatrix={showRoleMatrix}
       />
     </div>
   );

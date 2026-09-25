@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { CheckCircle2, XCircle } from "lucide-react";
-import { getSystemHealth, getCiScanStatus, getCostSnapshots } from "@/lib/data";
+import { getSystemHealth, getCiScanStatus, getCostSnapshots, getBackupRestoreTests } from "@/lib/data";
 import { getRenderServiceMatrix } from "@/lib/render";
 import ServiceHealthMatrix from "@/components/ServiceHealthMatrix";
 import DeployControlPanel from "@/components/DeployControlPanel";
 import CiScanStatusPanel from "@/components/CiScanStatusPanel";
 import CostDashboardPanel from "@/components/CostDashboardPanel";
+import BackupRestoreTestPanel from "@/components/BackupRestoreTestPanel";
 import ServiceTopologyGraph from "@/components/ServiceTopologyGraph";
 import AlertingSummary from "@/components/AlertingSummary";
 import OperatorOnboardingLauncher from "@/components/OperatorOnboardingLauncher";
@@ -34,11 +35,12 @@ function StatusBadge({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; 
 }
 
 export default async function InfrastructurePage() {
-  const [health, renderServices, ciScan, costSnapshots] = await Promise.all([
+  const [health, renderServices, ciScan, costSnapshots, restoreTests] = await Promise.all([
     settle(getSystemHealth()),
     settle(getRenderServiceMatrix()),
     settle(getCiScanStatus()),
     settle(getCostSnapshots()),
+    settle(getBackupRestoreTests()),
   ]);
 
   return (
@@ -70,6 +72,12 @@ export default async function InfrastructurePage() {
         <CostDashboardPanel snapshots={costSnapshots.data} />
       ) : (
         <PanelError title="Infrastructure cost" error={costSnapshots.error!} />
+      )}
+
+      {restoreTests.data ? (
+        <BackupRestoreTestPanel tests={restoreTests.data} />
+      ) : (
+        <PanelError title="Backup restore test" error={restoreTests.error!} />
       )}
 
       <ServiceTopologyGraph />

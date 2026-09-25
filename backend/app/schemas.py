@@ -679,6 +679,8 @@ class FeatureFlagResponse(BaseModelCamel):
     enabled: bool
     updated_by: Optional[str] = None
     updated_at: datetime.datetime
+    scheduled_enable_at: Optional[datetime.datetime] = None
+    scheduled_disable_at: Optional[datetime.datetime] = None
 
 class FeatureFlagCreate(BaseModelCamel):
     key: str
@@ -695,6 +697,12 @@ class FeatureFlagCreate(BaseModelCamel):
 class FeatureFlagUpdate(BaseModelCamel):
     description: Optional[str] = None
     enabled: Optional[bool] = None
+    # Explicit null clears a pending schedule — only applied when the field
+    # is present in the request body at all (see update_feature_flag's use
+    # of model_dump(exclude_unset=True)), so a request that omits these
+    # entirely never touches an existing schedule.
+    scheduled_enable_at: Optional[datetime.datetime] = None
+    scheduled_disable_at: Optional[datetime.datetime] = None
 
 class JobSummaryResponse(BaseModelCamel):
     """One ARQ job (app/routes/jobs.py) — queued, in-progress, or complete

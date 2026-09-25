@@ -90,6 +90,8 @@ export interface FeatureFlag {
   enabled: boolean;
   updatedBy: string | null;
   updatedAt: string;
+  scheduledEnableAt: string | null;
+  scheduledDisableAt: string | null;
 }
 
 export interface MessagingSpendBreakdown {
@@ -196,6 +198,54 @@ export interface SyntheticCheckPoint {
   ok: boolean;
   latencyMs: number | null;
   checkedAt: string;
+}
+
+export interface DataQualityCheck {
+  checkName: string;
+  issueCount: number | null;
+  sampleIds: string[];
+  checkedAt: string | null;
+}
+
+export interface DataSubjectRequest {
+  id: number;
+  requestType: "ACCESS" | "CORRECTION" | "DELETION" | "OBJECTION";
+  subjectName: string;
+  subjectContact: string;
+  description: string;
+  status: "RECEIVED" | "IN_PROGRESS" | "FULFILLED" | "REJECTED";
+  receivedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolutionNotes: string | null;
+}
+
+export interface RetentionReviewRow {
+  tableName: string;
+  eligibleCount: number | null;
+  oldestEligibleDate: string | null;
+  scannedAt: string | null;
+}
+
+export interface BackupRestoreTest {
+  id: number;
+  testedAt: string;
+  success: boolean;
+  durationSeconds: number;
+  backupTag: string | null;
+  rowCounts: Record<string, number> | null;
+  error: string | null;
+}
+
+export interface ConfigHistoryEntry {
+  id: number;
+  resourceType: "rate_limit" | "circuit_breaker" | "feature_flag";
+  resourceId: string;
+  action: string;
+  oldValues: Record<string, any> | null;
+  newValues: Record<string, any> | null;
+  userId: string;
+  timestamp: string;
 }
 
 export interface CostSnapshot {

@@ -141,6 +141,14 @@ GITHUB_BACKUP_TOKEN = secrets_provider.get("GITHUB_BACKUP_TOKEN")
 GITHUB_BACKUP_REPO = os.getenv("GITHUB_BACKUP_REPO")
 BACKUP_RETENTION_DAYS = int(os.getenv("BACKUP_RETENTION_DAYS", "30"))
 
+# A dedicated scratch database for the weekly backup-restore-test cron
+# (app/restore_verify.py) — never production, never the read replica above.
+# Unset means the test is skipped with a clear log line rather than run
+# against something it shouldn't touch. The operator provisions this
+# database and runs `alembic upgrade head` against it once, out of band;
+# the cron truncates and re-restores it every run, but never migrates it.
+RESTORE_VERIFY_DATABASE_URL = os.getenv("RESTORE_VERIFY_DATABASE_URL")
+
 # Render API (app/render_control.py) — deploy trigger/rollback from the ops
 # console. Deliberately a separate key from matatu-mms-ops's own
 # RENDER_API_KEY (which only ever reads Render's API for the service health

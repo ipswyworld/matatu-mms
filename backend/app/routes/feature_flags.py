@@ -8,10 +8,25 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.models import User, FeatureFlag
 from app.schemas import FeatureFlagResponse, FeatureFlagCreate, FeatureFlagUpdate
-from app.auth import requires_permission
+from app.auth import requires_permission, get_current_user
 from app.audit import stage_audit_log
 
 router = APIRouter(prefix="/api/feature-flags", tags=["Feature Flags"])
+
+
+@router.get("/{key}/enabled")
+async def check_feature_flag(
+    key: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Any authenticated user can check one flag's state — deliberately not
+    gated behind manage_system_config like the CRUD routes above, since a
+    call site (e.g. the staff app's RoleMatrix panel) needs to know whether
+    a flag is on, not manage flags. Missing key reads as "not enabled"
+    rather than 404, so a call site never has to special-case "flag doesn't
+    exist yet" separately from "flag exists and is off"."""
+    return {"key": key, "enabled": await is_feature_enabled(db, key)}
 
 
 @router.get("", response_model=List[FeatureFlagResponse])
@@ -65,10 +80,19 @@ async def update_feature_flag(
         raise HTTPException(status_code=404, detail="Flag not found")
 
     old_values = {"description": flag.description, "enabled": flag.enabled}
+    provided = payload.model_dump(exclude_unset=True)
     if payload.description is not None:
         flag.description = payload.description
     if payload.enabled is not None:
         flag.enabled = payload.enabled
+    # Explicit null clears a schedule; the field must be present in the
+    # request at all to be touched (see FeatureFlagUpdate's docstring) —
+    # otherwise an ordinary description/enabled edit would silently wipe
+    # any pending schedule it never meant to touch.
+    if "scheduled_enable_at" in provided:
+        flag.scheduled_enable_at = payload.scheduled_enable_at
+    if "scheduled_disable_at" in provided:
+        flag.scheduled_disable_at = payload.scheduled_disable_at
     flag.updated_by = current_user.id
     flag.updated_at = datetime.datetime.now(datetime.timezone.utc)
 

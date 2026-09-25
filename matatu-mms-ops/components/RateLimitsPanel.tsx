@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { RateLimitState } from "@/lib/types";
 import { updateRateLimitAction } from "@/lib/actions";
 import ActionButton from "./ActionButton";
+import ConfigDiff from "./ConfigDiff";
 
 /**
  * Live rate limit control (Ops Console Rebuild Spec §6.1).
@@ -47,12 +48,7 @@ function LimitRow({ limit }: { limit: RateLimitState }) {
             target={limit.scope}
             disabled={!dirty}
             onConfirm={(reason) => updateRateLimitAction(limit.scope, draft.trim(), reason)}
-            preview={
-              <span className="text-black/60">
-                <span className="font-mono font-bold">{limit.effective}</span> →{" "}
-                <span className="font-mono font-bold text-county-green">{draft.trim()}</span>
-              </span>
-            }
+            preview={<ConfigDiff label={limit.scope} from={limit.effective} to={draft.trim()} />}
           >
             Apply
           </ActionButton>
@@ -61,12 +57,7 @@ function LimitRow({ limit }: { limit: RateLimitState }) {
               actionId="rateLimit.update"
               target={`${limit.scope} (restore default)`}
               onConfirm={(reason) => updateRateLimitAction(limit.scope, null, reason)}
-              preview={
-                <span className="text-black/60">
-                  <span className="font-mono font-bold">{limit.effective}</span> → default{" "}
-                  <span className="font-mono font-bold text-county-green">{limit.default}</span>
-                </span>
-              }
+              preview={<ConfigDiff label={`${limit.scope} (restore default)`} from={limit.effective} to={limit.default} />}
             >
               Restore default
             </ActionButton>

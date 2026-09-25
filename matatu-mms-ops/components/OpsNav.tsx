@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Briefcase, Users, Plug, SlidersHorizontal, ScrollText, Server, KeyRound, History, Phone } from "lucide-react";
+import { Activity, Briefcase, Users, Plug, SlidersHorizontal, ScrollText, Server, KeyRound, History, Phone, ShieldCheck } from "lucide-react";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: Activity, hint: "What is wrong right now" },
@@ -13,6 +13,7 @@ export const NAV_ITEMS = [
   { href: "/api-clients", label: "API Clients", icon: KeyRound, hint: "Issue and revoke partner credentials" },
   { href: "/audit", label: "Audit", icon: ScrollText, hint: "Every recorded action" },
   { href: "/infrastructure", label: "Infrastructure", icon: Server, hint: "Deployed versions, alerting, metrics" },
+  { href: "/compliance", label: "Compliance", icon: ShieldCheck, hint: "Data retention, subject requests, data quality" },
   { href: "/changelog", label: "Changelog", icon: History, hint: "What shipped, when" },
   { href: "/on-call", label: "On-Call", icon: Phone, hint: "Who to page" },
 ];

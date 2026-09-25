@@ -34,7 +34,7 @@ import datetime
 import gzip
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from sqlalchemy import text
@@ -150,6 +150,46 @@ async def upload_backup(data: bytes, tag: str) -> str:
         )
     asset_resp.raise_for_status()
     return release["html_url"]
+
+
+async def download_latest_backup() -> Optional[Dict[str, Any]]:
+    """Fetches and decompresses the most recent backup release's asset —
+    the read side of upload_backup(), needed for app/restore_verify.py's
+    restore-test cron. Returns None (not an error) when no backup release
+    exists yet, matching this module's established "unconfigured/absent is
+    a normal state" convention."""
+    if not GITHUB_BACKUP_TOKEN or not GITHUB_BACKUP_REPO:
+        return None
+
+    resp = await _github_request(
+        "GET", f"/repos/{GITHUB_BACKUP_REPO}/releases", params={"per_page": 50}
+    )
+    resp.raise_for_status()
+    releases = [r for r in resp.json() if r["tag_name"].startswith(TAG_PREFIX)]
+    if not releases:
+        return None
+    # GitHub returns releases newest-first already, but sort explicitly —
+    # nothing here should rely on an undocumented ordering guarantee.
+    releases.sort(key=lambda r: r["created_at"], reverse=True)
+    latest = releases[0]
+
+    asset = next((a for a in latest.get("assets", []) if a["name"].endswith(".json.gz")), None)
+    if asset is None:
+        return None
+
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+        asset_resp = await client.get(
+            asset["url"],
+            headers={
+                "Authorization": f"Bearer {GITHUB_BACKUP_TOKEN}",
+                "Accept": "application/octet-stream",
+            },
+        )
+    asset_resp.raise_for_status()
+
+    manifest = json.loads(gzip.decompress(asset_resp.content))
+    manifest["_tag"] = latest["tag_name"]
+    return manifest
 
 
 async def enforce_retention(retention_days: int = BACKUP_RETENTION_DAYS) -> int:
