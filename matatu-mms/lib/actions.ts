@@ -7,7 +7,7 @@ import {
   setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
 } from "./session";
 import { getReports } from "./data";
-import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
+import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType, Zone } from "./types";
 import { parseJsonStringList, homeForRole } from "./rbac";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
@@ -539,6 +539,19 @@ export async function decideDirectorStageAction(
   revalidatePath("/saccos/verify");
   revalidatePath("/sacco-portal");
   revalidatePath("/dashboard");
+  return {};
+}
+
+export async function resolveOperatorTerminalAction(
+  terminalId: string,
+  payload: { stageId?: string } | { lat: number; lng: number }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/operator-terminals/${terminalId}/resolve`, "PATCH", payload);
+  } catch (err: any) {
+    return { error: err.message || "Could not resolve this terminal." };
+  }
+  revalidatePath("/saccos/verify");
   return {};
 }
 
@@ -1549,4 +1562,40 @@ export async function revokeCrewAssignmentAction(assignmentId: string): Promise<
   }
   revalidatePath("/sacco-portal");
   return {};
+}
+
+// --- Zone/sector boundary editing (Phase 3 — PolygonBoundaryEditor) --------
+// Both duty.py's Zone and Sector rows share the identical boundary_geojson/
+// center_lat/center_lng field shape, so one input type and one pair of
+// actions covers both call sites; the caller picks the endpoint.
+
+export interface ZoneUpsertInput {
+  name: string;
+  description?: string;
+  sectorId?: string;
+  code?: string;
+  centerLat?: number;
+  centerLng?: number;
+  boundaryGeojson?: string;
+  displayOrder?: number;
+}
+
+export async function createZoneAction(input: ZoneUpsertInput): Promise<{ zone?: Zone; error?: string }> {
+  try {
+    const zone = await apiWrite<Zone>("/api/duty/zones", "POST", input);
+    revalidatePath("/zones");
+    return { zone };
+  } catch (err: any) {
+    return { error: err.message || "Could not create this zone." };
+  }
+}
+
+export async function updateZoneAction(zoneId: string, input: ZoneUpsertInput): Promise<{ zone?: Zone; error?: string }> {
+  try {
+    const zone = await apiWrite<Zone>(`/api/duty/zones/${encodeURIComponent(zoneId)}`, "PATCH", input);
+    revalidatePath("/zones");
+    return { zone };
+  } catch (err: any) {
+    return { error: err.message || "Could not update this zone." };
+  }
 }
