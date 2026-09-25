@@ -88,21 +88,17 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const { role, additionalRoles, mfaSetupRequired } = session;
+  const { role, additionalRoles } = session;
   // Every gate below checks the full effective role set (primary + any
   // additional predefined roles a Super Admin has granted), not just the
   // primary role, so e.g. an additional ADMIN role actually unlocks /users.
   const roles = [role, ...additionalRoles];
   const hasAdminTier = roles.some((r) => ADMIN_TIER_ROLES.includes(r));
 
-  // MFA is enforced for admin-tier accounts: auth.py sets mfaSetupRequired
-  // on login for any ADMIN/SUPERADMIN that hasn't completed enrollment yet,
-  // and confirmMfaAction clears it the moment they do (lib/actions.ts) — so
-  // this redirect only ever fires for the genuine "never enrolled" window,
-  // never for an already-enrolled admin or any non-admin-tier role.
-  if (hasAdminTier && mfaSetupRequired && !pathname.startsWith("/mfa")) {
-    return NextResponse.redirect(new URL("/mfa/setup", request.url));
-  }
+  // MFA is opt-in, not enforced: an admin-tier account can enroll from
+  // /mfa/setup whenever they choose, but signing in with email and
+  // password alone is never blocked on it. mfaSetupRequired is still read
+  // above so a future opt-in enforcement flow has the data it needs.
 
   // Director of Mobility / Chief Officer: confined to the Operator
   // Verification hub (and their dashboard) — they don't need the full

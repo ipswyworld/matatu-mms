@@ -17,7 +17,7 @@ const SESSION_COOKIE_NAME = "mms_session";
 // it is shown precisely when there is no network, and redirecting it to a
 // sign-in page that itself needs network would make the offline experience
 // worse than no service worker at all. It contains no user data.
-const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve", "/compliance-notice", "/offline"];
+const PUBLIC_PATHS = ["/register", "/faq", "/terms", "/operator-onboarding", "/pay-fine", "/contact", "/forgot-password", "/reset-password", "/guardian-approve", "/compliance-notice", "/offline", "/status"];
 
 /**
  * Verifies the HMAC signature before trusting anything in the cookie. A

@@ -17,6 +17,7 @@ export default async function OverviewPage() {
   try {
     initial = await getOpsOverview();
   } catch (err: any) {
+    if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
     fetchError = err?.message || "Could not reach the control plane.";
   }
 

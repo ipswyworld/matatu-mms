@@ -31,6 +31,12 @@ export async function settle<T>(promise: Promise<T>): Promise<{ data?: T; error?
   try {
     return { data: await promise };
   } catch (err: any) {
+    // next/navigation's redirect() (thrown by apiFetch on a 401/403 to send
+    // an expired session to /login) works by throwing a special error for
+    // Next's own rendering pipeline to catch. Swallowing it here like an
+    // ordinary error turns a redirect into literal "NEXT_REDIRECT" text on
+    // the page instead of an actual navigation — it must always propagate.
+    if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
     return { error: err?.message || "Could not load this data." };
   }
 }

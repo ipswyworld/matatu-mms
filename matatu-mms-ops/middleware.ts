@@ -18,12 +18,6 @@ async function readVerifiedSession(request: NextRequest): Promise<{ role: string
   }
 }
 
-// This console has no MFA-setup UI of its own — enrollment happens in the
-// staff app, which every SUPERADMIN also has an account on. Same env var
-// pattern already used for the impersonation ticket-consume redirect
-// (lib/actions.ts) and the operator-onboarding launcher.
-const STAFF_APP_URL = process.env.STAFF_APP_URL || "http://localhost:3000";
-
 // Two layers of RBAC by design: this middleware (fast, edge-runtime reject
 // on a tampered/absent/non-SUPERADMIN cookie) plus the backend's own
 // requires_permission("view_system_health") check on every API call this
@@ -50,7 +44,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const { role, mfaSetupRequired } = await readVerifiedSession(request);
+  const { role } = await readVerifiedSession(request);
 
   if (role !== "SUPERADMIN") {
     const response = NextResponse.redirect(new URL("/login", request.url));
@@ -58,10 +52,9 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  if (mfaSetupRequired) {
-    return NextResponse.redirect(`${STAFF_APP_URL}/mfa/setup`);
-  }
-
+  // MFA is opt-in, not enforced: signing in with email and password alone
+  // is never blocked on it. Enrollment is still available from the staff
+  // app's /mfa/setup for anyone who chooses to use it.
   return NextResponse.next();
 }
 
