@@ -3,8 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
-import { getReports } from "./data";
-import { Booking, MatatuStatus, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, ScheduledBooking, TripRating, UserFavorite } from "./types";
+import { getReports, getScheduledBookingShare } from "./data";
+import { Booking, MatatuStatus, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, ScheduledBooking, ScheduledBookingShare, TripRating, UserFavorite } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -1016,6 +1016,7 @@ export async function createScheduledBookingAction(input: {
   seatNumbers: number[];
   accessibilityFlag?: boolean;
   trustedContactPhone?: string;
+  repeatWeeks?: number;
 }): Promise<{ scheduledBooking?: ScheduledBooking; error?: string }> {
   try {
     const scheduledBooking = await apiWrite<ScheduledBooking>("/api/scheduled-bookings", "POST", input);
@@ -1024,6 +1025,14 @@ export async function createScheduledBookingAction(input: {
   } catch (err: any) {
     return { error: err.message || "Could not schedule this trip. Please try again." };
   }
+}
+
+// A thin server-action wrapper around data.ts's getScheduledBookingShare so
+// the unauthenticated share page's client component (which needs to poll
+// for live position updates) has something to call — server components
+// alone can't re-fetch on an interval.
+export async function getScheduledBookingShareAction(token: string): Promise<ScheduledBookingShare | null> {
+  return getScheduledBookingShare(token);
 }
 
 export async function getMyScheduledBookingsAction(): Promise<ScheduledBooking[]> {
@@ -1149,7 +1158,7 @@ export async function searchStagesAction(q: string): Promise<{ id: string; name:
   }
 }
 
-export async function getNearestTerminalAction(lat: number, lng: number): Promise<{ id: string; name: string; lat: number; lng: number; distanceMeters: number } | null> {
+export async function getNearestTerminalAction(lat: number, lng: number, accessibilityRequired = false): Promise<{ id: string; name: string; lat: number; lng: number; distanceMeters: number; wheelchairAccessible: boolean } | null> {
   try {
     // Was /api/operator-terminals/nearest, which requires the staff-only
     // view_operator_terminals permission — a PASSENGER calling it always
@@ -1157,7 +1166,7 @@ export async function getNearestTerminalAction(lat: number, lng: number): Promis
     // is /api/search/nearest-stage's passenger-facing equivalent instead
     // (same haversine-over-geocoded-stages logic, open to any authenticated
     // user), so "find my nearest terminal" actually works for passengers.
-    return await apiWrite(`/api/search/nearest-stage?lat=${lat}&lng=${lng}`, "GET");
+    return await apiWrite(`/api/search/nearest-stage?lat=${lat}&lng=${lng}&accessibility_required=${accessibilityRequired}`, "GET");
   } catch {
     return null;
   }

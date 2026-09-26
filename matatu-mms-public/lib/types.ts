@@ -388,12 +388,26 @@ export interface ScheduledBooking {
   isRecurring: boolean;
   accessibilityFlag: boolean;
   trustedContactPhone?: string | null;
+  shareToken?: string | null;
   createdAt: string;
   routeName?: string | null;
   routeCode?: string | null;
   originStageName?: string | null;
   destinationStageName?: string | null;
   regNumber?: string | null;
+}
+
+// Trusted-contact sharing (Phase 7, #8) — the unauthenticated view returned
+// by GET /api/scheduled-bookings/share/{token}, deliberately thinner than
+// ScheduledBooking itself (no phone, no seat numbers).
+export interface ScheduledBookingShare {
+  status: ScheduledBookingStatus;
+  scheduledDeparture: string;
+  routeName?: string | null;
+  originStageName?: string | null;
+  destinationStageName?: string | null;
+  regNumber?: string | null;
+  livePosition?: { lat: number; lng: number; heading?: number | null; recordedAt?: string | null } | null;
 }
 
 export interface UserFavorite {

@@ -21,7 +21,13 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import ScheduledBooking, Route, Matatu, Stage, User
-from app.schemas import ScheduledBookingCreate, ScheduledBookingResponse, ScheduledBookingStatusUpdate
+from app.schemas import (
+    ScheduledBookingCreate,
+    ScheduledBookingResponse,
+    ScheduledBookingStatusUpdate,
+    ScheduledBookingShareResponse,
+    ScheduledBookingSharePosition,
+)
 from app.auth import requires_permission, get_current_user
 from app.events import dispatcher
 from app.audit import stage_audit_log
@@ -46,6 +52,7 @@ def _to_response(sb: ScheduledBooking) -> ScheduledBookingResponse:
         is_recurring=sb.is_recurring,
         accessibility_flag=sb.accessibility_flag,
         trusted_contact_phone=sb.trusted_contact_phone,
+        share_token=sb.share_token,
         created_at=sb.created_at,
         route_name=sb.route.name if sb.route else None,
         route_code=sb.route.code if sb.route else None,
@@ -65,6 +72,8 @@ async def create_scheduled_booking(
         raise HTTPException(status_code=400, detail="Scheduled departure must be in the future")
     if not payload.seat_numbers:
         raise HTTPException(status_code=400, detail="At least one seat must be requested")
+    if payload.repeat_weeks < 0 or payload.repeat_weeks > 12:
+        raise HTTPException(status_code=400, detail="repeat_weeks must be between 0 and 12")
 
     route = (await db.execute(select(Route).where(Route.id == payload.route_id))).scalars().first()
     if not route:
@@ -77,32 +86,58 @@ async def create_scheduled_booking(
         if not dest:
             raise HTTPException(status_code=404, detail="Destination stage not found")
 
-    booking_id = f"SCHED-{uuid.uuid4().hex[:10].upper()}"
     now = datetime.datetime.now(datetime.timezone.utc)
-    new_sb = ScheduledBooking(
-        id=booking_id,
-        route_id=payload.route_id,
-        matatu_id=None,  # assigned later — the whole point of booking ahead of an instant match
-        passenger_user_id=current_user.id,
-        passenger_name=payload.passenger_name.strip(),
-        phone=payload.phone.strip(),
-        origin_stage_id=payload.origin_stage_id,
-        destination_stage_id=payload.destination_stage_id,
-        scheduled_departure=payload.scheduled_departure,
-        seat_numbers=",".join(str(s) for s in payload.seat_numbers),
-        fare_kes=route.fare_kes * len(payload.seat_numbers),
-        status="PENDING",
-        accessibility_flag=payload.accessibility_flag,
-        trusted_contact_phone=payload.trusted_contact_phone,
-        created_at=now,
-        updated_at=now,
-    )
+
+    def _build(departure: datetime.datetime, is_recurring: bool, parent_id: str | None) -> ScheduledBooking:
+        booking_id = f"SCHED-{uuid.uuid4().hex[:10].upper()}"
+        return ScheduledBooking(
+            id=booking_id,
+            route_id=payload.route_id,
+            matatu_id=None,  # assigned later — the whole point of booking ahead of an instant match
+            passenger_user_id=current_user.id,
+            passenger_name=payload.passenger_name.strip(),
+            phone=payload.phone.strip(),
+            origin_stage_id=payload.origin_stage_id,
+            destination_stage_id=payload.destination_stage_id,
+            scheduled_departure=departure,
+            seat_numbers=",".join(str(s) for s in payload.seat_numbers),
+            fare_kes=route.fare_kes * len(payload.seat_numbers),
+            status="PENDING",
+            accessibility_flag=payload.accessibility_flag,
+            trusted_contact_phone=payload.trusted_contact_phone,
+            is_recurring=is_recurring,
+            recurrence_parent_id=parent_id,
+            # Trusted-contact sharing (Phase 7, #8): the token/expiry only
+            # exist when a contact phone was actually given — an unshared
+            # booking has nothing to protect and no link to guess.
+            share_token=f"share-{uuid.uuid4().hex}" if payload.trusted_contact_phone else None,
+            share_expires_at=departure + datetime.timedelta(hours=24) if payload.trusted_contact_phone else None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    new_sb = _build(payload.scheduled_departure, is_recurring=payload.repeat_weeks > 0, parent_id=None)
     db.add(new_sb)
     stage_audit_log(
-        db, resource_type="scheduled_booking", resource_id=booking_id, action="CREATE",
+        db, resource_type="scheduled_booking", resource_id=new_sb.id, action="CREATE",
         user_id=current_user.id, old_values=None,
         new_values={"route_id": payload.route_id, "scheduled_departure": payload.scheduled_departure.isoformat()},
     )
+
+    booking_id = new_sb.id
+    for week in range(1, payload.repeat_weeks + 1):
+        occurrence = _build(
+            payload.scheduled_departure + datetime.timedelta(weeks=week),
+            is_recurring=True,
+            parent_id=booking_id,
+        )
+        db.add(occurrence)
+        stage_audit_log(
+            db, resource_type="scheduled_booking", resource_id=occurrence.id, action="CREATE_RECURRING_OCCURRENCE",
+            user_id=current_user.id, old_values=None,
+            new_values={"recurrence_parent_id": booking_id, "scheduled_departure": occurrence.scheduled_departure.isoformat()},
+        )
+
     await db.commit()
 
     result = await db.execute(
@@ -236,3 +271,64 @@ async def update_scheduled_booking_status(
         "user_id": current_user.id,
     })
     return _to_response(saved)
+
+
+@router.get("/share/{token}", response_model=ScheduledBookingShareResponse)
+async def get_scheduled_booking_share(token: str, db: AsyncSession = Depends(get_db)):
+    """Trusted-contact sharing (Phase 7, #8) — deliberately unauthenticated:
+    the whole point is that someone worried about a traveler (who has no
+    account on this system) can open a link. The opaque, unguessable
+    share_token plus an explicit expiry stand in for session auth here, the
+    same tradeoff any "share this" link makes elsewhere. Never exposes more
+    than ScheduledBookingShareResponse declares — no phone numbers, no seat
+    assignment, nothing beyond what a worried contact actually needs.
+    """
+    result = await db.execute(
+        select(ScheduledBooking)
+        .options(selectinload(ScheduledBooking.route), selectinload(ScheduledBooking.matatu),
+                 selectinload(ScheduledBooking.origin_stage), selectinload(ScheduledBooking.destination_stage))
+        .where(ScheduledBooking.share_token == token)
+    )
+    sb = result.scalars().first()
+    if not sb:
+        raise HTTPException(status_code=404, detail="Share link not found")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # SQLite doesn't reliably round-trip tzinfo on DateTime(timezone=True)
+    # columns — same normalization routes/auth.py and
+    # routes/public_updates.py already apply before comparing.
+    expires_at = sb.share_expires_at
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+    if expires_at and expires_at <= now:
+        raise HTTPException(status_code=410, detail="This share link has expired")
+
+    live_position = None
+    if sb.matatu_id:
+        # Same Redis key a matatu's own live telemetry writes to
+        # (telemetry.py's TELEMETRY_KEY_PREFIX) — read directly rather than
+        # importing live_vehicles() (which scans every key) since only one
+        # vehicle's position is needed here.
+        from app.realtime import get_redis
+        import json as _json
+        r = await get_redis()
+        raw = await r.get(f"telemetry:vehicle:{sb.matatu_id}")
+        if raw:
+            try:
+                data = _json.loads(raw)
+                if data.get("lat") is not None and data.get("lng") is not None:
+                    live_position = ScheduledBookingSharePosition(
+                        lat=float(data["lat"]), lng=float(data["lng"]),
+                        heading=data.get("bearing"), recorded_at=data.get("timestamp"),
+                    )
+            except (ValueError, TypeError, KeyError):
+                pass
+
+    return ScheduledBookingShareResponse(
+        status=sb.status,
+        scheduled_departure=sb.scheduled_departure,
+        route_name=sb.route.name if sb.route else None,
+        origin_stage_name=sb.origin_stage.name if sb.origin_stage else None,
+        destination_stage_name=sb.destination_stage.name if sb.destination_stage else None,
+        reg_number=sb.matatu.reg_number if sb.matatu else None,
+        live_position=live_position,
+    )

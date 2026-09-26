@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUpDown, Bus, Footprints, Loader2, MapPin, Navigation } from "lucide-react";
+import { ArrowUpDown, Bus, Footprints, Loader2, MapPin, Navigation, Accessibility } from "lucide-react";
 import StageSearchField, { StageOption } from "@/components/StageSearchField";
 import EmptyState from "@/components/EmptyState";
 import { getNearestTerminalAction, searchOriginDestinationAction } from "@/lib/actions";
@@ -53,7 +53,8 @@ export default function TripPlanner({
   const [to, setTo] = useState<StageOption | null>(null);
   const [results, setResults] = useState<OriginDestinationResult[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [nearestFallback, setNearestFallback] = useState<{ name: string; distanceMeters: number } | null>(null);
+  const [nearestFallback, setNearestFallback] = useState<{ name: string; distanceMeters: number; wheelchairAccessible: boolean } | null>(null);
+  const [accessibilityRequired, setAccessibilityRequired] = useState(false);
   const { location, request } = usePassengerLocation();
 
   const runSearch = async (fromStage: StageOption, toStage: StageOption) => {
@@ -93,8 +94,8 @@ export default function TripPlanner({
       request();
       return;
     }
-    const nearest = await getNearestTerminalAction(location.lat, location.lng);
-    setNearestFallback(nearest ? { name: nearest.name, distanceMeters: nearest.distanceMeters } : null);
+    const nearest = await getNearestTerminalAction(location.lat, location.lng, accessibilityRequired);
+    setNearestFallback(nearest ? { name: nearest.name, distanceMeters: nearest.distanceMeters, wheelchairAccessible: nearest.wheelchairAccessible } : null);
   };
 
   // Auto-resolve rather than waiting for a manual tap, but only when
@@ -107,6 +108,16 @@ export default function TripPlanner({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [results, location]);
+
+  // Re-resolve when the accessibility toggle changes after a fallback is
+  // already showing — a hard filter (Phase 7, #15), not a ranking bias, so
+  // flipping it can genuinely change which terminal is "nearest".
+  useEffect(() => {
+    if (nearestFallback && location) {
+      findNearestTerminal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessibilityRequired]);
 
   const searchRow = (
     <div className="flex items-stretch gap-3">
@@ -169,10 +180,23 @@ export default function TripPlanner({
             title="No direct route found between these two stages"
             hint="You may need to change vehicles along the way, or board at a nearby terminal instead."
           />
+          <label className="flex items-center gap-2 text-[11px] font-semibold text-black/50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={accessibilityRequired}
+              onChange={(e) => setAccessibilityRequired(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-black/20 text-county-green focus:ring-county-green/30"
+            />
+            <Accessibility size={13} strokeWidth={2} className="text-county-ink/40" />
+            Only show wheelchair-accessible terminals
+          </label>
           {nearestFallback ? (
             <div className="text-xs font-semibold text-county-blue bg-county-blue/10 border border-county-blue/20 rounded-lg p-2.5 flex items-center gap-1.5">
               <Navigation size={13} strokeWidth={2.5} />
               Nearest terminal: {nearestFallback.name} ({(nearestFallback.distanceMeters / 1000).toFixed(1)} km away)
+              {nearestFallback.wheelchairAccessible && (
+                <span className="badge bg-county-green/10 text-county-green font-bold text-[10px] ml-auto">Accessible</span>
+              )}
             </div>
           ) : location ? (
             <div className="flex items-center gap-2 text-xs text-black/50">

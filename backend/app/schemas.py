@@ -654,6 +654,12 @@ class ScheduledBookingCreate(BaseModelCamel):
     seat_numbers: List[int]
     accessibility_flag: bool = False
     trusted_contact_phone: Optional[str] = None
+    # Phase 7 recurrence: 0 (default) creates a single one-off booking, same
+    # as before this field existed. >0 also materializes that many further
+    # weekly occurrences up front (see POST /recurring) rather than
+    # computing "next occurrence" lazily — every other feature (reminders,
+    # no-show sweep, analytics) then treats all rows uniformly.
+    repeat_weeks: int = 0
 
 class ScheduledBookingStatusUpdate(BaseModelCamel):
     status: str  # PENDING, CONFIRMED, BOARDED, NO_SHOW, CANCELLED, REASSIGNED
@@ -673,12 +679,31 @@ class ScheduledBookingResponse(BaseModelCamel):
     is_recurring: bool = False
     accessibility_flag: bool = False
     trusted_contact_phone: Optional[str] = None
+    share_token: Optional[str] = None
     created_at: datetime.datetime
     route_name: Optional[str] = None
     route_code: Optional[str] = None
     origin_stage_name: Optional[str] = None
     destination_stage_name: Optional[str] = None
     reg_number: Optional[str] = None
+
+class ScheduledBookingSharePosition(BaseModelCamel):
+    lat: float
+    lng: float
+    heading: Optional[float] = None
+    recorded_at: Optional[str] = None
+
+class ScheduledBookingShareResponse(BaseModelCamel):
+    """The unauthenticated trusted-contact view (Phase 7, #8) — deliberately
+    thin: no passenger phone, no seat numbers, nothing beyond what someone
+    worried about a traveler's trip actually needs to see."""
+    status: str
+    scheduled_departure: datetime.datetime
+    route_name: Optional[str] = None
+    origin_stage_name: Optional[str] = None
+    destination_stage_name: Optional[str] = None
+    reg_number: Optional[str] = None
+    live_position: Optional[ScheduledBookingSharePosition] = None
 
 # --- Passenger Report Schemas ---
 class PassengerReportStatusUpdate(BaseModelCamel):

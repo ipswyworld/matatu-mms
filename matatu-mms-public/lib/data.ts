@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, NotificationHistory, OfficerAssignment, OffenceType, OperatorTerminal, PassengerReport, PendingRating, RecentSacco, Route, Sacco, Stage, SystemHealth, TimeseriesResponse, User, UserFavorite, Zone, PublicStatus } from "./types";
+import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, NotificationHistory, OfficerAssignment, OffenceType, OperatorTerminal, PassengerReport, PendingRating, RecentSacco, Route, Sacco, Stage, SystemHealth, TimeseriesResponse, User, UserFavorite, Zone, PublicStatus, ScheduledBookingShare } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -16,6 +16,20 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
 export async function getPublicStatus(): Promise<PublicStatus | null> {
   try {
     return await apiFetch<PublicStatus>("/api/status/public");
+  } catch {
+    return null;
+  }
+}
+
+// Trusted-contact sharing (Phase 7, #8) — the share page has no session at
+// all (a worried contact with no account on this system), so this follows
+// getPublicStatus's pattern above: apiFetch attaches auth only if a cookie
+// happens to exist, never requires one. A missing/expired token is the
+// backend's own 404/410, not this app's 401, so apiFetch's redirect-to-login
+// path never fires for this call.
+export async function getScheduledBookingShare(token: string): Promise<ScheduledBookingShare | null> {
+  try {
+    return await apiFetch<ScheduledBookingShare>(`/api/scheduled-bookings/share/${encodeURIComponent(token)}`);
   } catch {
     return null;
   }

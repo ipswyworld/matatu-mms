@@ -308,6 +308,10 @@ class Stage(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     geocoded = Column(Boolean, default=False)
+    # Phase 7 (#15): county-staff-editable, defaults False rather than
+    # assuming accessibility — same "don't fabricate confidence" instinct
+    # as `geocoded` above.
+    wheelchair_accessible = Column(Boolean, nullable=False, default=False)
 
     route_links = relationship("RouteStage", back_populates="stage")
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CalendarClock, Loader2, XCircle } from "lucide-react";
+import { CalendarClock, Loader2, XCircle, Repeat, Share2 } from "lucide-react";
 import StageSearchField, { StageOption } from "@/components/StageSearchField";
 import EmptyState from "@/components/EmptyState";
 import { cancelScheduledBookingAction, createScheduledBookingAction } from "@/lib/actions";
@@ -44,7 +44,11 @@ export default function ScheduleBookingClient({
   const [phone, setPhone] = useState("");
   const [seatCount, setSeatCount] = useState(1);
   const [accessibilityFlag, setAccessibilityFlag] = useState(false);
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatWeeks, setRepeatWeeks] = useState(4);
+  const [trustedContactPhone, setTrustedContactPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [lastShareToken, setLastShareToken] = useState<string | null>(null);
 
   const minDeparture = new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16);
 
@@ -65,6 +69,8 @@ export default function ScheduleBookingClient({
         phone: phone || "0712345678",
         seatNumbers: Array.from({ length: seatCount }, (_, i) => i + 1),
         accessibilityFlag,
+        trustedContactPhone: trustedContactPhone.trim() || undefined,
+        repeatWeeks: repeatWeekly ? repeatWeeks : undefined,
       });
       if (result.error) {
         setError(result.error);
@@ -77,6 +83,10 @@ export default function ScheduleBookingClient({
         setDeparture("");
         setSeatCount(1);
         setAccessibilityFlag(false);
+        setRepeatWeekly(false);
+        setRepeatWeeks(4);
+        setTrustedContactPhone("");
+        setLastShareToken(result.scheduledBooking.shareToken || null);
       }
     });
   };
@@ -171,11 +181,61 @@ export default function ScheduleBookingClient({
           I need a wheelchair-accessible or priority seat
         </label>
 
+        <div>
+          <label className="label">Share live trip with a trusted contact (optional)</label>
+          <input
+            type="tel"
+            value={trustedContactPhone}
+            onChange={(e) => setTrustedContactPhone(e.target.value)}
+            placeholder="Their phone number"
+            className="input"
+          />
+          <p className="text-[11px] text-black/40 mt-1">
+            We'll give you a link you can send them — no account needed on their end.
+          </p>
+        </div>
+
+        <div className="bg-black/5 rounded-lg p-2.5 border border-black/5 space-y-2">
+          <label className="flex items-center gap-2.5 text-xs font-semibold text-county-black/70 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={repeatWeekly}
+              onChange={(e) => setRepeatWeekly(e.target.checked)}
+              className="h-4 w-4 rounded border-black/20 text-county-green focus:ring-county-green/30"
+            />
+            <Repeat size={13} strokeWidth={2.5} className="text-county-ink/50" />
+            Repeat this trip weekly
+          </label>
+          {repeatWeekly && (
+            <div className="flex items-center justify-between pl-6">
+              <span className="text-[11px] text-black/50">For how many weeks</span>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setRepeatWeeks((n) => Math.max(1, n - 1))} className="h-7 w-7 rounded-lg bg-white border border-black/10 font-extrabold text-county-black hover:bg-black/5">−</button>
+                <span className="w-6 text-center font-extrabold text-county-black text-sm">{repeatWeeks}</span>
+                <button type="button" onClick={() => setRepeatWeeks((n) => Math.min(12, n + 1))} className="h-7 w-7 rounded-lg bg-white border border-black/10 font-extrabold text-county-black hover:bg-black/5">+</button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <button type="submit" disabled={isPending} className="btn-primary w-full !py-2.5 text-sm font-bold flex items-center justify-center gap-2">
           {isPending ? <Loader2 size={16} className="animate-spin" /> : <CalendarClock size={16} strokeWidth={2} />}
           {isPending ? "Scheduling…" : "Schedule This Trip"}
         </button>
       </form>
+
+      {lastShareToken && (
+        <div className="bg-county-blue/10 border border-county-blue/20 rounded-lg p-3 flex items-start gap-2.5">
+          <Share2 size={15} strokeWidth={2} className="text-county-blue mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-county-black">Share link ready</p>
+            <p className="text-[11px] text-black/50 break-all mt-0.5">
+              {typeof window !== "undefined" ? `${window.location.origin}/share/${lastShareToken}` : `/share/${lastShareToken}`}
+            </p>
+          </div>
+          <button type="button" onClick={() => setLastShareToken(null)} className="text-county-black/30 hover:text-county-black/60 text-xs ml-auto shrink-0">✕</button>
+        </div>
+      )}
 
       <div className="pt-3 border-t border-black/5 space-y-2">
         <h4 className="font-bold text-xs text-county-black/50 uppercase tracking-wide">Your Upcoming Scheduled Trips</h4>

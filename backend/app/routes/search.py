@@ -65,12 +65,14 @@ class NearestStageResult(BaseModelCamel):
     lat: float
     lng: float
     distance_meters: float
+    wheelchair_accessible: bool = False
 
 
 @router.get("/nearest-stage", response_model=NearestStageResult)
 async def nearest_stage(
     lat: float = Query(...),
     lng: float = Query(...),
+    accessibility_required: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -83,9 +85,22 @@ async def nearest_stage(
     stages approach, open to any authenticated user, so "type an unmapped
     place, fall back to the nearest real stage" actually works for
     passengers instead of only ever failing quietly.
+
+    accessibility_required (Phase 7, #15) filters to
+    Stage.wheelchair_accessible stages when set — a hard filter, not a
+    ranking bias, since a passenger who needs this can't use a "closer but
+    inaccessible" result at all. Falls back to the unfiltered set only if
+    filtering would otherwise return nothing, so the endpoint never 404s
+    just because no accessible stage happens to be nearby yet.
     """
-    result = await db.execute(select(Stage).where(Stage.geocoded == True, Stage.lat.is_not(None)))  # noqa: E712
-    stages = result.scalars().all()
+    base_query = select(Stage).where(Stage.geocoded == True, Stage.lat.is_not(None))  # noqa: E712
+    stages = []
+    if accessibility_required:
+        result = await db.execute(base_query.where(Stage.wheelchair_accessible == True))  # noqa: E712
+        stages = result.scalars().all()
+    if not stages:
+        result = await db.execute(base_query)
+        stages = result.scalars().all()
     if not stages:
         raise HTTPException(status_code=404, detail="No geocoded stages available")
 
@@ -104,6 +119,7 @@ async def nearest_stage(
         lat=nearest.lat,
         lng=nearest.lng,
         distance_meters=haversine_m(lat, lng, nearest.lat, nearest.lng),
+        wheelchair_accessible=nearest.wheelchair_accessible,
     )
 
 
