@@ -168,6 +168,52 @@ async def nearest_stage(
     )
 
 
+@router.get("/reachable-destinations", response_model=List[StageSearchResult])
+async def reachable_destinations(
+    from_stage_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """When a typed destination matches nothing (e.g. a colloquial place
+    name not in the BRN stage list), the honest fallback isn't a dead
+    end — it's "here's everywhere you can actually get to from where
+    you're boarding." Reuses the exact same "stages reachable after the
+    origin on the same route/direction" computation as od-multi-leg's
+    after_origin set, just returned directly as suggestions instead of fed
+    into a transfer search.
+    """
+    from_stages = (
+        await db.execute(select(RouteStage).where(RouteStage.stage_id == from_stage_id))
+    ).scalars().all()
+    if not from_stages:
+        return []
+
+    route_ids = {fs.route_id for fs in from_stages}
+    all_route_stages = (
+        await db.execute(select(RouteStage).where(RouteStage.route_id.in_(route_ids)))
+    ).scalars().all()
+    by_route_direction: dict[tuple[str, str], list[RouteStage]] = {}
+    for rs in all_route_stages:
+        by_route_direction.setdefault((rs.route_id, rs.direction), []).append(rs)
+
+    reachable_ids: set[str] = set()
+    for fs in from_stages:
+        for rs in by_route_direction.get((fs.route_id, fs.direction), []):
+            if rs.sequence > fs.sequence:
+                reachable_ids.add(rs.stage_id)
+    reachable_ids.discard(from_stage_id)
+    if not reachable_ids:
+        return []
+
+    stages = (
+        await db.execute(
+            select(Stage).where(Stage.id.in_(reachable_ids), Stage.geocoded == True)  # noqa: E712
+        )
+    ).scalars().all()
+    stages.sort(key=lambda s: s.name)
+    return [StageSearchResult(id=s.id, name=s.name, lat=s.lat, lng=s.lng) for s in stages[:50]]
+
+
 class ODSearchResult(BaseModelCamel):
     matatu_id: str
     reg_number: str

@@ -1158,6 +1158,16 @@ export async function searchStagesAction(q: string): Promise<{ id: string; name:
   }
 }
 
+// When a typed destination matches nothing, this lists everywhere actually
+// reachable from the already-picked boarding stage instead of a dead end.
+export async function getReachableDestinationsAction(fromStageId: string): Promise<{ id: string; name: string; lat: number; lng: number }[]> {
+  try {
+    return await apiWrite(`/api/search/reachable-destinations?from_stage_id=${encodeURIComponent(fromStageId)}`, "GET");
+  } catch {
+    return [];
+  }
+}
+
 export async function getNearestTerminalAction(lat: number, lng: number, accessibilityRequired = false): Promise<{ id: string; name: string; lat: number; lng: number; distanceMeters: number; wheelchairAccessible: boolean } | null> {
   try {
     // Was /api/operator-terminals/nearest, which requires the staff-only

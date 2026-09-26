@@ -136,7 +136,7 @@ export default function ScheduleBookingClient({
 
         <div>
           <label className="label">Destination (optional)</label>
-          <StageSearchField placeholder="Where you're going…" onSelect={setDestination} />
+          <StageSearchField placeholder="Where you're going…" onSelect={setDestination} originStageId={origin?.id} />
           {destination && <p className="text-xs font-semibold text-county-green mt-1">{destination.name}</p>}
         </div>
 

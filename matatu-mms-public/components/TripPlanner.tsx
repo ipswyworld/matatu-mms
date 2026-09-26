@@ -198,7 +198,7 @@ export default function TripPlanner({
           )}
         </div>
         <div className="py-2.5">
-          <StageSearchField placeholder="Destination…" onSelect={handleSelectTo} />
+          <StageSearchField placeholder="Destination…" onSelect={handleSelectTo} originStageId={from?.id} />
           {to && <p className="text-xs font-semibold text-county-green mt-1">{to.name}</p>}
         </div>
       </div>
