@@ -1,3 +1,5 @@
+"use client";
+
 import { CheckCircle2, XCircle, DatabaseBackup } from "lucide-react";
 import { BackupRestoreTest } from "@/lib/types";
 import { triggerRestoreTestAction } from "@/lib/actions";

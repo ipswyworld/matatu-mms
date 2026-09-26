@@ -1,3 +1,5 @@
+"use client";
+
 import { UserPlus } from "lucide-react";
 import { PendingRoleGrant, StaffUser } from "@/lib/types";
 import { approveRoleGrantAction, rejectRoleGrantAction } from "@/lib/actions";
