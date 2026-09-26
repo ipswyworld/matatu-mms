@@ -6,11 +6,12 @@ import GisMap from "@/components/GisMap";
 import TripPlanner from "@/components/TripPlanner";
 import DestinationGuidance from "@/components/DestinationGuidance";
 import PreBoardingGuidance from "@/components/PreBoardingGuidance";
+import JourneyClient from "@/components/JourneyClient";
 import { StageOption } from "@/components/StageSearchField";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import EmptyState from "@/components/EmptyState";
 import { createBookingAction, getTakenSeatsAction, updateBookingStatusAction } from "@/lib/actions";
-import { Booking, Matatu, Route, Sacco } from "@/lib/types";
+import { Booking, Matatu, MultiLegSearchResult, Route, Sacco } from "@/lib/types";
 import { useLiveVehicles } from "@/lib/useLiveVehicles";
 import { usePassengerLocation, haversineMeters, formatDistance, formatEta } from "@/lib/geo";
 
@@ -39,6 +40,10 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
   const [selectedMatatu, setSelectedMatatu] = useState<Matatu | null>(null);
   const [seatCount, setSeatCount] = useState(1);
   const [takenSeats, setTakenSeats] = useState<number[]>([]);
+  // One-transfer journeys (Phase 9, #6) — a parallel top-level mode next to
+  // the normal single-vehicle flow above, not fused into its state machine:
+  // the two flows genuinely diverge (two bookings/two vehicles vs one).
+  const [activeJourney, setActiveJourney] = useState<{ journey: MultiLegSearchResult; fromStage: StageOption; toStage: StageOption } | null>(null);
   const [isPending, startTransition] = useTransition();
   const bookingPanelRef = useRef<HTMLDivElement>(null);
 
@@ -185,7 +190,17 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          {viewMode === "plan" ? (
+          {activeJourney ? (
+            <JourneyClient
+              journey={activeJourney.journey}
+              fromStage={activeJourney.fromStage}
+              toStage={activeJourney.toStage}
+              passengerName={passengerName || "Commuter"}
+              phone={phone || "0712345678"}
+              seatNumbers={Array.from({ length: seatCount }, (_, i) => i + 1)}
+              onExit={() => setActiveJourney(null)}
+            />
+          ) : viewMode === "plan" ? (
             <>
               {/* Map + trip search as one instrument (Citymapper/Uber
                   register): dark map on top, the connected From/To search
@@ -202,6 +217,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
                 <TripPlanner
                   embedded
                   onSelectMatatu={handlePickMatatuFromPlanner}
+                  onSelectJourney={(journey, journeyFrom, journeyTo) => setActiveJourney({ journey, fromStage: journeyFrom, toStage: journeyTo })}
                   onFromChange={(stage) => {
                     setBoardingStageName(stage.name);
                     setFromStage(stage);

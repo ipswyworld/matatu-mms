@@ -273,6 +273,178 @@ async def search_origin_destination(
     return results
 
 
+class MultiLegLegResult(BaseModelCamel):
+    matatu_id: str
+    reg_number: str
+    route_id: str
+    route_name: str
+    route_code: str
+    from_stage_id: str
+    from_stage_name: str
+    to_stage_id: str
+    to_stage_name: str
+    fare_kes: float
+    capacity: int
+    seats_available: int
+    direction: str
+
+
+class MultiLegSearchResult(BaseModelCamel):
+    leg1: MultiLegLegResult
+    leg2: MultiLegLegResult
+    transfer_stage_id: str
+    transfer_stage_name: str
+    transfer_stage_lat: float
+    transfer_stage_lng: float
+    total_fare_kes: float
+
+
+async def _best_leg(db: AsyncSession, route: Route, from_stage: Stage, to_stage: Stage, direction: str) -> Optional[MultiLegLegResult]:
+    """The single best (most seats available) ACTIVE matatu on this route for
+    this stage pair, or None if nothing is running with room. One-transfer
+    itineraries are grouped per (route, transfer) triple, not fanned out
+    over every matatu on each leg — mirrors "each triple is a 2-leg
+    itinerary" from the plan, not a full cross-product of vehicles."""
+    matatus = (
+        await db.execute(select(Matatu).where(Matatu.route_id == route.id, Matatu.status == "ACTIVE"))
+    ).scalars().all()
+    if not matatus:
+        return None
+
+    fare = await get_fare_for_stage_pair(db, route.id, from_stage.id, to_stage.id)
+    best: Optional[MultiLegLegResult] = None
+    for matatu in matatus:
+        taken_result = await db.execute(
+            select(Booking).where(Booking.matatu_id == matatu.id, Booking.status == "CONFIRMED")
+        )
+        taken_seats = sum(len([s for s in b.seat_numbers.split(",") if s]) for b in taken_result.scalars().all())
+        seats_available = max(matatu.capacity - taken_seats, 0)
+        if seats_available <= 0:
+            continue
+        if best is None or seats_available > best.seats_available:
+            best = MultiLegLegResult(
+                matatu_id=matatu.id, reg_number=matatu.reg_number,
+                route_id=route.id, route_name=route.name, route_code=route.code,
+                from_stage_id=from_stage.id, from_stage_name=from_stage.name,
+                to_stage_id=to_stage.id, to_stage_name=to_stage.name,
+                fare_kes=float(fare), capacity=matatu.capacity,
+                seats_available=seats_available, direction=direction,
+            )
+    return best
+
+
+@router.get("/od-multi-leg", response_model=List[MultiLegSearchResult])
+async def search_multi_leg(
+    from_stage_id: str = Query(...),
+    to_stage_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-transfer journeys (Phase 9, #6) — the frontend calls this only
+    after the plain direct search (/od above) comes back empty, since a
+    transfer is strictly a fallback to a direct ride, never preferred over
+    one. v1 scope is a single transfer, not full multi-hop pathfinding:
+    RouteStage's real route graph (route_id, stage_id, sequence, direction)
+    makes a one-transfer search cheap and exact; anything beyond one
+    transfer is exponential blowup this hub-and-spoke city network doesn't
+    need.
+
+    Algorithm: for every route A serving the origin and route B serving the
+    destination (A != B), find stages reachable after the origin on A's
+    same direction, and stages that reach the destination on B's same
+    direction; any stage in both sets is a valid transfer point. Two extra
+    queries (all RouteStage rows for A's and B's route sets) instead of one
+    query per (A, B) pair keeps this from becoming N*M round trips.
+    """
+    if from_stage_id == to_stage_id:
+        return []
+
+    from_stages = (
+        await db.execute(select(RouteStage).where(RouteStage.stage_id == from_stage_id))
+    ).scalars().all()
+    to_stages = (
+        await db.execute(select(RouteStage).where(RouteStage.stage_id == to_stage_id))
+    ).scalars().all()
+    if not from_stages or not to_stages:
+        return []
+
+    from_route_ids = {fs.route_id for fs in from_stages}
+    to_route_ids = {ts.route_id for ts in to_stages}
+
+    all_from_route_stages = (
+        await db.execute(select(RouteStage).where(RouteStage.route_id.in_(from_route_ids)))
+    ).scalars().all()
+    all_to_route_stages = (
+        await db.execute(select(RouteStage).where(RouteStage.route_id.in_(to_route_ids)))
+    ).scalars().all()
+
+    by_route_direction_a: dict[tuple[str, str], list[RouteStage]] = {}
+    for rs in all_from_route_stages:
+        by_route_direction_a.setdefault((rs.route_id, rs.direction), []).append(rs)
+    by_route_direction_b: dict[tuple[str, str], list[RouteStage]] = {}
+    for rs in all_to_route_stages:
+        by_route_direction_b.setdefault((rs.route_id, rs.direction), []).append(rs)
+
+    # (route_a_id, direction_a, route_b_id, direction_b, transfer_stage_id) tuples.
+    candidate_transfers: list[tuple[str, str, str, str, str]] = []
+    for fs in from_stages:
+        after_origin = {
+            rs.stage_id for rs in by_route_direction_a.get((fs.route_id, fs.direction), [])
+            if rs.sequence > fs.sequence
+        }
+        if not after_origin:
+            continue
+        for ts in to_stages:
+            if ts.route_id == fs.route_id:
+                continue  # same route -> would already be a direct match
+            before_dest = {
+                rs.stage_id for rs in by_route_direction_b.get((ts.route_id, ts.direction), [])
+                if rs.sequence < ts.sequence
+            }
+            for transfer_stage_id in after_origin & before_dest:
+                candidate_transfers.append((fs.route_id, fs.direction, ts.route_id, ts.direction, transfer_stage_id))
+
+    if not candidate_transfers:
+        return []
+
+    from_stage = (await db.execute(select(Stage).where(Stage.id == from_stage_id))).scalars().first()
+    to_stage = (await db.execute(select(Stage).where(Stage.id == to_stage_id))).scalars().first()
+    if not from_stage or not to_stage:
+        return []
+
+    results: List[MultiLegSearchResult] = []
+    seen_triples: set[tuple[str, str, str]] = set()
+    for route_a_id, direction_a, route_b_id, direction_b, transfer_stage_id in candidate_transfers:
+        triple = (route_a_id, route_b_id, transfer_stage_id)
+        if triple in seen_triples:
+            continue
+        seen_triples.add(triple)
+
+        route_a = (await db.execute(select(Route).where(Route.id == route_a_id))).scalars().first()
+        route_b = (await db.execute(select(Route).where(Route.id == route_b_id))).scalars().first()
+        transfer_stage = (await db.execute(select(Stage).where(Stage.id == transfer_stage_id))).scalars().first()
+        if not route_a or not route_b or not transfer_stage:
+            continue
+
+        leg1 = await _best_leg(db, route_a, from_stage, transfer_stage, direction_a)
+        leg2 = await _best_leg(db, route_b, transfer_stage, to_stage, direction_b)
+        if not leg1 or not leg2:
+            continue
+
+        results.append(MultiLegSearchResult(
+            leg1=leg1, leg2=leg2,
+            transfer_stage_id=transfer_stage.id, transfer_stage_name=transfer_stage.name,
+            transfer_stage_lat=transfer_stage.lat, transfer_stage_lng=transfer_stage.lng,
+            total_fare_kes=leg1.fare_kes + leg2.fare_kes,
+        ))
+
+    # Same convention as the direct search: cheapest combined fare first,
+    # then the bottleneck leg's seat count (the leg with fewer seats is
+    # what actually constrains the group), most first.
+    results.sort(key=lambda r: (r.total_fare_kes, -min(r.leg1.seats_available, r.leg2.seats_available)))
+    return results[:10]
+
+
 # --- Staff record search (Readiness List §18) --------------------------------
 #
 # Distinct from the passenger origin-destination search above, which answers

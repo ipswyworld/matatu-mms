@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
 import { getReports, getScheduledBookingShare } from "./data";
-import { Booking, MatatuStatus, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, ScheduledBooking, ScheduledBookingShare, TripRating, UserFavorite } from "./types";
+import { Booking, MatatuStatus, MultiLegSearchResult, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, ScheduledBooking, ScheduledBookingShare, TripRating, UserFavorite } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -1181,6 +1181,58 @@ export async function searchOriginDestinationAction(fromStageId: string, toStage
     );
   } catch {
     return [];
+  }
+}
+
+// One-transfer journeys (Phase 9, #6) — call this only after the direct
+// search above comes back empty; a transfer is a fallback, never preferred
+// over a direct ride.
+export async function searchMultiLegOriginDestinationAction(fromStageId: string, toStageId: string): Promise<MultiLegSearchResult[]> {
+  if (!fromStageId || !toStageId) return [];
+  try {
+    return await apiWrite(
+      `/api/search/od-multi-leg?from_stage_id=${encodeURIComponent(fromStageId)}&to_stage_id=${encodeURIComponent(toStageId)}`,
+      "GET"
+    );
+  } catch {
+    return [];
+  }
+}
+
+// Books both legs of a one-transfer journey (each a completely normal
+// instant booking, own seat assignment) then creates the thin grouping
+// row so JourneyClient.tsx can look up "the other leg" and chain guidance.
+export async function createJourneyBookingAction(input: {
+  leg1: { matatuId: string; routeId: string; passengerName: string; phone: string; stageName: string; seatNumbers: number[] };
+  leg2: { matatuId: string; routeId: string; passengerName: string; phone: string; stageName: string; seatNumbers: number[] };
+  transferStageId: string;
+}): Promise<{ leg1Booking?: Booking; leg2Booking?: Booking; journeyBookingId?: string; error?: string }> {
+  const leg1Result = await createBookingAction(input.leg1);
+  if (leg1Result.error || !leg1Result.booking) {
+    return { error: leg1Result.error || "Could not book the first leg." };
+  }
+  const leg2Result = await createBookingAction(input.leg2);
+  if (leg2Result.error || !leg2Result.booking) {
+    // The first leg is already real and paid-on-board like any instant
+    // booking — there's no atomic two-phase commit across two vehicles,
+    // so a leg-2 failure is surfaced as a partial success rather than
+    // silently losing leg 1. The passenger still has a valid first-leg
+    // ticket; they just need to search leg 2 again.
+    return { leg1Booking: leg1Result.booking, error: leg2Result.error || "Booked your first leg, but the second leg failed — please search again for the onward vehicle." };
+  }
+  try {
+    const journey = await apiWrite<{ id: string }>("/api/journey-bookings", "POST", {
+      leg1BookingId: leg1Result.booking.id,
+      leg1BookingType: "instant",
+      leg2BookingId: leg2Result.booking.id,
+      leg2BookingType: "instant",
+      transferStageId: input.transferStageId,
+    });
+    return { leg1Booking: leg1Result.booking, leg2Booking: leg2Result.booking, journeyBookingId: journey.id };
+  } catch (err: any) {
+    // Both legs are real bookings regardless — the grouping row is a
+    // lookup convenience, not load-bearing for either ticket.
+    return { leg1Booking: leg1Result.booking, leg2Booking: leg2Result.booking, error: undefined };
   }
 }
 

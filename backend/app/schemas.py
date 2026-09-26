@@ -705,6 +705,24 @@ class ScheduledBookingShareResponse(BaseModelCamel):
     reg_number: Optional[str] = None
     live_position: Optional[ScheduledBookingSharePosition] = None
 
+# --- Journey Bookings (one-transfer multi-leg journeys, Phase 9, #6) ---
+class JourneyBookingCreate(BaseModelCamel):
+    leg1_booking_id: str
+    leg1_booking_type: str  # "instant" | "scheduled"
+    leg2_booking_id: str
+    leg2_booking_type: str
+    transfer_stage_id: str
+
+class JourneyBookingResponse(BaseModelCamel):
+    id: str
+    leg1_booking_id: str
+    leg1_booking_type: str
+    leg2_booking_id: str
+    leg2_booking_type: str
+    transfer_stage_id: str
+    transfer_stage_name: Optional[str] = None
+    created_at: datetime.datetime
+
 # --- Passenger Report Schemas ---
 class PassengerReportStatusUpdate(BaseModelCamel):
     status: str  # PENDING, REVIEWED, ESCALATED, DISMISSED

@@ -36,6 +36,11 @@ interface GisMapProps {
   /** The passenger's chosen destination. When both fromStage and toStage
    * are set, a route line is drawn between them. */
   toStage?: TripPoint | null;
+  /** One-transfer journeys (Phase 9, #6) — when set alongside fromStage and
+   * toStage, the route line draws as two segments (from→via, via→to)
+   * through this transfer stage instead of one straight from→to line, and
+   * a third pin marks the transfer point. */
+  viaStage?: TripPoint | null;
   /** Once the passenger has picked a specific matatu, narrow the live map
    * to that one vehicle — every other vehicle currently broadcasting
    * telemetry is hidden, the same "everyone else disappears once you're
@@ -60,13 +65,13 @@ interface GisMapProps {
   embedded?: boolean;
 }
 
-function tripPinElement(kind: "from" | "to") {
+function tripPinElement(kind: "from" | "to" | "via") {
   const el = document.createElement("div");
-  el.style.width = "18px";
-  el.style.height = "18px";
-  el.style.borderRadius = kind === "from" ? "50%" : "50% 50% 50% 0";
+  el.style.width = kind === "via" ? "14px" : "18px";
+  el.style.height = kind === "via" ? "14px" : "18px";
+  el.style.borderRadius = kind === "from" ? "50%" : kind === "via" ? "50%" : "50% 50% 50% 0";
   el.style.transform = kind === "to" ? "rotate(-45deg)" : "none";
-  el.style.background = kind === "from" ? "#068930" : "#B4232C";
+  el.style.background = kind === "from" ? "#068930" : kind === "via" ? "#FCDD07" : "#B4232C";
   el.style.border = "2.5px solid #ffffff";
   el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.45)";
   return el;
@@ -108,7 +113,7 @@ function matatuMarkerElement(reg: string, speed: number) {
   return el;
 }
 
-export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMatatuId, embedded = false }: GisMapProps) {
+export default function GisMap({ fromStage, toStage, viaStage, focusedVehicleId, boardedMatatuId, embedded = false }: GisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<TomTomMapType | null>(null);
   const mapReadyRef = useRef(false);
@@ -129,6 +134,7 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMa
   }, [toStage]);
   const fromMarkerRef = useRef<MaplibreMarker | null>(null);
   const toMarkerRef = useRef<MaplibreMarker | null>(null);
+  const viaMarkerRef = useRef<MaplibreMarker | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -214,6 +220,8 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMa
       fromMarkerRef.current = null;
       toMarkerRef.current?.remove();
       toMarkerRef.current = null;
+      viaMarkerRef.current?.remove();
+      viaMarkerRef.current = null;
 
       // Once boarded, the vehicle marker itself stands in for "from" — a
       // static pin at the old boarding point would just be visual clutter
@@ -228,6 +236,11 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMa
           .setLngLat([toStage.lng, toStage.lat])
           .addTo(glMap);
       }
+      if (viaStage) {
+        viaMarkerRef.current = new maplibregl.Marker({ element: tripPinElement("via") })
+          .setLngLat([viaStage.lng, viaStage.lat])
+          .addTo(glMap);
+      }
 
       // While boarded, the line is driven by live telemetry instead (see
       // upsertVehicle below) — skip the static draw so it doesn't
@@ -235,28 +248,30 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMa
       if (!boardedMatatuId) {
         const source = glMap.getSource("trip-route") as GeoJSONSource | undefined;
         if (source) {
+          const lineSegments: [number, number][][] =
+            fromStage && toStage && viaStage
+              ? [
+                  [[fromStage.lng, fromStage.lat], [viaStage.lng, viaStage.lat]],
+                  [[viaStage.lng, viaStage.lat], [toStage.lng, toStage.lat]],
+                ]
+              : fromStage && toStage
+              ? [[[fromStage.lng, fromStage.lat], [toStage.lng, toStage.lat]]]
+              : [];
           source.setData({
             type: "FeatureCollection",
-            features:
-              fromStage && toStage
-                ? [
-                    {
-                      type: "Feature",
-                      properties: {},
-                      geometry: {
-                        type: "LineString",
-                        coordinates: [[fromStage.lng, fromStage.lat], [toStage.lng, toStage.lat]],
-                      },
-                    },
-                  ]
-                : [],
+            features: lineSegments.map((coordinates) => ({
+              type: "Feature",
+              properties: {},
+              geometry: { type: "LineString", coordinates },
+            })),
           });
         }
       }
 
-      if (fromStage || toStage) {
+      if (fromStage || toStage || viaStage) {
         const points: [number, number][] = [];
         if (fromStage) points.push([fromStage.lng, fromStage.lat]);
+        if (viaStage) points.push([viaStage.lng, viaStage.lat]);
         if (toStage) points.push([toStage.lng, toStage.lat]);
         const bounds = new maplibregl.LngLatBounds(points[0], points[0]);
         points.forEach((p) => bounds.extend(p));
@@ -281,7 +296,7 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMa
       cancelled = true;
       clearInterval(retry);
     };
-  }, [fromStage, toStage, boardedMatatuId]);
+  }, [fromStage, toStage, viaStage, boardedMatatuId]);
 
   // Real-time telemetry over WebSocket, with reconnect/backoff (no fake simulated movement)
   useEffect(() => {

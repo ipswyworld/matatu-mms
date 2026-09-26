@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { ArrowUpDown, Bus, Footprints, Loader2, MapPin, Navigation, Accessibility } from "lucide-react";
 import StageSearchField, { StageOption } from "@/components/StageSearchField";
 import EmptyState from "@/components/EmptyState";
-import { getNearestTerminalAction, searchOriginDestinationAction } from "@/lib/actions";
+import { getNearestTerminalAction, searchMultiLegOriginDestinationAction, searchOriginDestinationAction } from "@/lib/actions";
 import { usePassengerLocation } from "@/lib/geo";
-import { OriginDestinationResult } from "@/lib/types";
+import { MultiLegSearchResult, OriginDestinationResult } from "@/lib/types";
 
 /**
  * Uber/Bolt-style "where from -> where to" trip search, replacing the old
@@ -21,6 +21,7 @@ import { OriginDestinationResult } from "@/lib/types";
  */
 export default function TripPlanner({
   onSelectMatatu,
+  onSelectJourney,
   onFromChange,
   onToChange,
   onStartGuidance,
@@ -28,6 +29,10 @@ export default function TripPlanner({
   embedded = false,
 }: {
   onSelectMatatu?: (matatuId: string) => void;
+  /** Fires when the passenger picks a one-transfer itinerary (Phase 9, #6)
+   * instead of a direct match — the parent hands this off to
+   * JourneyClient.tsx rather than the normal single-vehicle booking flow. */
+  onSelectJourney?: (journey: MultiLegSearchResult, fromStage: StageOption, toStage: StageOption) => void;
   /** Fires whenever the "From" stage changes — the parent booking flow uses
    * this as the passenger's real boarding stage name at booking time. */
   onFromChange?: (stage: StageOption) => void;
@@ -52,6 +57,7 @@ export default function TripPlanner({
   const [from, setFrom] = useState<StageOption | null>(null);
   const [to, setTo] = useState<StageOption | null>(null);
   const [results, setResults] = useState<OriginDestinationResult[] | null>(null);
+  const [multiLegResults, setMultiLegResults] = useState<MultiLegSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [nearestFallback, setNearestFallback] = useState<{ name: string; distanceMeters: number; wheelchairAccessible: boolean } | null>(null);
   const [accessibilityRequired, setAccessibilityRequired] = useState(false);
@@ -60,9 +66,16 @@ export default function TripPlanner({
   const runSearch = async (fromStage: StageOption, toStage: StageOption) => {
     setSearching(true);
     setNearestFallback(null);
+    setMultiLegResults([]);
     const matches = await searchOriginDestinationAction(fromStage.id, toStage.id);
     setResults(matches);
     setSearching(false);
+    // A transfer is strictly a fallback to a direct ride — only look for
+    // one once the direct search has genuinely come back empty.
+    if (matches.length === 0) {
+      const journeys = await searchMultiLegOriginDestinationAction(fromStage.id, toStage.id);
+      setMultiLegResults(journeys);
+    }
   };
 
   const handleSelectFrom = (stage: StageOption) => {
@@ -180,6 +193,34 @@ export default function TripPlanner({
             title="No direct route found between these two stages"
             hint="You may need to change vehicles along the way, or board at a nearby terminal instead."
           />
+
+          {multiLegResults.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold text-county-black/50 uppercase tracking-wide">
+                1-transfer options
+              </p>
+              {multiLegResults.map((journey, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => from && to && onSelectJourney?.(journey, from, to)}
+                  className="w-full text-left p-3 rounded-xl border border-black/10 bg-white hover:border-county-blue/40 transition-colors space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-county-black">
+                      1 transfer via {journey.transferStageName}
+                    </span>
+                    <span className="text-xs font-extrabold text-county-green">KES {journey.totalFareKes.toFixed(0)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-black/50">
+                    <Bus size={12} strokeWidth={2} className="shrink-0" />
+                    Route {journey.leg1.routeCode} → Route {journey.leg2.routeCode}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
           <label className="flex items-center gap-2 text-[11px] font-semibold text-black/50 cursor-pointer">
             <input
               type="checkbox"

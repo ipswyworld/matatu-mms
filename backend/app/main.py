@@ -52,6 +52,7 @@ from app.routes.telemetry import router as telemetry_router
 from app.routes.crimes import router as crimes_router
 from app.routes.bookings import router as bookings_router
 from app.routes.scheduled_bookings import router as scheduled_bookings_router
+from app.routes.journey_bookings import router as journey_bookings_router
 from app.routes.reports import router as reports_router
 from app.routes.dashboard_events import router as dashboard_events_router, register_dashboard_broadcast_listeners
 from app.routes.dashboard_events import broadcaster as dashboard_broadcaster
@@ -318,6 +319,7 @@ app.include_router(telemetry_router)
 app.include_router(crimes_router)
 app.include_router(bookings_router)
 app.include_router(scheduled_bookings_router)
+app.include_router(journey_bookings_router)
 app.include_router(reports_router)
 app.include_router(dashboard_events_router)
 app.include_router(enforcement_cases_router)

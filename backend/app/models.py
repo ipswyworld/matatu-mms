@@ -662,6 +662,32 @@ class ScheduledBooking(Base):
     destination_stage = relationship("Stage", foreign_keys=[destination_stage_id])
 
 
+class JourneyBooking(Base):
+    """Groups the two independent bookings of a one-transfer multi-leg
+    journey (Phase 9, #6) — a thin pointer row, deliberately not a change to
+    Booking/ScheduledBooking internals. Each leg is a completely normal
+    booking of its own type (own seat assignment, audit trail, dispatch
+    event); this table exists only so the frontend can look up "the other
+    leg" and so guidance can chain from one to the next.
+    leg1/leg2_booking_type distinguishes which table leg*_booking_id points
+    into ("instant" -> Booking, "scheduled" -> ScheduledBooking) since a
+    multi-leg journey can mix an instant first leg with a scheduled second
+    leg (or vice versa) — there's no shared base table to a single FK.
+    """
+    __tablename__ = "journey_bookings"
+
+    id = Column(String, primary_key=True, index=True)
+    passenger_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    leg1_booking_id = Column(String, nullable=False)
+    leg1_booking_type = Column(String, nullable=False)  # "instant" | "scheduled"
+    leg2_booking_id = Column(String, nullable=False)
+    leg2_booking_type = Column(String, nullable=False)
+    transfer_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    transfer_stage = relationship("Stage", foreign_keys=[transfer_stage_id])
+
+
 class PassengerReport(Base):
     __tablename__ = "passenger_reports"
 

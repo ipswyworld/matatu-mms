@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Navigation2, Footprints, CheckCircle2, AlertTriangle } from "lucide-react";
 import {
   usePassengerLocation,
@@ -41,6 +42,7 @@ export default function PreBoardingGuidance({
   targetStage,
   matatuId,
   onPickDifferent,
+  onArrive,
 }: {
   targetStage: TargetStage | null;
   /** The selected matatu's id, to compute feasibility against its live
@@ -51,15 +53,31 @@ export default function PreBoardingGuidance({
    * won't-make-it warning — the parent clears the selection so the
    * passenger can choose again from the existing search results. */
   onPickDifferent?: () => void;
+  /** Fires once, the moment distance first drops below the 60m arrival
+   * threshold (same threshold DestinationGuidance.tsx's post-alighting
+   * guidance uses) — JourneyClient.tsx uses this to hand off from leg 1's
+   * boarding wait into leg 2's, without duplicating the arrival math. */
+  onArrive?: () => void;
 }) {
   const { location, status, request } = usePassengerLocation();
   const liveVehicles = useLiveVehicles();
+  const hasFiredArrive = useRef(false);
+
+  const distance = location && targetStage ? haversineMeters(location.lat, location.lng, targetStage.lat, targetStage.lng) : null;
+  const arrived = distance !== null && distance < 60;
+
+  useEffect(() => {
+    if (arrived && !hasFiredArrive.current) {
+      hasFiredArrive.current = true;
+      onArrive?.();
+    }
+    if (!arrived) hasFiredArrive.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrived]);
 
   if (!targetStage) return null;
 
-  const distance = location ? haversineMeters(location.lat, location.lng, targetStage.lat, targetStage.lng) : null;
   const bearing = location ? bearingDegrees(location.lat, location.lng, targetStage.lat, targetStage.lng) : null;
-  const arrived = distance !== null && distance < 60;
 
   const vehicle = matatuId ? liveVehicles[matatuId] : null;
   const vehicleMinutes = vehicle

@@ -474,6 +474,37 @@ export interface OriginDestinationResult {
   direction: string;
 }
 
+// One-transfer journey (Phase 9, #6) — each leg is its own independent
+// direct-search-shaped result (own matatu, own fare), joined at a
+// transfer stage. Mirrors OriginDestinationResult's fields per leg rather
+// than inventing a new shape, since TripPlanner already knows how to
+// render one of those.
+export interface MultiLegLegResult {
+  matatuId: string;
+  regNumber: string;
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  fromStageId: string;
+  fromStageName: string;
+  toStageId: string;
+  toStageName: string;
+  fareKes: number;
+  capacity: number;
+  seatsAvailable: number;
+  direction: string;
+}
+
+export interface MultiLegSearchResult {
+  leg1: MultiLegLegResult;
+  leg2: MultiLegLegResult;
+  transferStageId: string;
+  transferStageName: string;
+  transferStageLat: number;
+  transferStageLng: number;
+  totalFareKes: number;
+}
+
 export interface TimeseriesPoint {
   bucket: string;
   count: number;
