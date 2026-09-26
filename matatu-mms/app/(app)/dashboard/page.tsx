@@ -229,22 +229,54 @@ export default async function DashboardPage() {
     );
   }
 
-  const [allMatatus, allFines, allActivity, saccos, routes, routeNetwork, auditLogs, reports, bookings, telemetry, finesTrend, odMatrix, boardingHeatmap, ridershipByRoute] = await Promise.all([
-    getMatatus(),
-    getFines(),
-    getActivity(),
-    getSaccos(),
-    getRoutes(),
-    getRouteNetwork(),
-    canAny(roles, "manage_users") ? getAuditLogs(12) : Promise.resolve([]),
-    canAny(roles, "view_reports") ? getReports() : Promise.resolve([]),
-    getMyBookings(),
-    getFleetTelemetry(),
-    getTimeseries("fines", 14, "day"),
-    getOdMatrix(30),
-    getBoardingHeatmap(30),
-    getRidershipByRoute(30),
-  ]);
+  // 14 independent backend calls. Without a fallback, one transient
+  // failure (a slow query, a momentary timeout right after a restart, any
+  // single flaky dependency) throws the whole Promise.all and crashes this
+  // entire page to the generic error boundary — which also fires on every
+  // background refresh DashboardLiveRefresh triggers via WebSocket, not
+  // just the first load. A dashboard with 14 data sources should degrade
+  // one widget at a time, not go fully blank because any one of them
+  // hiccuped. Falling back to empty/zeroed data here is the minimal fix:
+  // real per-widget fault isolation (matching the ops console's
+  // settle()/PanelError pattern) is further, separate work.
+  let allMatatus: Awaited<ReturnType<typeof getMatatus>> = [];
+  let allFines: Awaited<ReturnType<typeof getFines>> = [];
+  let allActivity: Awaited<ReturnType<typeof getActivity>> = [];
+  let saccos: Awaited<ReturnType<typeof getSaccos>> = [];
+  let routes: Awaited<ReturnType<typeof getRoutes>> = [];
+  let routeNetwork: Awaited<ReturnType<typeof getRouteNetwork>> = [];
+  let auditLogs: Awaited<ReturnType<typeof getAuditLogs>> = [];
+  let reports: Awaited<ReturnType<typeof getReports>> = [];
+  let bookings: Awaited<ReturnType<typeof getMyBookings>> = [];
+  let telemetry: Awaited<ReturnType<typeof getFleetTelemetry>> = [];
+  let finesTrend: Awaited<ReturnType<typeof getTimeseries>> = { metric: "fines", grouping: "day", points: [] };
+  let odMatrix: Awaited<ReturnType<typeof getOdMatrix>> = [];
+  let boardingHeatmap: Awaited<ReturnType<typeof getBoardingHeatmap>> = [];
+  let ridershipByRoute: Awaited<ReturnType<typeof getRidershipByRoute>> = [];
+  try {
+    [allMatatus, allFines, allActivity, saccos, routes, routeNetwork, auditLogs, reports, bookings, telemetry, finesTrend, odMatrix, boardingHeatmap, ridershipByRoute] = await Promise.all([
+      getMatatus(),
+      getFines(),
+      getActivity(),
+      getSaccos(),
+      getRoutes(),
+      getRouteNetwork(),
+      canAny(roles, "manage_users") ? getAuditLogs(12) : Promise.resolve([]),
+      canAny(roles, "view_reports") ? getReports() : Promise.resolve([]),
+      getMyBookings(),
+      getFleetTelemetry(),
+      getTimeseries("fines", 14, "day"),
+      getOdMatrix(30),
+      getBoardingHeatmap(30),
+      getRidershipByRoute(30),
+    ]);
+  } catch (err: any) {
+    if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
+    // Swallowed deliberately: every value above already has a safe empty
+    // default, so the dashboard renders in a degraded-but-functional state
+    // instead of crashing. Whatever failed shows as "0"/"no data" in its
+    // own widget rather than blanking the whole page.
+  }
   const finesSparkline = finesTrend.points.map((p) => p.value);
 
   const matatus = isSacco ? allMatatus.filter((m) => m.saccoId === session.saccoId) : allMatatus;

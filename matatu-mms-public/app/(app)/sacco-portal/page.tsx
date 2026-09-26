@@ -18,19 +18,37 @@ import RevokeCrewAssignmentButton from "@/components/RevokeCrewAssignmentButton"
 import RemoveCrewMemberButton from "@/components/RemoveCrewMemberButton";
 import AlertCrewForm from "@/components/AlertCrewForm";
 import FareChartUploadCard from "@/components/FareChartUploadCard";
+import OperatorTerminalCard from "@/components/OperatorTerminalCard";
+import { getOperatorTerminals } from "@/lib/data";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Operator Dashboard" };
 
 export default async function SaccoPortalPage() {
   const session = readSession()!;
-  const [allMatatus, saccos, routes, fines, crewAssignments] = await Promise.all([
-    getMatatus(),
-    getSaccos(),
-    getRoutes(),
-    getFines(),
-    getCrewAssignments(),
-  ]);
+  // 6 independent backend calls with no fault isolation by default: one
+  // transient failure (a slow query, a momentary timeout) would otherwise
+  // throw the whole Promise.all and crash this entire page to the generic
+  // error boundary. Falling back to empty arrays degrades to the existing
+  // "No Operator is registered" state below rather than a blank crash.
+  let allMatatus: Awaited<ReturnType<typeof getMatatus>> = [];
+  let saccos: Awaited<ReturnType<typeof getSaccos>> = [];
+  let routes: Awaited<ReturnType<typeof getRoutes>> = [];
+  let fines: Awaited<ReturnType<typeof getFines>> = [];
+  let crewAssignments: Awaited<ReturnType<typeof getCrewAssignments>> = [];
+  let operatorTerminals: Awaited<ReturnType<typeof getOperatorTerminals>> = [];
+  try {
+    [allMatatus, saccos, routes, fines, crewAssignments, operatorTerminals] = await Promise.all([
+      getMatatus(),
+      getSaccos(),
+      getRoutes(),
+      getFines(),
+      getCrewAssignments(),
+      getOperatorTerminals(),
+    ]);
+  } catch (err: any) {
+    if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
+  }
 
   // Backend already scopes SACCO_OPERATOR to their own Sacco; ADMIN/ENFORCEMENT browsing this
   // workspace see the full list and land on the first record as a preview.
@@ -325,6 +343,7 @@ export default async function SaccoPortalPage() {
       </div>
 
       <FareChartUploadCard routes={ownRoutes} />
+      <OperatorTerminalCard routes={ownRoutes} existing={operatorTerminals} />
     </div>
   );
 }
