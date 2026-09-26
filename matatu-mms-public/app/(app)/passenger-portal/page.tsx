@@ -5,6 +5,7 @@ import PassengerBookingClient from "@/components/PassengerBookingClient";
 import FavoritesRecents from "@/components/FavoritesRecents";
 import TripRatingModal from "@/components/TripRatingModal";
 import ScheduleBookingClient from "@/components/ScheduleBookingClient";
+import PassengerPortalTabs from "@/components/PassengerPortalTabs";
 
 export const metadata: Metadata = { title: "Passenger Booking & Scheduling" };
 
@@ -43,13 +44,26 @@ export default async function PassengerPortalPage() {
     if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
   }
   const activeMatatus = matatus.filter((m) => m.status === "ACTIVE");
+  const upcomingScheduledCount = scheduledBookings.filter(
+    (s) => s.status === "PENDING" || s.status === "CONFIRMED"
+  ).length;
 
   return (
-    <div className="space-y-6">
-      <FavoritesRecents favorites={favorites} recents={recents} saccos={saccos} />
-      <PassengerBookingClient routes={routes} matatus={activeMatatus} saccos={saccos} />
-      <ScheduleBookingClient routes={routes} initialScheduled={scheduledBookings} />
+    <>
+      <PassengerPortalTabs
+        scheduledCount={upcomingScheduledCount}
+        bookNow={<PassengerBookingClient routes={routes} matatus={activeMatatus} saccos={saccos} />}
+        scheduled={<ScheduleBookingClient routes={routes} initialScheduled={scheduledBookings} />}
+        saved={
+          <div className="space-y-3">
+            <p className="text-xs text-black/50">
+              Operators you've favorited or used recently — save one to book with it faster next time.
+            </p>
+            <FavoritesRecents favorites={favorites} recents={recents} saccos={saccos} />
+          </div>
+        }
+      />
       <TripRatingModal pending={pendingRatings} />
-    </div>
+    </>
   );
 }

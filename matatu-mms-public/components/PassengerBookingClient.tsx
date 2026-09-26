@@ -245,97 +245,101 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
             <>
               <GisMap fromStage={fromStage} toStage={toStage} focusedVehicleId={selectedMatatu?.id ?? null} />
               <div className="card p-4 space-y-4">
-              <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
-                <MapPin size={15} strokeWidth={2} className="text-county-ink/50" />
-                Route Corridor
-              </h3>
-              <select
-                value={selectedRouteId}
-                onChange={(e) => setSelectedRouteId(e.target.value)}
-                className="input"
-              >
-                <option value="all">All Corridors & Routes</option>
-                {routes.map((r) => (
-                  <option key={r.id} value={r.id}>Route {r.code} - {r.name}</option>
-                ))}
-              </select>
+                <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+                  <MapPin size={15} strokeWidth={2} className="text-county-ink/50" />
+                  Route Corridor
+                </h3>
+                <select
+                  value={selectedRouteId}
+                  onChange={(e) => setSelectedRouteId(e.target.value)}
+                  className="input"
+                >
+                  <option value="all">All Corridors & Routes</option>
+                  {routes.map((r) => (
+                    <option key={r.id} value={r.id}>Route {r.code} - {r.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Only in Browse mode — Plan mode's TripPlanner search
+                  results already list matching vehicles, so repeating them
+                  here unconditionally (as this used to) doubled up the same
+                  information on the page a passenger came to book on. */}
+              <div className="card p-5 space-y-3">
+                <h3 className="font-bold text-sm flex items-center gap-1.5">
+                  <Bus size={15} strokeWidth={2} className="text-county-ink/50" />
+                  Available Matatus En-Route ({filteredMatatus.length})
+                </h3>
+                {filteredMatatus.length === 0 ? (
+                  <EmptyState
+                    title="No active vehicles on this route right now"
+                    hint="Try a different route corridor, or check back shortly — the fleet updates in real time."
+                  />
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    {filteredMatatus.map((m) => {
+                      const route = routeById.get(m.routeId);
+                      const isSelected = selectedMatatu?.id === m.id;
+                      const distance = distanceTo(m.id);
+                      return (
+                        <div
+                          key={m.id}
+                          onClick={() => {
+                            setSelectedMatatu(m);
+                            setSeatCount(1);
+                            setActiveBooking(null);
+                          }}
+                          className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
+                            isSelected
+                              ? "bg-county-green/10 border-county-green ring-2 ring-county-green/30 shadow-md"
+                              : "bg-white border-black/10 hover:border-county-green/50"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-start gap-2.5">
+                              <div
+                                className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${
+                                  isSelected ? "bg-county-green text-white" : "bg-county-black/5 text-county-black/60"
+                                }`}
+                              >
+                                <MatatuGlyph size={22} />
+                              </div>
+                              <div>
+                                <div className="font-extrabold text-base text-county-black">{m.regNumber}</div>
+                                <div className="text-xs text-black/50">Route {route?.code} · {route?.name}</div>
+                              </div>
+                            </div>
+                            <span className="badge bg-black/5 text-county-black font-bold shrink-0">
+                              KES {route?.fareKes ?? "—"} / seat
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] font-bold text-black/40 mt-2">
+                            {saccoById.get(m.saccoId)?.name || "Operator"}
+                          </div>
+
+                          <div className="flex justify-between items-center text-xs mt-3 pt-2 border-t border-black/5">
+                            <span className="font-semibold text-black/70">
+                              {CAPACITY_LABELS[m.capacity] || `${m.capacity}-Seater Matatu`}
+                            </span>
+                            <span className="font-bold text-county-green">{m.terminalSegment}</span>
+                          </div>
+                          {distance && (
+                            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-black/5 text-xs">
+                              <Navigation size={11} strokeWidth={2.5} className="text-county-blue shrink-0" />
+                              <span className="font-extrabold text-county-blue">{formatDistance(distance.meters)} away</span>
+                              <span className="text-black/40">·</span>
+                              <span className="font-semibold text-black/60">{distance.etaLabel}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </>
           )}
-
-          <div className="card p-5 space-y-3">
-            <h3 className="font-bold text-sm flex items-center gap-1.5">
-              <Bus size={15} strokeWidth={2} className="text-county-ink/50" />
-              Available Matatus En-Route ({filteredMatatus.length})
-            </h3>
-            {filteredMatatus.length === 0 ? (
-              <EmptyState
-                title="No active vehicles on this route right now"
-                hint="Try a different route corridor, or check back shortly — the fleet updates in real time."
-              />
-            ) : (
-              <div className="grid sm:grid-cols-2 gap-4">
-                {filteredMatatus.map((m) => {
-                  const route = routeById.get(m.routeId);
-                  const isSelected = selectedMatatu?.id === m.id;
-                  const distance = distanceTo(m.id);
-                  return (
-                    <div
-                      key={m.id}
-                      onClick={() => {
-                        setSelectedMatatu(m);
-                        setSeatCount(1);
-                        setActiveBooking(null);
-                      }}
-                      className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
-                        isSelected
-                          ? "bg-county-green/10 border-county-green ring-2 ring-county-green/30 shadow-md"
-                          : "bg-white border-black/10 hover:border-county-green/50"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-start gap-2.5">
-                          <div
-                            className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${
-                              isSelected ? "bg-county-green text-white" : "bg-county-black/5 text-county-black/60"
-                            }`}
-                          >
-                            <MatatuGlyph size={22} />
-                          </div>
-                          <div>
-                            <div className="font-extrabold text-base text-county-black">{m.regNumber}</div>
-                            <div className="text-xs text-black/50">Route {route?.code} · {route?.name}</div>
-                          </div>
-                        </div>
-                        <span className="badge bg-black/5 text-county-black font-bold shrink-0">
-                          KES {route?.fareKes ?? "—"} / seat
-                        </span>
-                      </div>
-
-                      <div className="text-[11px] font-bold text-black/40 mt-2">
-                        {saccoById.get(m.saccoId)?.name || "Operator"}
-                      </div>
-
-                      <div className="flex justify-between items-center text-xs mt-3 pt-2 border-t border-black/5">
-                        <span className="font-semibold text-black/70">
-                          {CAPACITY_LABELS[m.capacity] || `${m.capacity}-Seater Matatu`}
-                        </span>
-                        <span className="font-bold text-county-green">{m.terminalSegment}</span>
-                      </div>
-                      {distance && (
-                        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-black/5 text-xs">
-                          <Navigation size={11} strokeWidth={2.5} className="text-county-blue shrink-0" />
-                          <span className="font-extrabold text-county-blue">{formatDistance(distance.meters)} away</span>
-                          <span className="text-black/40">·</span>
-                          <span className="font-semibold text-black/60">{distance.etaLabel}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="space-y-6" ref={bookingPanelRef}>
