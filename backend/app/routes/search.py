@@ -68,6 +68,53 @@ class NearestStageResult(BaseModelCamel):
     wheelchair_accessible: bool = False
 
 
+def haversine_m(lat1, lng1, lat2, lng2):
+    r = 6371000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+# How much closer a plain STAGE has to be than the nearest TERMINUS before
+# the terminus is skipped in the rain. A terminus is more likely to have
+# real shelter than a bare roadside stage — this is a bias toward that,
+# not a claim that any specific terminus actually has a roof. Chosen loose
+# enough that "same distance, terminus is nicer" wins, but a genuinely much
+# closer stage still wins over a much farther terminus.
+RAIN_TERMINUS_PREFERENCE_RATIO = 1.5
+
+
+def pick_nearest_stage(stages: list, lat: float, lng: float, is_raining: bool):
+    """Pure ranking function (Phase 8, #14) — no DB/network access, so it's
+    directly unit-testable with fabricated stage-like objects. `stages` must
+    be non-empty; the caller (nearest_stage below) owns the 404 case.
+
+    Dry weather: strictly nearest, unchanged from Phase 1/7.
+    Raining: prefer the nearest TERMINUS over the nearest plain STAGE,
+    provided it isn't more than RAIN_TERMINUS_PREFERENCE_RATIO times
+    farther away — see the constant's own comment for why a terminus.
+    """
+    nearest = min(stages, key=lambda s: haversine_m(lat, lng, s.lat, s.lng))
+    if not is_raining:
+        return nearest
+
+    termini = [s for s in stages if s.stage_type == "TERMINUS"]
+    if not termini:
+        return nearest
+
+    nearest_terminus = min(termini, key=lambda s: haversine_m(lat, lng, s.lat, s.lng))
+    if nearest_terminus.id == nearest.id:
+        return nearest
+
+    nearest_dist = haversine_m(lat, lng, nearest.lat, nearest.lng)
+    terminus_dist = haversine_m(lat, lng, nearest_terminus.lat, nearest_terminus.lng)
+    if nearest_dist == 0 or terminus_dist <= nearest_dist * RAIN_TERMINUS_PREFERENCE_RATIO:
+        return nearest_terminus
+    return nearest
+
+
 @router.get("/nearest-stage", response_model=NearestStageResult)
 async def nearest_stage(
     lat: float = Query(...),
@@ -92,6 +139,10 @@ async def nearest_stage(
     inaccessible" result at all. Falls back to the unfiltered set only if
     filtering would otherwise return nothing, so the endpoint never 404s
     just because no accessible stage happens to be nearby yet.
+
+    When it's currently raining in Nairobi (Phase 8, #14 — see
+    app/services/weather.py), the ranking itself shifts toward a nearby
+    terminus over a bare stage; see pick_nearest_stage's own docstring.
     """
     base_query = select(Stage).where(Stage.geocoded == True, Stage.lat.is_not(None))  # noqa: E712
     stages = []
@@ -104,15 +155,9 @@ async def nearest_stage(
     if not stages:
         raise HTTPException(status_code=404, detail="No geocoded stages available")
 
-    def haversine_m(lat1, lng1, lat2, lng2):
-        r = 6371000
-        p1, p2 = math.radians(lat1), math.radians(lat2)
-        dp = math.radians(lat2 - lat1)
-        dl = math.radians(lng2 - lng1)
-        a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-        return 2 * r * math.asin(math.sqrt(a))
-
-    nearest = min(stages, key=lambda s: haversine_m(lat, lng, s.lat, s.lng))
+    from app.services.weather import is_raining_nairobi
+    raining = await is_raining_nairobi()
+    nearest = pick_nearest_stage(stages, lat, lng, raining)
     return NearestStageResult(
         id=nearest.id,
         name=nearest.name,
