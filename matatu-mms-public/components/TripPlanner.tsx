@@ -1,0 +1,224 @@
+"use client";
+
+import { useState } from "react";
+import { ArrowUpDown, Bus, Footprints, Loader2, MapPin, Navigation } from "lucide-react";
+import StageSearchField, { StageOption } from "@/components/StageSearchField";
+import EmptyState from "@/components/EmptyState";
+import { getNearestTerminalAction, searchOriginDestinationAction } from "@/lib/actions";
+import { usePassengerLocation } from "@/lib/geo";
+import { OriginDestinationResult } from "@/lib/types";
+
+/**
+ * Uber/Bolt-style "where from -> where to" trip search, replacing the old
+ * boarding-stage-only dropdown. Wraps the backend's existing
+ * GET /api/search/od (app/routes/search.py) — a fully-built, direction-
+ * aware route matcher that had no frontend caller before this.
+ *
+ * If the passenger's destination isn't a known stage (freeform text with no
+ * match), this falls back to directing them to their nearest real terminal
+ * by GPS distance instead of failing outright — "known or unknown place,
+ * still get directed somewhere real."
+ */
+export default function TripPlanner({
+  onSelectMatatu,
+  onFromChange,
+  onToChange,
+  onStartGuidance,
+  guidanceActive,
+  embedded = false,
+}: {
+  onSelectMatatu?: (matatuId: string) => void;
+  /** Fires whenever the "From" stage changes — the parent booking flow uses
+   * this as the passenger's real boarding stage name at booking time. */
+  onFromChange?: (stage: StageOption) => void;
+  /** Fires whenever the "To" stage changes — the parent uses this to draw
+   * the destination pin/route on the map, the same stage this component
+   * searches matatus against. */
+  onToChange?: (stage: StageOption) => void;
+  /** Fires when the passenger opts into on-foot guidance to the same "To"
+   * stage they just searched for — replaces what used to be a second,
+   * separate "tell us your destination" box (DestinationGuidance.tsx no
+   * longer asks on its own; it only ever reuses this one). */
+  onStartGuidance?: (stage: StageOption) => void;
+  /** Whether on-foot guidance is already running for this trip, so the
+   * toggle here reflects reality instead of resetting on every render. */
+  guidanceActive?: boolean;
+  /** When true, drop the standalone card/heading and render as a plain
+   * light strip meant to dock directly beneath GisMap inside a shared
+   * dark instrument container the parent owns (PassengerBookingClient) —
+   * map and search read as one object instead of two stacked cards. */
+  embedded?: boolean;
+}) {
+  const [from, setFrom] = useState<StageOption | null>(null);
+  const [to, setTo] = useState<StageOption | null>(null);
+  const [results, setResults] = useState<OriginDestinationResult[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [nearestFallback, setNearestFallback] = useState<{ name: string; distanceMeters: number } | null>(null);
+  const { location, request } = usePassengerLocation();
+
+  const runSearch = async (fromStage: StageOption, toStage: StageOption) => {
+    setSearching(true);
+    setNearestFallback(null);
+    const matches = await searchOriginDestinationAction(fromStage.id, toStage.id);
+    setResults(matches);
+    setSearching(false);
+  };
+
+  const handleSelectFrom = (stage: StageOption) => {
+    setFrom(stage);
+    onFromChange?.(stage);
+    if (to) runSearch(stage, to);
+  };
+
+  const handleSelectTo = (stage: StageOption) => {
+    setTo(stage);
+    onToChange?.(stage);
+    if (from) runSearch(from, stage);
+  };
+
+  const handleSwap = () => {
+    if (!from || !to) return;
+    setFrom(to);
+    setTo(from);
+    onFromChange?.(to);
+    onToChange?.(from);
+    runSearch(to, from);
+  };
+
+  // No matching direct route — fall back to "at least tell them the
+  // nearest real terminal" rather than a dead end, using the passenger's
+  // own live location if they've granted it.
+  const findNearestTerminal = async () => {
+    if (!location) {
+      request();
+      return;
+    }
+    const nearest = await getNearestTerminalAction(location.lat, location.lng);
+    setNearestFallback(nearest ? { name: nearest.name, distanceMeters: nearest.distanceMeters } : null);
+  };
+
+  const searchRow = (
+    <div className="flex items-stretch gap-3">
+      {/* Route connector: a filled dot for the boarding point, a pin for the
+          destination, joined by a line — this alone tells "from vs to"
+          without the uppercase micro-labels the old two-field form needed. */}
+      <div className="flex flex-col items-center w-4 shrink-0 py-3.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-county-green shrink-0" />
+        <span className="w-px flex-1 bg-county-ink/15 my-1" />
+        <MapPin size={13} strokeWidth={2.5} className="text-county-red shrink-0" />
+      </div>
+      <div className="flex-1 min-w-0 divide-y divide-county-ink/10">
+        <div className="py-2.5">
+          <StageSearchField placeholder="Boarding point…" onSelect={handleSelectFrom} />
+          {from && <p className="text-xs font-semibold text-county-green mt-1">{from.name}</p>}
+        </div>
+        <div className="py-2.5">
+          <StageSearchField placeholder="Destination…" onSelect={handleSelectTo} />
+          {to && <p className="text-xs font-semibold text-county-green mt-1">{to.name}</p>}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleSwap}
+        disabled={!from || !to}
+        aria-label="Swap from and to"
+        className="self-center h-8 w-8 shrink-0 rounded-lg border border-black/10 bg-white flex items-center justify-center text-county-black/60 hover:bg-black/5 disabled:opacity-30"
+      >
+        <ArrowUpDown size={14} strokeWidth={2} />
+      </button>
+    </div>
+  );
+
+  const belowSearch = (
+    <>
+      {to && (
+        <button
+          type="button"
+          onClick={() => onStartGuidance?.(to)}
+          disabled={guidanceActive}
+          className="w-full text-xs font-bold text-county-black/70 bg-black/5 hover:bg-black/10 disabled:opacity-60 rounded-lg px-3 py-2 flex items-center gap-2 transition-colors"
+        >
+          <Footprints size={13} strokeWidth={2} className="text-county-green shrink-0" />
+          {guidanceActive
+            ? `Guiding you on foot to ${to.name} after you alight`
+            : `Also guide me on foot once I get off, all the way to ${to.name}`}
+        </button>
+      )}
+
+      {searching && (
+        <div className="flex items-center gap-2 text-xs text-black/50">
+          <Loader2 size={13} className="animate-spin" />
+          Finding matatus on this route…
+        </div>
+      )}
+
+      {!searching && results && results.length === 0 && (
+        <div className="space-y-3">
+          <EmptyState
+            title="No direct route found between these two stages"
+            hint="You may need to change vehicles along the way, or board at a nearby terminal instead."
+          />
+          {nearestFallback ? (
+            <div className="text-xs font-semibold text-county-blue bg-county-blue/10 border border-county-blue/20 rounded-lg p-2.5 flex items-center gap-1.5">
+              <Navigation size={13} strokeWidth={2.5} />
+              Nearest terminal: {nearestFallback.name} ({(nearestFallback.distanceMeters / 1000).toFixed(1)} km away)
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={findNearestTerminal}
+              className="text-xs font-bold text-county-blue hover:underline flex items-center gap-1"
+            >
+              <Navigation size={12} strokeWidth={2.5} />
+              Find my nearest terminal instead
+            </button>
+          )}
+        </div>
+      )}
+
+      {!searching && results && results.length > 0 && (
+        <div className="space-y-2">
+          {results.map((r) => (
+            <button
+              key={r.matatuId}
+              type="button"
+              onClick={() => onSelectMatatu?.(r.matatuId)}
+              className="w-full text-left p-3 rounded-xl border border-black/10 bg-white hover:border-county-green/50 transition-colors flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 shrink-0 rounded-lg bg-county-black/5 text-county-black/60 flex items-center justify-center">
+                  <Bus size={16} strokeWidth={2} />
+                </div>
+                <div>
+                  <div className="font-extrabold text-sm text-county-black">{r.regNumber}</div>
+                  <div className="text-[11px] text-black/50">Route {r.routeCode} · {r.seatsAvailable} seats left</div>
+                </div>
+              </div>
+              <span className="badge bg-county-green/10 text-county-green font-bold shrink-0">KES {r.fareKes}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="bg-white p-4 space-y-4">
+        {searchRow}
+        {belowSearch}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-4 space-y-4">
+      <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+        <MapPin size={15} strokeWidth={2} className="text-county-ink/50" />
+        Where are you headed?
+      </h3>
+      {searchRow}
+      {belowSearch}
+    </div>
+  );
+}

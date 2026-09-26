@@ -2,18 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { TomTomMap as TomTomMapType } from "@tomtom-org/maps-sdk/map";
-import type { Marker as MaplibreMarker } from "maplibre-gl";
-import { Stage } from "@/lib/types";
-
-export const NAIROBI_STAGES: Stage[] = [
-  { id: "stg-1", name: "Kencom / City Hall Terminal", code: "CBD-KNC", zone: "CBD Zone", lat: -1.2864, lng: 36.8228 },
-  { id: "stg-2", name: "Odeon Cinema Stage", code: "CBD-ODN", zone: "CBD Zone", lat: -1.2831, lng: 36.8249 },
-  { id: "stg-3", name: "Railways Station Terminus", code: "CBD-RLW", zone: "CBD Zone", lat: -1.2901, lng: 36.8272 },
-  { id: "stg-4", name: "Westlands Terminal (Sarit)", code: "WST-SRT", zone: "Westlands Corridor", lat: -1.2618, lng: 36.8049 },
-  { id: "stg-5", name: "Ongata Rongai Main Stage", code: "RNG-RNG", zone: "Langata/Rongai Corridor", lat: -1.3963, lng: 36.7593 },
-  { id: "stg-6", name: "Kasarani Malls Stage", code: "KSR-KSR", zone: "Thika Superhighway", lat: -1.2217, lng: 36.8974 },
-  { id: "stg-7", name: "Umoja 1 Market Terminus", code: "UMJ-UMJ", zone: "Eastlands Trunk", lat: -1.2892, lng: 36.8831 },
-];
+import type { GeoJSONSource, Marker as MaplibreMarker } from "maplibre-gl";
 
 // TomTom (MapLibre-based) takes center as [lng, lat].
 const NAIROBI_CBD_CENTER: [number, number] = [36.8228, -1.2864];
@@ -31,20 +20,46 @@ export interface LiveVehicleTelemetry {
   speed: number;
 }
 
-interface GisMapProps {
-  selectedStageId?: string;
-  onSelectStage?: (stage: Stage) => void;
+interface TripPoint {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
 }
 
-function stageMarkerElement(selected: boolean) {
+interface GisMapProps {
+  /** The passenger's chosen boarding point. Drawn as a pin only when set —
+   * a passenger-facing map has no reason to show every stage in the
+   * system, the same way Uber/Bolt's map stays empty until you've told it
+   * where you're going. */
+  fromStage?: TripPoint | null;
+  /** The passenger's chosen destination. When both fromStage and toStage
+   * are set, a route line is drawn between them. */
+  toStage?: TripPoint | null;
+  /** Once the passenger has picked a specific matatu, narrow the live map
+   * to that one vehicle — every other vehicle currently broadcasting
+   * telemetry is hidden, the same "everyone else disappears once you're
+   * matched" behavior Uber/Bolt use. Today's data source is this app's own
+   * telemetry WebSocket; when that feed is backed by NTSA's IRMS instead,
+   * this filtering logic doesn't change — it only cares about matatu_id. */
+  focusedVehicleId?: string | null;
+  /** When true, skip this component's own outer rounded/border/shadow
+   * wrapper — used when a parent composes the map with another surface
+   * (e.g. PassengerBookingClient's map+search instrument) and needs to own
+   * the outer container itself to avoid a double border/shadow. Default
+   * false preserves the standalone look every other caller relies on. */
+  embedded?: boolean;
+}
+
+function tripPinElement(kind: "from" | "to") {
   const el = document.createElement("div");
-  el.style.width = selected ? "20px" : "14px";
-  el.style.height = selected ? "20px" : "14px";
-  el.style.borderRadius = "50%";
-  el.style.background = selected ? "#FCDD07" : "#068930";
-  el.style.border = "2px solid #ffffff";
-  el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.4)";
-  el.style.cursor = "pointer";
+  el.style.width = "18px";
+  el.style.height = "18px";
+  el.style.borderRadius = kind === "from" ? "50%" : "50% 50% 50% 0";
+  el.style.transform = kind === "to" ? "rotate(-45deg)" : "none";
+  el.style.background = kind === "from" ? "#068930" : "#B4232C";
+  el.style.border = "2.5px solid #ffffff";
+  el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.45)";
   return el;
 }
 
@@ -84,26 +99,38 @@ function matatuMarkerElement(reg: string, speed: number) {
   return el;
 }
 
-export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) {
+export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded = false }: GisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<TomTomMapType | null>(null);
+  const mapReadyRef = useRef(false);
   const vehicleMarkersRef = useRef<Record<string, MaplibreMarker>>({});
+  // Latest known telemetry per vehicle, independent of which markers are
+  // currently rendered — lets syncVisibleVehicles() rebuild the visible set
+  // instantly when focusedVehicleId changes, without waiting on the next
+  // WebSocket frame.
+  const vehicleDataRef = useRef<Record<string, LiveVehicleTelemetry>>({});
+  const focusedVehicleIdRef = useRef<string | null | undefined>(focusedVehicleId);
+  const fromMarkerRef = useRef<MaplibreMarker | null>(null);
+  const toMarkerRef = useRef<MaplibreMarker | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
 
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "live" | "offline">("connecting");
 
-  // Initialize the TomTom map once
+  // Initialize the TomTom map once. Deliberately empty on load: this is a
+  // passenger-facing map, not an ops tool, so it shows nothing until the
+  // passenger has actually planned a trip — same read as Uber/Bolt/Google
+  // Maps' own "where to?" pattern, where the map stays clean and the route
+  // only appears once there's a real origin/destination to draw.
   useEffect(() => {
     if (!TOMTOM_API_KEY) return;
     let destroyed = false;
 
     (async () => {
-      const [{ TomTomConfig }, { TomTomMap }, maplibregl] = await Promise.all([
+      const [{ TomTomConfig }, { TomTomMap }] = await Promise.all([
         import("@tomtom-org/maps-sdk/core"),
         import("@tomtom-org/maps-sdk/map"),
-        import("maplibre-gl"),
       ]);
       if (destroyed || !containerRef.current || mapRef.current) return;
 
@@ -119,54 +146,6 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
       });
       mapRef.current = map;
 
-      // The style can finish loading before this listener attaches (the SDK
-      // resolves it during construction), so check the already-loaded case
-      // directly instead of only relying on the "load" event.
-      const setupLayers = () => {
-        if (destroyed) return;
-        const glMap = map.mapLibreMap;
-        if (glMap.getSource("corridor-lines")) return;
-
-        // Dashed corridor lines from the CBD hub to every stage, as one line layer.
-        glMap.addSource("corridor-lines", {
-          type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: NAIROBI_STAGES.filter(
-              (stg) => stg.lat !== NAIROBI_CBD_CENTER[1] || stg.lng !== NAIROBI_CBD_CENTER[0]
-            ).map((stg) => ({
-              type: "Feature",
-              properties: {},
-              geometry: {
-                type: "LineString",
-                coordinates: [NAIROBI_CBD_CENTER, [stg.lng, stg.lat]],
-              },
-            })),
-          },
-        });
-        glMap.addLayer({
-          id: "corridor-lines-layer",
-          type: "line",
-          source: "corridor-lines",
-          paint: {
-            "line-color": "#FCDD07",
-            "line-width": 2,
-            "line-opacity": 0.35,
-            "line-dasharray": [2, 2],
-          },
-        });
-
-        NAIROBI_STAGES.forEach((stg) => {
-          const el = stageMarkerElement(stg.id === selectedStageId);
-          new maplibregl.Marker({ element: el }).setLngLat([stg.lng, stg.lat]).addTo(glMap);
-
-          const popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setText(`${stg.name} (${stg.code})`);
-          el.addEventListener("mouseenter", () => popup.setLngLat([stg.lng, stg.lat]).addTo(glMap));
-          el.addEventListener("mouseleave", () => popup.remove());
-          el.addEventListener("click", () => onSelectStage && onSelectStage(stg));
-        });
-      };
-
       // `mapReady` (the SDK's own documented readiness flag) becomes true on
       // a different, earlier timeline than the underlying MapLibre map's own
       // "load" event/`loaded()` state in this wrapper, so poll it directly
@@ -178,7 +157,18 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
         }
         if (map.mapReady) {
           clearInterval(readyCheck);
-          setupLayers();
+          const glMap = map.mapLibreMap;
+          glMap.addSource("trip-route", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+          });
+          glMap.addLayer({
+            id: "trip-route-layer",
+            type: "line",
+            source: "trip-route",
+            paint: { "line-color": "#FCDD07", "line-width": 3, "line-opacity": 0.85 },
+          });
+          mapReadyRef.current = true;
         }
       }, 100);
     })();
@@ -187,9 +177,86 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
       destroyed = true;
       mapRef.current?.mapLibreMap.remove();
       mapRef.current = null;
+      mapReadyRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Draw/update the From and To pins plus the route line between them
+  // whenever the passenger's trip selection changes.
+  useEffect(() => {
+    if (!TOMTOM_API_KEY) return;
+    let cancelled = false;
+
+    const render = async () => {
+      const map = mapRef.current;
+      if (cancelled || !map || !mapReadyRef.current) return;
+      const maplibregl = await import("maplibre-gl");
+      const glMap = map.mapLibreMap;
+
+      fromMarkerRef.current?.remove();
+      fromMarkerRef.current = null;
+      toMarkerRef.current?.remove();
+      toMarkerRef.current = null;
+
+      if (fromStage) {
+        fromMarkerRef.current = new maplibregl.Marker({ element: tripPinElement("from") })
+          .setLngLat([fromStage.lng, fromStage.lat])
+          .addTo(glMap);
+      }
+      if (toStage) {
+        toMarkerRef.current = new maplibregl.Marker({ element: tripPinElement("to") })
+          .setLngLat([toStage.lng, toStage.lat])
+          .addTo(glMap);
+      }
+
+      const source = glMap.getSource("trip-route") as GeoJSONSource | undefined;
+      if (source) {
+        source.setData({
+          type: "FeatureCollection",
+          features:
+            fromStage && toStage
+              ? [
+                  {
+                    type: "Feature",
+                    properties: {},
+                    geometry: {
+                      type: "LineString",
+                      coordinates: [[fromStage.lng, fromStage.lat], [toStage.lng, toStage.lat]],
+                    },
+                  },
+                ]
+              : [],
+        });
+      }
+
+      if (fromStage || toStage) {
+        const points: [number, number][] = [];
+        if (fromStage) points.push([fromStage.lng, fromStage.lat]);
+        if (toStage) points.push([toStage.lng, toStage.lat]);
+        const bounds = new maplibregl.LngLatBounds(points[0], points[0]);
+        points.forEach((p) => bounds.extend(p));
+        glMap.fitBounds(bounds, { padding: 64, maxZoom: 15, duration: 500 });
+      }
+    };
+
+    // mapReadyRef may not be set yet on first render if the map is still
+    // loading — poll briefly rather than dropping the initial selection.
+    const retry = setInterval(() => {
+      if (cancelled) {
+        clearInterval(retry);
+        return;
+      }
+      if (mapReadyRef.current) {
+        clearInterval(retry);
+        render();
+      }
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      clearInterval(retry);
+    };
+  }, [fromStage, toStage]);
 
   // Real-time telemetry over WebSocket, with reconnect/backoff (no fake simulated movement)
   useEffect(() => {
@@ -209,10 +276,22 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
         setConnectionStatus("live");
       };
 
+      // Only renders a vehicle if it isn't filtered out by focusedVehicleId —
+      // when a passenger has picked a specific matatu, every other vehicle
+      // is removed from the map rather than left cluttering it.
       const upsertVehicle = (v: LiveVehicleTelemetry) => {
+        vehicleDataRef.current[v.matatu_id] = v;
         const map = mapRef.current;
         if (!map) return;
         const glMap = map.mapLibreMap;
+
+        const focus = focusedVehicleIdRef.current;
+        if (focus && v.matatu_id !== focus) {
+          vehicleMarkersRef.current[v.matatu_id]?.remove();
+          delete vehicleMarkersRef.current[v.matatu_id];
+          return;
+        }
+
         const existing = vehicleMarkersRef.current[v.matatu_id];
         if (existing) {
           existing.setLngLat([v.lng, v.lat]);
@@ -270,11 +349,43 @@ export default function GisMap({ selectedStageId, onSelectStage }: GisMapProps) 
     };
   }, []);
 
+  // Rebuild the visible vehicle markers immediately when the passenger
+  // picks (or clears) a focused vehicle, using already-known telemetry —
+  // otherwise the map wouldn't react until the next WebSocket frame.
+  useEffect(() => {
+    focusedVehicleIdRef.current = focusedVehicleId;
+    const map = mapRef.current;
+    if (!map) return;
+    const glMap = map.mapLibreMap;
+
+    Object.entries(vehicleDataRef.current).forEach(([matatuId, v]) => {
+      const shouldShow = !focusedVehicleId || matatuId === focusedVehicleId;
+      const existing = vehicleMarkersRef.current[matatuId];
+      if (!shouldShow) {
+        existing?.remove();
+        delete vehicleMarkersRef.current[matatuId];
+      } else if (!existing) {
+        import("maplibre-gl").then((maplibregl) => {
+          const marker = new maplibregl.Marker({ element: matatuMarkerElement(v.reg_number, v.speed) })
+            .setLngLat([v.lng, v.lat])
+            .addTo(glMap);
+          const popup = new maplibregl.Popup({ closeButton: false, offset: 12 }).setText(
+            `Route ${v.route_code} · ${v.speed} km/h`
+          );
+          const el = marker.getElement();
+          el.addEventListener("mouseenter", () => popup.setLngLat([v.lng, v.lat]).addTo(glMap));
+          el.addEventListener("mouseleave", () => popup.remove());
+          vehicleMarkersRef.current[matatuId] = marker;
+        });
+      }
+    });
+  }, [focusedVehicleId]);
+
   const dotColor =
     connectionStatus === "live" ? "#068930" : connectionStatus === "connecting" ? "#F5C518" : "#B4232C";
 
   return (
-    <div className="rounded-2xl overflow-hidden relative border border-white/10 shadow-2xl">
+    <div className={embedded ? "relative" : "rounded-2xl overflow-hidden relative border border-white/10 shadow-2xl"}>
       {!TOMTOM_API_KEY ? (
         <div className="h-[380px] flex items-center justify-center bg-county-black text-white/50 text-xs font-semibold px-6 text-center">
           Set NEXT_PUBLIC_TOMTOM_API_KEY to enable the live map.

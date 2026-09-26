@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
 import { getReports } from "./data";
-import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType } from "./types";
+import { Booking, MatatuStatus, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, TripRating, UserFavorite } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -1069,11 +1069,21 @@ export async function completeTripAction(
   }
 }
 
-export async function setFavoriteSaccoAction(saccoId: string | null): Promise<{ error?: string }> {
+export async function addFavoriteSaccoAction(saccoId: string): Promise<{ favorite?: UserFavorite; error?: string }> {
   try {
-    await apiWrite("/api/users/me/favorite-sacco", "PATCH", { saccoId });
+    const favorite = await apiWrite<UserFavorite>("/api/users/me/favorites", "POST", { saccoId });
+    revalidatePath("/passenger-portal");
+    return { favorite };
   } catch (err: any) {
     return { error: err.message || "Could not save your favorite operator." };
+  }
+}
+
+export async function removeFavoriteSaccoAction(saccoId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/users/me/favorites/${saccoId}`, "DELETE");
+  } catch (err: any) {
+    return { error: err.message || "Could not remove your favorite operator." };
   }
   revalidatePath("/passenger-portal");
   return {};
@@ -1085,6 +1095,46 @@ export async function searchStagesAction(q: string): Promise<{ id: string; name:
     return await apiWrite(`/api/search/stages?q=${encodeURIComponent(q.trim())}`, "GET");
   } catch {
     return [];
+  }
+}
+
+export async function getNearestTerminalAction(lat: number, lng: number): Promise<{ id: string; name: string; lat: number; lng: number; distanceMeters: number } | null> {
+  try {
+    return await apiWrite(`/api/operator-terminals/nearest?lat=${lat}&lng=${lng}`, "GET");
+  } catch {
+    return null;
+  }
+}
+
+export async function searchOriginDestinationAction(fromStageId: string, toStageId: string): Promise<OriginDestinationResult[]> {
+  if (!fromStageId || !toStageId) return [];
+  try {
+    return await apiWrite(
+      `/api/search/od?from_stage_id=${encodeURIComponent(fromStageId)}&to_stage_id=${encodeURIComponent(toStageId)}`,
+      "GET"
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function submitOperatorTerminalAction(input: { routeId: string; label: string }): Promise<{ terminal?: OperatorTerminal; error?: string }> {
+  try {
+    const terminal = await apiWrite<OperatorTerminal>("/api/operator-terminals", "POST", input);
+    revalidatePath("/sacco-portal");
+    return { terminal };
+  } catch (err: any) {
+    return { error: err.message || "Could not submit your terminal." };
+  }
+}
+
+export async function createTripRatingAction(input: { bookingId: string; rating: number; comment?: string }): Promise<{ rating?: TripRating; error?: string }> {
+  try {
+    const rating = await apiWrite<TripRating>("/api/trip-ratings", "POST", input);
+    revalidatePath("/passenger-portal");
+    return { rating };
+  } catch (err: any) {
+    return { error: err.message || "Could not submit your rating." };
   }
 }
 

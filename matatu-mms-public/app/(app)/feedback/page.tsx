@@ -3,6 +3,7 @@ import { MessageSquareWarning } from "lucide-react";
 import { getMyProfile } from "@/lib/data";
 import PageBanner from "@/components/PageBanner";
 import PassengerFeedbackForm from "@/components/PassengerFeedbackForm";
+import TalkToUsPanel from "@/components/TalkToUsPanel";
 
 export const metadata: Metadata = { title: "Feedback & Reports" };
 
@@ -18,6 +19,7 @@ export default async function FeedbackPage() {
         subtitle="Report overcharging, reckless driving, or safety issues directly to County Traffic Enforcement."
       />
       <PassengerFeedbackForm passengerName={profile.name} />
+      <TalkToUsPanel />
     </div>
   );
 }

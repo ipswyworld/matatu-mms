@@ -18,7 +18,6 @@ import { Role } from "@/lib/types";
 import { can } from "@/lib/rbac";
 import { useLanguage } from "./LanguageProvider";
 import { logoutAction } from "@/lib/actions";
-import TalkToUsPanel from "./TalkToUsPanel";
 
 // One icon per destination, keyed by href.
 const NAV_ICONS: Record<string, LucideIcon> = {
@@ -185,7 +184,6 @@ export default function Sidebar({
             <div className="text-[9px] font-bold text-center text-white/40 uppercase tracking-[0.2em]">
               Official County Portal
             </div>
-            {role === "PASSENGER" && <TalkToUsPanel dark />}
           </>
         )}
         <form action={logoutAction}>

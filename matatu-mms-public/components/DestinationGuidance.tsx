@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Navigation2, MapPin, Footprints, CheckCircle2, X, Search, Loader2 } from "lucide-react";
-import { searchStagesAction } from "@/lib/actions";
+import { Navigation2, MapPin, Footprints, CheckCircle2, X } from "lucide-react";
 import {
   usePassengerLocation,
   haversineMeters,
@@ -43,9 +42,14 @@ function saveStored(value: StoredDestination | null) {
  * "Guide Me" — the investor-requested feature: a passenger sets where
  * they're really headed once, and the app keeps guiding them on foot even
  * after they've alighted from the matatu early (e.g. off at Odeon, walking
- * the rest of the way to Church House). Deliberately decoupled from
- * booking — the scenario doesn't require booking through this system, just
- * being a passenger on a matatu, so this works for anyone.
+ * the rest of the way to Church House).
+ *
+ * This no longer asks for a destination itself — it used to render its own
+ * separate "Going somewhere specific?" search box, which duplicated
+ * TripPlanner's "Where are you headed? / To" field and confused passengers
+ * into filling in two boxes for the same trip. It's now driven entirely by
+ * `externalStart`: TripPlanner's own "Also guide me on foot" toggle, fired
+ * with the exact same "To" stage the passenger already searched for.
  *
  * State lives in localStorage only. There's no way to detect "got off a
  * vehicle" automatically without a beacon on the bus, so "I've Alighted
@@ -55,14 +59,24 @@ function saveStored(value: StoredDestination | null) {
  * passenger's live position and the destination with a line between them,
  * rather than handing off to an external maps app.
  */
-export default function DestinationGuidance() {
+export default function DestinationGuidance({
+  externalStart,
+}: {
+  /** The stage to start guiding to, set by TripPlanner's "Also guide me on
+   * foot" toggle. A new id starts fresh guidance for that stage; this
+   * component renders nothing on its own until this fires at least once
+   * (or a previous session's guidance is still stored). */
+  externalStart?: { id: string; name: string; lat: number; lng: number } | null;
+}) {
   const [destination, setDestination] = useState<StoredDestination | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const { location, status, request } = usePassengerLocation();
+  const startedStageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const stored = loadStored();
     setDestination(stored);
+    startedStageIdRef.current = stored?.stageId ?? null;
     setHydrated(true);
     // Re-request location on page load if guidance was already active before
     // a refresh — otherwise the alighted view is stuck on "Getting your
@@ -74,9 +88,22 @@ export default function DestinationGuidance() {
 
   const startGuidance = (stage: { id: string; name: string; lat: number; lng: number }) => {
     const next: StoredDestination = { stageId: stage.id, name: stage.name, lat: stage.lat, lng: stage.lng, alighted: false };
+    startedStageIdRef.current = stage.id;
     setDestination(next);
     saveStored(next);
   };
+
+  // TripPlanner is the single source of truth for "where am I going" — this
+  // just reacts when its toggle fires (or when the "To" stage changes
+  // before the passenger has alighted; once alighted, the walk is already
+  // in progress and shouldn't be disrupted by further trip-planner edits).
+  useEffect(() => {
+    if (!hydrated || !externalStart) return;
+    if (destination?.alighted) return;
+    if (startedStageIdRef.current === externalStart.id) return;
+    startGuidance(externalStart);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalStart, hydrated]);
 
   const markAlighted = () => {
     if (!destination) return;
@@ -87,26 +114,12 @@ export default function DestinationGuidance() {
   };
 
   const clearGuidance = () => {
+    startedStageIdRef.current = null;
     setDestination(null);
     saveStored(null);
   };
 
-  if (!hydrated) return null;
-
-  if (!destination) {
-    return (
-      <div className="card p-4 space-y-3">
-        <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
-          <Footprints size={15} strokeWidth={2} className="text-county-ink/50" />
-          Going somewhere specific?
-        </h3>
-        <p className="text-xs text-black/50 -mt-1">
-          Tell us your real destination once — we'll keep guiding you on foot even after you get off the matatu.
-        </p>
-        <StageSearchField onSelect={startGuidance} />
-      </div>
-    );
-  }
+  if (!hydrated || !destination) return null;
 
   if (!destination.alighted) {
     return (
@@ -180,91 +193,6 @@ export default function DestinationGuidance() {
           </div>
           <WalkingMap myLat={location.lat} myLng={location.lng} destLat={destination.lat} destLng={destination.lng} />
         </>
-      )}
-    </div>
-  );
-}
-
-interface StageOption {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-/**
- * Free-text destination search, backed by the real BRN stage list
- * (hundreds of stops) instead of a fixed 7-option dropdown — the
- * passenger types where they're going and picks from live suggestions,
- * the same "type to search" pattern as everywhere else people search a
- * place, rather than scrolling a list.
- */
-function StageSearchField({ onSelect }: { onSelect: (stage: StageOption) => void }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<StageOption[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (query.trim().length < 2) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    debounceRef.current = setTimeout(async () => {
-      const matches = await searchStagesAction(query);
-      setResults(matches);
-      setLoading(false);
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query]);
-
-  const handleSelect = (stage: StageOption) => {
-    onSelect(stage);
-    setQuery("");
-    setResults([]);
-    setOpen(false);
-  };
-
-  return (
-    <div className="relative">
-      <div className="relative">
-        <Search size={13} strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30" />
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Type where you're going… e.g. Church House"
-          className="input pl-8 text-xs w-full"
-        />
-        {loading && <Loader2 size={13} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-black/30" />}
-      </div>
-      {open && query.trim().length >= 2 && (
-        <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/10 bg-white shadow-lg max-h-56 overflow-y-auto scrollbar-ghost">
-          {results.length === 0 && !loading ? (
-            <p className="px-3 py-3 text-xs text-black/40 text-center">No stage matches "{query}".</p>
-          ) : (
-            results.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onMouseDown={() => handleSelect(s)}
-                className="block w-full text-left px-3 py-2 text-xs font-semibold text-county-black hover:bg-county-green/10"
-              >
-                {s.name}
-              </button>
-            ))
-          )}
-        </div>
       )}
     </div>
   );
