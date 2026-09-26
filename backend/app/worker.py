@@ -45,6 +45,7 @@ from app.backup import run_scheduled_backup
 from app.config import REDIS_URL
 from app.synthetic_checks import run_scheduled_synthetic_checks
 from app.feature_flag_scheduler import run_scheduled_flag_flips
+from app.scheduled_booking_scheduler import run_scheduled_booking_sweep
 from app.restore_verify import run_restore_test
 from app.retention import run_scheduled_retention_scan
 from app.data_quality import run_scheduled_data_quality_checks
@@ -107,6 +108,10 @@ class WorkerSettings:
         cron(run_restore_test, weekday="sun", hour=3, minute=30),
         cron(run_scheduled_retention_scan, weekday="mon", hour=4, minute=0),
         cron(run_scheduled_data_quality_checks, weekday="mon", hour=4, minute=15),
+        # Every 5 minutes — a scheduled trip's reminder/auto-confirm window
+        # is measured in tens of minutes, so this cadence is frequent enough
+        # not to miss it while not adding meaningfully to load.
+        cron(run_scheduled_booking_sweep, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
     ]
     redis_settings = _redis_settings()
     max_tries = 3

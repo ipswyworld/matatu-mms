@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearSessionCookie, readSession, setSessionCookie } from "./session";
 import { getReports } from "./data";
-import { Booking, MatatuStatus, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, TripRating, UserFavorite } from "./types";
+import { Booking, MatatuStatus, OperatorTerminal, OriginDestinationResult, PassengerReport, ReportStatus, Role, SaccoDocType, ScheduledBooking, TripRating, UserFavorite } from "./types";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -1003,6 +1003,44 @@ export async function updateBookingStatusAction(
     return { booking };
   } catch (err: any) {
     return { error: err.message || "Could not update ticket status." };
+  }
+}
+
+export async function createScheduledBookingAction(input: {
+  routeId: string;
+  originStageId: string;
+  destinationStageId?: string;
+  scheduledDeparture: string;
+  passengerName: string;
+  phone: string;
+  seatNumbers: number[];
+  accessibilityFlag?: boolean;
+  trustedContactPhone?: string;
+}): Promise<{ scheduledBooking?: ScheduledBooking; error?: string }> {
+  try {
+    const scheduledBooking = await apiWrite<ScheduledBooking>("/api/scheduled-bookings", "POST", input);
+    revalidatePath("/passenger-portal");
+    return { scheduledBooking };
+  } catch (err: any) {
+    return { error: err.message || "Could not schedule this trip. Please try again." };
+  }
+}
+
+export async function getMyScheduledBookingsAction(): Promise<ScheduledBooking[]> {
+  try {
+    return await apiWrite<ScheduledBooking[]>("/api/scheduled-bookings/mine", "GET");
+  } catch {
+    return [];
+  }
+}
+
+export async function cancelScheduledBookingAction(scheduledBookingId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/scheduled-bookings/${scheduledBookingId}/status`, "PATCH", { status: "CANCELLED" });
+    revalidatePath("/passenger-portal");
+    return {};
+  } catch (err: any) {
+    return { error: err.message || "Could not cancel this scheduled trip." };
   }
 }
 

@@ -371,6 +371,31 @@ export interface Booking {
   accessibilityFlag?: boolean;
 }
 
+export type ScheduledBookingStatus = "PENDING" | "CONFIRMED" | "BOARDED" | "NO_SHOW" | "CANCELLED" | "REASSIGNED";
+
+export interface ScheduledBooking {
+  id: string;
+  routeId: string;
+  matatuId?: string | null;
+  passengerName: string;
+  phone: string;
+  originStageId: string;
+  destinationStageId?: string | null;
+  scheduledDeparture: string;
+  seatNumbers: number[];
+  fareKes: number;
+  status: ScheduledBookingStatus;
+  isRecurring: boolean;
+  accessibilityFlag: boolean;
+  trustedContactPhone?: string | null;
+  createdAt: string;
+  routeName?: string | null;
+  routeCode?: string | null;
+  originStageName?: string | null;
+  destinationStageName?: string | null;
+  regNumber?: string | null;
+}
+
 export interface UserFavorite {
   id: string;
   saccoId: string;

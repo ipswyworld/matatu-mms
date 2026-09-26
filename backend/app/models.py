@@ -586,6 +586,78 @@ class Booking(Base):
     route = relationship("Route")
     rating = relationship("TripRating", back_populates="booking", uselist=False)
 
+
+class ScheduledBooking(Base):
+    """A booking for a future departure, not an instant seat — a genuinely
+    different lifecycle from Booking (PENDING/CONFIRMED/BOARDED/NO_SHOW/
+    CANCELLED/REASSIGNED vs. Booking's closed CONFIRMED/USED/CANCELLED), and
+    one that needs cheap independent GROUP BY route_id/scheduled_departure
+    queries from three separate apps (crew's per-trip view, sacco's
+    fleet-wide aggregation, county staff's cross-route analytics) — a
+    filtered subset of Booking would mean every one of those consumers has
+    to guess which rows are "actually" scheduled. Same separation-of-
+    concerns instinct as DemandSignal existing alongside Booking rather than
+    a flag column on it.
+
+    matatu_id is nullable: a scheduled booking can exist before any vehicle
+    is assigned to it (the whole point of scheduling ahead of an instant
+    on-demand match) — assignment can happen later, by a sacco/crew action
+    or the reassignment sweep (scheduled_booking_scheduler.py).
+    """
+    __tablename__ = "scheduled_bookings"
+
+    id = Column(String, primary_key=True, index=True)
+    route_id = Column(String, ForeignKey("routes.id"), nullable=False)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=True)
+    passenger_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    passenger_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    origin_stage_id = Column(String, ForeignKey("stages.id"), nullable=False)
+    destination_stage_id = Column(String, ForeignKey("stages.id"), nullable=True)
+    scheduled_departure = Column(DateTime(timezone=True), nullable=False, index=True)
+    seat_numbers = Column(String, nullable=False)  # comma separated seat ids
+    fare_kes = Column(Numeric(12, 2), nullable=False)
+    status = Column(String, nullable=False, default="PENDING")
+    # PENDING, CONFIRMED, BOARDED, NO_SHOW, CANCELLED, REASSIGNED
+    # Set the first time the reminder sweep notifies this booking, so a
+    # 5-minute cron doesn't re-notify the same booking every tick until it
+    # departs.
+    reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Recurrence (Phase 7): a materialized occurrence points back at the
+    # rule that spawned it rather than each occurrence carrying its own
+    # copy of the recurrence definition.
+    is_recurring = Column(Boolean, nullable=False, default=False)
+    recurrence_parent_id = Column(String, ForeignKey("scheduled_bookings.id"), nullable=True)
+
+    accessibility_flag = Column(Boolean, nullable=False, default=False)
+
+    # Trusted-contact trip sharing (Phase 7) — a live-position link with no
+    # session auth of its own, so it needs its own opaque token and an
+    # explicit expiry rather than relying on the passenger's own session.
+    trusted_contact_phone = Column(String, nullable=True)
+    share_token = Column(String, nullable=True, unique=True, index=True)
+    share_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # No-show handling (Phase 6): grace_expires_at is set once a booking
+    # reaches CONFIRMED (not at creation) so the window starts from "this
+    # is really happening", not from whenever it was first requested.
+    grace_period_minutes = Column(Integer, nullable=False, default=15)
+    grace_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Reassignment (Phase 6) audit trail — the matatu this booking was
+    # moved off of, kept even after matatu_id points somewhere new.
+    reassigned_from_matatu_id = Column(String, ForeignKey("matatus.id"), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    route = relationship("Route", foreign_keys=[route_id])
+    matatu = relationship("Matatu", foreign_keys=[matatu_id])
+    origin_stage = relationship("Stage", foreign_keys=[origin_stage_id])
+    destination_stage = relationship("Stage", foreign_keys=[destination_stage_id])
+
+
 class PassengerReport(Base):
     __tablename__ = "passenger_reports"
 
@@ -1278,6 +1350,12 @@ class Notification(Base):
     title = Column(String, nullable=False)
     message = Column(String, nullable=False)
     level = Column(String, nullable=False, default="info")  # info, success, error
+    # Content category, independent of `level` (which only ever drove the
+    # dot color) — nullable so every pre-existing row defaults to GENERIC
+    # without a backfill. Lets NotificationBell render a scheduled-trip
+    # reminder/no-show/reassignment notice with its own icon instead of
+    # looking identical to any other "info" notification.
+    type = Column(String, nullable=True, default="GENERIC")
     created_at = Column(DateTime(timezone=True), nullable=False, index=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
 

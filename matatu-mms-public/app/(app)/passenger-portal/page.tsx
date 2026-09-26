@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { getMatatus, getRoutes, getSaccos, getMyFavorites, getMyRecents, getPendingRatings } from "@/lib/data";
+import { getMyScheduledBookingsAction } from "@/lib/actions";
 import PassengerBookingClient from "@/components/PassengerBookingClient";
 import FavoritesRecents from "@/components/FavoritesRecents";
 import TripRatingModal from "@/components/TripRatingModal";
+import ScheduleBookingClient from "@/components/ScheduleBookingClient";
 
 export const metadata: Metadata = { title: "Passenger Booking & Scheduling" };
 
@@ -26,14 +28,16 @@ export default async function PassengerPortalPage() {
   let favorites: Awaited<ReturnType<typeof getMyFavorites>> = [];
   let recents: Awaited<ReturnType<typeof getMyRecents>> = [];
   let pendingRatings: Awaited<ReturnType<typeof getPendingRatings>> = [];
+  let scheduledBookings: Awaited<ReturnType<typeof getMyScheduledBookingsAction>> = [];
   try {
-    [routes, matatus, saccos, favorites, recents, pendingRatings] = await Promise.all([
+    [routes, matatus, saccos, favorites, recents, pendingRatings, scheduledBookings] = await Promise.all([
       getRoutes(),
       getMatatus(),
       getSaccos(),
       getMyFavorites(),
       getMyRecents(),
       getPendingRatings(),
+      getMyScheduledBookingsAction(),
     ]);
   } catch (err: any) {
     if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
@@ -44,6 +48,7 @@ export default async function PassengerPortalPage() {
     <div className="space-y-6">
       <FavoritesRecents favorites={favorites} recents={recents} saccos={saccos} />
       <PassengerBookingClient routes={routes} matatus={activeMatatus} saccos={saccos} />
+      <ScheduleBookingClient routes={routes} initialScheduled={scheduledBookings} />
       <TripRatingModal pending={pendingRatings} />
     </div>
   );

@@ -642,6 +642,44 @@ class BookingResponse(BaseModelCamel):
     reg_number: Optional[str] = None
     route_name: Optional[str] = None
 
+
+# --- Scheduled Bookings (advance booking, Swvl-style) ---
+class ScheduledBookingCreate(BaseModelCamel):
+    route_id: str
+    origin_stage_id: str
+    destination_stage_id: Optional[str] = None
+    scheduled_departure: datetime.datetime
+    passenger_name: str
+    phone: str
+    seat_numbers: List[int]
+    accessibility_flag: bool = False
+    trusted_contact_phone: Optional[str] = None
+
+class ScheduledBookingStatusUpdate(BaseModelCamel):
+    status: str  # PENDING, CONFIRMED, BOARDED, NO_SHOW, CANCELLED, REASSIGNED
+
+class ScheduledBookingResponse(BaseModelCamel):
+    id: str
+    route_id: str
+    matatu_id: Optional[str] = None
+    passenger_name: str
+    phone: str
+    origin_stage_id: str
+    destination_stage_id: Optional[str] = None
+    scheduled_departure: datetime.datetime
+    seat_numbers: List[int]
+    fare_kes: MoneyKES
+    status: str
+    is_recurring: bool = False
+    accessibility_flag: bool = False
+    trusted_contact_phone: Optional[str] = None
+    created_at: datetime.datetime
+    route_name: Optional[str] = None
+    route_code: Optional[str] = None
+    origin_stage_name: Optional[str] = None
+    destination_stage_name: Optional[str] = None
+    reg_number: Optional[str] = None
+
 # --- Passenger Report Schemas ---
 class PassengerReportStatusUpdate(BaseModelCamel):
     status: str  # PENDING, REVIEWED, ESCALATED, DISMISSED
@@ -1252,6 +1290,7 @@ class NotificationResponse(BaseModelCamel):
     title: str
     message: str
     level: str
+    type: Optional[str] = None
     created_at: datetime.datetime
     read_at: Optional[datetime.datetime] = None
 

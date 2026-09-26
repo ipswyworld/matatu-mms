@@ -39,7 +39,7 @@ def _user_id_from_channel(channel: str) -> str:
 broadcaster = ChannelBroadcaster(pattern=NOTIFY_CHANNEL_PATTERN, key_fn=_user_id_from_channel)
 
 
-async def notify_user(user_id: str, title: str, message: str, level: str = "info", **extra) -> None:
+async def notify_user(user_id: str, title: str, message: str, level: str = "info", type: str = "GENERIC", **extra) -> None:
     """
     Call this from any route to push a real-time, name-addressed
     notification to a specific logged-in user.
@@ -63,6 +63,7 @@ async def notify_user(user_id: str, title: str, message: str, level: str = "info
                 title=title,
                 message=message,
                 level=level,
+                type=type,
                 created_at=now,
             ))
             await session.commit()
@@ -78,6 +79,7 @@ async def notify_user(user_id: str, title: str, message: str, level: str = "info
         "title": title,
         "message": message,
         "level": level,
+        "notificationType": type,
         "createdAt": now.isoformat(),
         **extra,
     })
