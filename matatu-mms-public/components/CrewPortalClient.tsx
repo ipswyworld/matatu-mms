@@ -17,10 +17,11 @@ import {
   getCrewReportsAction,
   getQueueStatusAction,
   getRouteStagesAction,
+  getScheduledBookingsAction,
   logCrewIncidentAction,
   updateBookingStatusAction,
 } from "@/lib/actions";
-import { Booking, Matatu, PassengerReport, QueueStatus, Route, RouteStagePoint, Seat, Trip } from "@/lib/types";
+import { Booking, Matatu, PassengerReport, QueueStatus, Route, RouteStagePoint, ScheduledBooking, Seat, Trip } from "@/lib/types";
 
 const REPORTS_POLL_MS = 20000;
 const QUEUE_POLL_MS = 8000;
@@ -42,6 +43,7 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   const [gpsSource, setGpsSource] = useState<"device" | "acquiring" | "unavailable" | "idle">("idle");
 
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [scheduledBookings, setScheduledBookings] = useState<ScheduledBooking[]>([]);
   const [isPending, startTransition] = useTransition();
 
   const [liveReports, setLiveReports] = useState<PassengerReport[]>([]);
@@ -72,6 +74,7 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   const refreshBookings = () => {
     if (!selectedMatatu) return;
     getBookingsForMatatuAction(selectedMatatu.id).then(setBookings);
+    getScheduledBookingsAction(selectedMatatu.id).then(setScheduledBookings);
   };
 
   useEffect(() => {
@@ -448,6 +451,30 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
         <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" icon={UserCheck} />
         <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" icon={Coins} />
       </div>
+
+      {scheduledBookings.filter((s) => s.status === "PENDING" || s.status === "CONFIRMED").length > 0 && (
+        <div className="card p-5 space-y-3">
+          <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+            <TicketCheck size={15} strokeWidth={2} className="text-county-ink/50" />
+            Today's Scheduled Passengers
+          </h3>
+          <p className="text-xs text-black/50 -mt-2">Advance bookings for this vehicle — hold these seats.</p>
+          <div className="space-y-1.5">
+            {scheduledBookings
+              .filter((s) => s.status === "PENDING" || s.status === "CONFIRMED")
+              .map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 text-xs py-1.5 border-b border-black/5 last:border-0">
+                  <div>
+                    <span className="font-bold text-county-black">{s.passengerName}</span>
+                    <span className="text-black/40"> · {s.seatNumbers.length} seat{s.seatNumbers.length !== 1 ? "s" : ""}</span>
+                    {s.accessibilityFlag && <span className="badge bg-county-blue/10 text-county-blue font-bold ml-1.5">Accessible</span>}
+                  </div>
+                  <span className="font-semibold text-black/60">{new Date(s.scheduledDeparture).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       <div className="card p-5 space-y-4">
         <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">

@@ -72,7 +72,8 @@ export type Action =
   | "view_audit_logs"
   | "manage_admins"
   | "view_system_health"
-  | "manage_system_config";
+  | "manage_system_config"
+  | "view_scheduling_analytics";
 
 // Every permission string the backend actually enforces (backend/app/rbac.py's
 // ROLE_MATRIX) — a superset of the `Action` union above, which only covers
@@ -92,7 +93,7 @@ export const ALL_BACKEND_PERMISSIONS: string[] = [
   "update_telemetry", "verify_saccos", "view_activity", "view_audit_logs", "view_crew",
   "view_dashboard", "view_enforcement_cases", "view_fines", "view_matatu_bookings", "view_matatus",
   "view_operator_verification", "view_own_bookings", "view_reports", "view_routes",
-  "view_system_health", "view_users",
+  "view_scheduling_analytics", "view_system_health", "view_users",
 ].sort();
 
 // Roles allowed to hold system-wide administrative power. Kept in sync with
@@ -157,6 +158,7 @@ export const MATRIX: Record<Role, Action[]> = {
     "view_audit_logs",
     "view_system_health",
     "manage_system_config",
+    "view_scheduling_analytics",
   ],
   ADMIN: [
     "view_dashboard",
@@ -190,11 +192,13 @@ export const MATRIX: Record<Role, Action[]> = {
     "manage_duty_allocation",
     "send_broadcast",
     "view_audit_logs",
+    "view_scheduling_analytics",
   ],
   DIRECTOR_MOBILITY: [
     "view_dashboard",
     "view_operator_verification",
     "decide_operator_verification_stage1",
+    "view_scheduling_analytics",
   ],
   CHIEF_OFFICER: [
     "view_dashboard",
@@ -277,6 +281,7 @@ export const MATRIX: Record<Role, Action[]> = {
     "view_passengers",
     "view_revenue",
     "view_reports",
+    "view_scheduling_analytics",
   ],
   PASSENGER: [
     "view_passenger_portal",

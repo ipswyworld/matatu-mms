@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Bus, ShieldCheck, Banknote, BadgeCheck, MessageSquareWarning, Clock, CheckCircle2, XCircle, FileClock, LayoutDashboard, UserX, TrendingUp } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getFines, getMatatus, getActivity, getRoutes, getRouteNetwork, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry, getTimeseries, getOdMatrix, getBoardingHeatmap, getRidershipByRoute } from "@/lib/data";
+import { getFines, getMatatus, getActivity, getRoutes, getRouteNetwork, getSaccos, getAuditLogs, getReports, getMyBookings, getFleetTelemetry, getTimeseries, getOdMatrix, getBoardingHeatmap, getRidershipByRoute, getScheduledBookingsByRoute } from "@/lib/data";
 import { canAny, ADMIN_TIER_ROLES } from "@/lib/rbac";
 import PageBanner from "@/components/PageBanner";
 
@@ -145,7 +145,7 @@ export default async function DashboardPage() {
   // operational admin dashboard below, which showed "Awaiting your
   // approval" cards a Viewer has no permission to act on. ---
   if (!hasAdminTier && session.role === "VIEWER") {
-    const [viewerMatatus, viewerFines, viewerSaccos, viewerRoutes, viewerRouteNetwork, viewerOdMatrix, viewerBoardingHeatmap, viewerRidershipByRoute] = await Promise.all([
+    const [viewerMatatus, viewerFines, viewerSaccos, viewerRoutes, viewerRouteNetwork, viewerOdMatrix, viewerBoardingHeatmap, viewerRidershipByRoute, viewerScheduledByRoute] = await Promise.all([
       getMatatus(),
       getFines(),
       getSaccos(),
@@ -154,6 +154,7 @@ export default async function DashboardPage() {
       getOdMatrix(30),
       getBoardingHeatmap(30),
       getRidershipByRoute(30),
+      getScheduledBookingsByRoute(30),
     ]);
     const activeV = viewerMatatus.filter((m) => m.status === "ACTIVE").length;
     const flaggedV = viewerMatatus.filter((m) => m.status === "FLAGGED").length;
@@ -222,7 +223,7 @@ export default async function DashboardPage() {
           <TrendChart metric="bookings" title="Passenger demand over time" countUnit="bookings" color="#0F5132" />
         </div>
 
-        <DemandIntelligence odMatrix={viewerOdMatrix} boardingHeatmap={viewerBoardingHeatmap} ridershipByRoute={viewerRidershipByRoute} />
+        <DemandIntelligence odMatrix={viewerOdMatrix} boardingHeatmap={viewerBoardingHeatmap} ridershipByRoute={viewerRidershipByRoute} scheduledBookingsByRoute={viewerScheduledByRoute} />
 
         <RouteNetworkMap geometry={viewerRouteNetwork} routes={viewerRoutes} matatus={viewerMatatus} fines={viewerFines} />
       </div>
@@ -253,8 +254,9 @@ export default async function DashboardPage() {
   let odMatrix: Awaited<ReturnType<typeof getOdMatrix>> = [];
   let boardingHeatmap: Awaited<ReturnType<typeof getBoardingHeatmap>> = [];
   let ridershipByRoute: Awaited<ReturnType<typeof getRidershipByRoute>> = [];
+  let scheduledByRoute: Awaited<ReturnType<typeof getScheduledBookingsByRoute>> | undefined;
   try {
-    [allMatatus, allFines, allActivity, saccos, routes, routeNetwork, auditLogs, reports, bookings, telemetry, finesTrend, odMatrix, boardingHeatmap, ridershipByRoute] = await Promise.all([
+    [allMatatus, allFines, allActivity, saccos, routes, routeNetwork, auditLogs, reports, bookings, telemetry, finesTrend, odMatrix, boardingHeatmap, ridershipByRoute, scheduledByRoute] = await Promise.all([
       getMatatus(),
       getFines(),
       getActivity(),
@@ -269,6 +271,7 @@ export default async function DashboardPage() {
       getOdMatrix(30),
       getBoardingHeatmap(30),
       getRidershipByRoute(30),
+      canAny(roles, "view_scheduling_analytics") ? getScheduledBookingsByRoute(30) : Promise.resolve(undefined),
     ]);
   } catch (err: any) {
     if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
@@ -500,7 +503,7 @@ export default async function DashboardPage() {
       {/* Row 3c: demand intelligence — busiest boarding stages + top O-D
           pairs, computed by backend/app/routes/demand.py since Task 23 but
           never surfaced on a screen until now */}
-      <DemandIntelligence odMatrix={odMatrix} boardingHeatmap={boardingHeatmap} ridershipByRoute={ridershipByRoute} />
+      <DemandIntelligence odMatrix={odMatrix} boardingHeatmap={boardingHeatmap} ridershipByRoute={ridershipByRoute} scheduledBookingsByRoute={scheduledByRoute} />
 
       {/* Row 4: route network map, replacing the previous flat corridor-health list */}
       <RouteNetworkMap

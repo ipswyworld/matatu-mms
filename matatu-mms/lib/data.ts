@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
-import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, OperatorTerminal, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, Sector, TimeseriesResponse, User, Zone, SupportTicket } from "./types";
+import { ActivityLog, AuditLog, Beat, BoardingHeatmapPoint, Booking, Broadcast, ComplianceFunnel, CrewAssignment, DutyAllocation, DutyAssignment, DutyCalendar, EnforcementCase, Fine, Matatu, MyDuty, NotificationHistory, ODMatrixCell, OfficerAssignment, OfficerRoster, OffenceType, OperatorTerminal, PassengerReport, Route, RouteGeometry, RouteRidership, Sacco, ScheduledBookingsByRoute, Sector, TimeseriesResponse, User, Zone, SupportTicket } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
 // dev) — overridable via BACKEND_URL so docker-compose can point this at
@@ -142,6 +142,13 @@ export async function getBoardingHeatmap(days = 30): Promise<BoardingHeatmapPoin
 // heatmap above, which only ever see app-based search/booking activity.
 export async function getRidershipByRoute(days = 30): Promise<RouteRidership[]> {
   return apiFetch<RouteRidership[]>(`/api/demand/ridership-by-route?days=${days}`);
+}
+
+// Which routes get scheduled most, at roughly which hour, and from which
+// pickup stage — server-pre-aggregated, same principle as the three
+// demand endpoints above. Citywide route-planning data, not fleet data.
+export async function getScheduledBookingsByRoute(days = 30): Promise<ScheduledBookingsByRoute[]> {
+  return apiFetch<ScheduledBookingsByRoute[]>(`/api/demand/scheduled-bookings-by-route?days=${days}`);
 }
 
 // Backend defaults to the most recent 200 records, not the whole table.

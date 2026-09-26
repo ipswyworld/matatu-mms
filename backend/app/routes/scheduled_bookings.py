@@ -25,6 +25,7 @@ from app.schemas import ScheduledBookingCreate, ScheduledBookingResponse, Schedu
 from app.auth import requires_permission, get_current_user
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.abac import sacco_scope_query
 
 router = APIRouter(prefix="/api/scheduled-bookings", tags=["Scheduled Bookings"])
 
@@ -121,6 +122,35 @@ async def create_scheduled_booking(
     })
 
     return _to_response(saved)
+
+
+@router.get("", response_model=List[ScheduledBookingResponse])
+async def get_scheduled_bookings(
+    matatu_id: str | None = None,
+    current_user: User = Depends(requires_permission("view_scheduled_bookings")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Crew's per-vehicle view and sacco's fleet-wide view, same scoping
+    pattern as bookings.py's get_bookings: CREW/SACCO_OPERATOR only ever see
+    their own sacco's vehicles (via the Matatu join), enforced the same way
+    for both roles here. A scheduled booking with no matatu_id assigned yet
+    can't appear in either scoped view - there's no sacco/crew to scope it
+    to until a vehicle is actually assigned."""
+    query = (
+        select(ScheduledBooking)
+        .options(selectinload(ScheduledBooking.route), selectinload(ScheduledBooking.matatu),
+                 selectinload(ScheduledBooking.origin_stage), selectinload(ScheduledBooking.destination_stage))
+    )
+    if current_user.role in ("SACCO_OPERATOR", "CREW"):
+        query = query.join(Matatu, Matatu.id == ScheduledBooking.matatu_id)
+        query = sacco_scope_query(current_user, query, Matatu.sacco_id)
+
+    if matatu_id:
+        query = query.where(ScheduledBooking.matatu_id == matatu_id)
+
+    query = query.order_by(ScheduledBooking.scheduled_departure)
+    result = await db.execute(query)
+    return [_to_response(sb) for sb in result.scalars().all()]
 
 
 @router.get("/mine", response_model=List[ScheduledBookingResponse])

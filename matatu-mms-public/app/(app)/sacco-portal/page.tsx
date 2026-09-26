@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Building2, Bus, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { Building2, Bus, CheckCircle2, Clock, AlertTriangle, CalendarClock } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getMatatus, getRoutes, getSaccos, getFines, getCrewAssignments } from "@/lib/data";
+import { getScheduledBookingsAction } from "@/lib/actions";
 import StatCard from "@/components/StatCard";
 import { MatatuStatusPill } from "@/components/StatusPill";
 import OnboardVehicleModal from "@/components/OnboardVehicleModal";
@@ -37,14 +38,16 @@ export default async function SaccoPortalPage() {
   let fines: Awaited<ReturnType<typeof getFines>> = [];
   let crewAssignments: Awaited<ReturnType<typeof getCrewAssignments>> = [];
   let operatorTerminals: Awaited<ReturnType<typeof getOperatorTerminals>> = [];
+  let scheduledBookings: Awaited<ReturnType<typeof getScheduledBookingsAction>> = [];
   try {
-    [allMatatus, saccos, routes, fines, crewAssignments, operatorTerminals] = await Promise.all([
+    [allMatatus, saccos, routes, fines, crewAssignments, operatorTerminals, scheduledBookings] = await Promise.all([
       getMatatus(),
       getSaccos(),
       getRoutes(),
       getFines(),
       getCrewAssignments(),
       getOperatorTerminals(),
+      getScheduledBookingsAction(),
     ]);
   } catch (err: any) {
     if (err?.digest?.startsWith("NEXT_REDIRECT")) throw err;
@@ -304,6 +307,49 @@ export default async function SaccoPortalPage() {
           </table>
         </div>
       </div>
+
+      {/* Fleet-wide scheduled (advance) bookings — backend scopes this to
+          the caller's own sacco via Matatu.sacco_id, same as every other
+          fleet-scoped fetch on this page. A booking with no matatu
+          assigned yet won't appear here (no sacco owns it until a vehicle
+          is assigned to it). */}
+      {scheduledBookings.length > 0 && (
+        <div className="card p-5 space-y-3">
+          <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+            <CalendarClock size={15} strokeWidth={2} className="text-county-ink/50" />
+            Fleet Scheduled Bookings
+          </h3>
+          <p className="text-xs text-black/50 -mt-2">Advance bookings across your fleet's assigned vehicles.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-black/5 text-black/60 uppercase text-[10px]">
+                <tr>
+                  <th className="p-2.5">Vehicle</th>
+                  <th className="p-2.5">Passenger</th>
+                  <th className="p-2.5">Route</th>
+                  <th className="p-2.5">Departure</th>
+                  <th className="p-2.5">Seats</th>
+                  <th className="p-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5">
+                {scheduledBookings.map((s) => (
+                  <tr key={s.id} className="hover:bg-black/[0.02]">
+                    <td className="p-2.5 font-bold font-mono">{s.regNumber || "Unassigned"}</td>
+                    <td className="p-2.5 font-semibold">{s.passengerName}</td>
+                    <td className="p-2.5">{s.routeCode ? `Route ${s.routeCode}` : s.routeId}</td>
+                    <td className="p-2.5 font-mono text-black/60">{new Date(s.scheduledDeparture).toLocaleString()}</td>
+                    <td className="p-2.5">{s.seatNumbers.length}</td>
+                    <td className="p-2.5">
+                      <span className="badge bg-black/5 text-black/70 font-bold">{s.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <SaccoFinesPanel fines={saccoFines} />
 

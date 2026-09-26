@@ -62,6 +62,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_crew",
         "manage_fare_stages",
         "manage_webhooks",
+        "view_scheduling_analytics",
     ],
     "ADMIN": [
         "view_dashboard",
@@ -97,11 +98,15 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_crew",
         "manage_fare_stages",
         "manage_webhooks",
+        "view_scheduling_analytics",
     ],
     "DIRECTOR_MOBILITY": [
         "view_dashboard",
         "view_operator_verification",
         "decide_operator_verification_stage1",
+        # Route-planning is this role's whole job — the reason
+        # scheduled-booking demand analytics exists at all.
+        "view_scheduling_analytics",
         # Read-only — /saccos/verify's crew-roster panel needs this to see
         # who's assigned to each Sacco's fleet during verification. Actually
         # managing crew (issuing/revoking credentials) stays manage_crew-only,
@@ -201,6 +206,7 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_fines",
         "view_users",
         "view_reports",
+        "view_scheduling_analytics",
     ],
     "PASSENGER": [
         "view_matatus",

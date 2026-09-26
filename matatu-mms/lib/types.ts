@@ -576,6 +576,16 @@ export interface RouteRidership {
   tripsWithCount: number;
 }
 
+export interface ScheduledBookingsByRoute {
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  scheduledCount: number;
+  mostCommonHour?: number | null;
+  topOriginStageId?: string | null;
+  topOriginStageName?: string | null;
+}
+
 export interface AuditLog {
   id: number;
   resourceType: string;

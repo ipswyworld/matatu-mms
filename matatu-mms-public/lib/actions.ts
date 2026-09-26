@@ -1034,6 +1034,18 @@ export async function getMyScheduledBookingsAction(): Promise<ScheduledBooking[]
   }
 }
 
+/** Crew's per-vehicle view (pass matatuId) and sacco's fleet-wide view
+ * (omit it) — the backend scopes both by the caller's own sacco via
+ * Matatu.sacco_id, same pattern as getBookingsForMatatuAction. */
+export async function getScheduledBookingsAction(matatuId?: string): Promise<ScheduledBooking[]> {
+  try {
+    const query = matatuId ? `?matatu_id=${encodeURIComponent(matatuId)}` : "";
+    return await apiWrite<ScheduledBooking[]>(`/api/scheduled-bookings${query}`, "GET");
+  } catch {
+    return [];
+  }
+}
+
 export async function cancelScheduledBookingAction(scheduledBookingId: string): Promise<{ error?: string }> {
   try {
     await apiWrite(`/api/scheduled-bookings/${scheduledBookingId}/status`, "PATCH", { status: "CANCELLED" });
