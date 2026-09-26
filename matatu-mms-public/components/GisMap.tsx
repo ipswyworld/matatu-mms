@@ -454,7 +454,18 @@ export default function GisMap({ fromStage, toStage, viaStage, focusedVehicleId,
           Set NEXT_PUBLIC_TOMTOM_API_KEY to enable the live map.
         </div>
       ) : (
-        <div ref={containerRef} className="w-full h-[380px]" />
+        <div ref={containerRef} className="w-full h-[380px] md:h-[460px] lg:h-[540px]" />
+      )}
+      {/* First-run guidance (critique P1) — an empty dark map with no other
+          cue reads as broken, not "clean", to a first-time passenger.
+          Pointer-events-none so it never blocks the map underneath once
+          markers/interactions exist there. */}
+      {TOMTOM_API_KEY && !fromStage && !toStage && !boardedMatatuId && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-8">
+          <p className="text-white/60 text-sm font-semibold text-center max-w-xs">
+            Search where you're headed to see matatus near you
+          </p>
+        </div>
       )}
       {TOMTOM_API_KEY && (
         <span className="absolute top-3 right-3 flex h-2.5 w-2.5 z-10">

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Ticket, MessageSquareWarning, LogOut, type LucideIcon } from "lucide-react";
+import { Ticket, MessageSquareWarning, LogOut, HelpCircle, type LucideIcon } from "lucide-react";
 import { NotificationHistory } from "@/lib/types";
 import { ROLE_LABELS } from "@/lib/rbac";
 import { logoutAction } from "@/lib/actions";
@@ -86,6 +86,19 @@ export default function PassengerShell({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3 shrink-0">
+          {/* Help was previously only reachable via the footer, which is
+              `hidden md:flex` — invisible to a phone user, the primary
+              audience per PRODUCT.md (critique P1). This is reachable at
+              every breakpoint. */}
+          <Link
+            href="/faq"
+            target="_blank"
+            title={t("footer.help")}
+            aria-label={t("footer.help")}
+            className="h-9 w-9 rounded-lg flex items-center justify-center text-county-ink/50 hover:bg-black/5 hover:text-county-ink transition-colors"
+          >
+            <HelpCircle size={18} strokeWidth={2} />
+          </Link>
           <LanguageToggle />
           {token && (
             <NotificationBell

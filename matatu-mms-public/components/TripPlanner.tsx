@@ -61,7 +61,41 @@ export default function TripPlanner({
   const [searching, setSearching] = useState(false);
   const [nearestFallback, setNearestFallback] = useState<{ name: string; distanceMeters: number; wheelchairAccessible: boolean } | null>(null);
   const [accessibilityRequired, setAccessibilityRequired] = useState(false);
+  const [resolvingMyLocation, setResolvingMyLocation] = useState(false);
   const { location, request } = usePassengerLocation();
+
+  // "Use my location" as a first-class origin action (critique P1), not
+  // just a fallback offered after a failed search — Casey (mobile, in a
+  // hurry) shouldn't have to type a boarding point she could just point
+  // her phone at. Requesting permission needs a direct click, so the first
+  // tap only asks; resolvingMyLocation carries the intent across the async
+  // gap to the effect below, which fires once permission actually lands.
+  const useMyLocationAsOrigin = () => {
+    if (!location) {
+      setResolvingMyLocation(true);
+      request();
+      return;
+    }
+    resolveMyLocationAsOrigin();
+  };
+
+  const resolveMyLocationAsOrigin = async () => {
+    if (!location) return;
+    setResolvingMyLocation(true);
+    const nearest = await getNearestTerminalAction(location.lat, location.lng, accessibilityRequired);
+    setResolvingMyLocation(false);
+    if (nearest) {
+      const stage: StageOption = { id: nearest.id, name: nearest.name, lat: nearest.lat, lng: nearest.lng };
+      handleSelectFrom(stage);
+    }
+  };
+
+  useEffect(() => {
+    if (resolvingMyLocation && location) {
+      resolveMyLocationAsOrigin();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
 
   const runSearch = async (fromStage: StageOption, toStage: StageOption) => {
     setSearching(true);
@@ -145,7 +179,23 @@ export default function TripPlanner({
       <div className="flex-1 min-w-0 divide-y divide-county-ink/10">
         <div className="py-2.5">
           <StageSearchField placeholder="Boarding point…" onSelect={handleSelectFrom} />
-          {from && <p className="text-xs font-semibold text-county-green mt-1">{from.name}</p>}
+          {from ? (
+            <p className="text-xs font-semibold text-county-green mt-1">{from.name}</p>
+          ) : (
+            <button
+              type="button"
+              onClick={useMyLocationAsOrigin}
+              disabled={resolvingMyLocation}
+              className="text-xs font-bold text-county-blue hover:underline mt-1 flex items-center gap-1 disabled:opacity-50"
+            >
+              {resolvingMyLocation ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Navigation size={12} strokeWidth={2.5} />
+              )}
+              {resolvingMyLocation ? "Finding your nearest stage…" : "Use my current location"}
+            </button>
+          )}
         </div>
         <div className="py-2.5">
           <StageSearchField placeholder="Destination…" onSelect={handleSelectTo} />

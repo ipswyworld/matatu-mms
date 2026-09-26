@@ -85,8 +85,18 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
     setSelectedMatatu(matatu);
     setSeatCount(1);
     setActiveBooking(null);
-    bookingPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  // The booking panel column now only mounts once a matatu is selected
+  // (critique P2 — letting the map/search instrument dominate the screen
+  // until there's something to book), so its ref isn't attached yet at the
+  // moment handlePickMatatuFromPlanner fires. Scrolling from an effect
+  // keyed on selection guarantees the column has actually mounted first.
+  useEffect(() => {
+    if (selectedMatatu) {
+      bookingPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selectedMatatu]);
 
   const filteredMatatus = matatus.filter((m) => selectedRouteId === "all" || m.routeId === selectedRouteId);
 
@@ -200,8 +210,13 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      {/* Critique P2: the booking panel used to take a full grid column at
+          all times, including an EmptyState placeholder before anything
+          was selected — same visual weight as the map/search instrument a
+          passenger actually came here to use. It only claims that space
+          once there's something to book. */}
+      <div className={selectedMatatu && !activeJourney ? "grid lg:grid-cols-3 gap-6" : "grid gap-6"}>
+        <div className={selectedMatatu && !activeJourney ? "lg:col-span-2 space-y-6" : "space-y-6"}>
           {activeJourney ? (
             <JourneyClient
               journey={activeJourney.journey}
@@ -342,6 +357,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
           )}
         </div>
 
+        {selectedMatatu && !activeJourney && (
         <div className="space-y-6" ref={bookingPanelRef}>
           {selectedMatatu && (
             <div className="bg-county-black rounded-2xl p-5 text-white shadow-xl border border-white/10 space-y-1">
@@ -412,21 +428,14 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
             />
           )}
 
-          <div className={selectedMatatu ? "card p-5 space-y-4" : "p-5 space-y-4 rounded-2xl bg-black/[0.02]"}>
-            <h3 className={`font-bold text-sm flex items-center gap-1.5 ${selectedMatatu ? "text-county-black" : "text-county-black/50"}`}>
+          <div className="card p-5 space-y-4">
+            <h3 className="font-bold text-sm flex items-center gap-1.5 text-county-black">
               <Armchair size={15} strokeWidth={2} className="text-county-ink/40" />
               How Many Seats?
             </h3>
-            {selectedMatatu && (
-              <p className="text-xs text-black/50 -mt-2">No need to pick an exact seat — we'll assign the next available one(s) for you.</p>
-            )}
+            <p className="text-xs text-black/50 -mt-2">No need to pick an exact seat — we'll assign the next available one(s) for you.</p>
 
-            {!selectedMatatu ? (
-              <EmptyState
-                title="Pick a matatu to get started"
-                hint="Plan a trip above, or browse by route, then choose a vehicle."
-              />
-            ) : activeBooking ? (
+            {activeBooking ? (
               <div className="bg-county-green/10 border border-county-green/30 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between border-b border-county-green/20 pb-2">
                   <span className="text-xs font-bold text-county-green uppercase">Group Boarding Pass</span>
@@ -566,6 +575,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
