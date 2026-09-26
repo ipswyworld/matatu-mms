@@ -1,6 +1,15 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
-sqlalchemy>=2.0.0
+sqlalchemy>=2.0.0,<2.1.0
+# Capped below 2.1: opentelemetry-instrumentation-sqlalchemy (below) only
+# supports "sqlalchemy >= 1.0.0, < 2.1.0" as of the version pip resolved on
+# a fresh install — the unbounded `>=2.0.0` this codebase was actually
+# built and tested against let a clean Render build silently pick up
+# 2.1.1, which the instrumentation library then refused to instrument
+# (logged as an ERROR-level line, harmless today since OTEL export isn't
+# configured, but a real gap in tracing coverage once it is). Pinning to
+# the 2.0.x line this app was developed against is safer than chasing 2.1
+# untested; revisit once the instrumentation package catches up.
 # SQLAlchemy's async engine (used throughout this app) needs greenlet at
 # import time, but plain `sqlalchemy>=2.0.0` never declares that need — it
 # only gets pulled in if some *other* package happens to depend on it
