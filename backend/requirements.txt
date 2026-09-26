@@ -1,6 +1,15 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 sqlalchemy>=2.0.0
+# SQLAlchemy's async engine (used throughout this app) needs greenlet at
+# import time, but plain `sqlalchemy>=2.0.0` never declares that need — it
+# only gets pulled in if some *other* package happens to depend on it
+# transitively. That's exactly what caused an intermittent
+# "ModuleNotFoundError: No module named 'greenlet'" crash-loop on Render's
+# backend deploy (docker-entrypoint.sh's `alembic upgrade head` step):
+# present in the image, but not a real, guaranteed direct dependency.
+# Pinning it explicitly removes the ambiguity.
+greenlet>=3.0.0
 aiosqlite>=0.20.0
 pydantic[email]>=2.6.0
 pyjwt>=2.8.0
