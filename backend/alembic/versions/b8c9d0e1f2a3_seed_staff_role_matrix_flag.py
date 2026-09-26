@@ -30,7 +30,7 @@ def upgrade():
         sa.column('description', sa.String),
         sa.column('enabled', sa.Boolean),
         sa.column('updated_by', sa.String),
-        sa.column('updated_at', sa.DateTime),
+        sa.column('updated_at', sa.DateTime(timezone=True)),
     )
     existing = conn.execute(
         sa.text("SELECT 1 FROM feature_flags WHERE key = :key"), {"key": FLAG_KEY}
