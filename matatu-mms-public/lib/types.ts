@@ -368,6 +368,7 @@ export interface Booking {
   fareKes: number;
   bookedAt: string;
   status: "CONFIRMED" | "USED" | "CANCELLED";
+  accessibilityFlag?: boolean;
 }
 
 export interface UserFavorite {

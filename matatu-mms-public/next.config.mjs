@@ -72,7 +72,16 @@ const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
-  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+  // HSTS is meaningless (and actively harmful) over plain HTTP: a browser
+  // that honors it anyway caches "always use HTTPS for this host" and then
+  // refuses to load http://localhost:3001 at all until that state is
+  // manually cleared — confirmed live this session (a browser automation
+  // pane's dynamic HSTS state blocked "localhost" while "127.0.0.1" on the
+  // same port loaded fine). Only send it once the app is actually served
+  // over HTTPS in production.
+  ...(process.env.NODE_ENV === "production"
+    ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" }]
+    : []),
 ];
 
 /** @type {import('next').NextConfig} */

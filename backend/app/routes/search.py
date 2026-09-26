@@ -13,9 +13,10 @@ the same direction's sequence with "from" strictly before "to" (a
 passenger can't board after they'd already have passed their destination).
 """
 import datetime
+import math
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -56,6 +57,54 @@ async def search_stages(
         .limit(15)
     )
     return [StageSearchResult(id=s.id, name=s.name, lat=s.lat, lng=s.lng) for s in result.scalars().all()]
+
+
+class NearestStageResult(BaseModelCamel):
+    id: str
+    name: str
+    lat: float
+    lng: float
+    distance_meters: float
+
+
+@router.get("/nearest-stage", response_model=NearestStageResult)
+async def nearest_stage(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The passenger-facing counterpart to
+    operator_terminals.py's `/nearest` — that one is gated
+    `view_operator_terminals` (staff-only: ADMIN/SUPERADMIN/
+    DIRECTOR_MOBILITY/CHIEF_OFFICER), so a PASSENGER calling it has always
+    gotten a 403, silently swallowed by the frontend's try/except into a
+    null result. This is the same plain-Python-haversine-over-geocoded-
+    stages approach, open to any authenticated user, so "type an unmapped
+    place, fall back to the nearest real stage" actually works for
+    passengers instead of only ever failing quietly.
+    """
+    result = await db.execute(select(Stage).where(Stage.geocoded == True, Stage.lat.is_not(None)))  # noqa: E712
+    stages = result.scalars().all()
+    if not stages:
+        raise HTTPException(status_code=404, detail="No geocoded stages available")
+
+    def haversine_m(lat1, lng1, lat2, lng2):
+        r = 6371000
+        p1, p2 = math.radians(lat1), math.radians(lat2)
+        dp = math.radians(lat2 - lat1)
+        dl = math.radians(lng2 - lng1)
+        a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        return 2 * r * math.asin(math.sqrt(a))
+
+    nearest = min(stages, key=lambda s: haversine_m(lat, lng, s.lat, s.lng))
+    return NearestStageResult(
+        id=nearest.id,
+        name=nearest.name,
+        lat=nearest.lat,
+        lng=nearest.lng,
+        distance_meters=haversine_m(lat, lng, nearest.lat, nearest.lng),
+    )
 
 
 class ODSearchResult(BaseModelCamel):

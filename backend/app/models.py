@@ -577,6 +577,10 @@ class Booking(Base):
     fare_kes = Column(Numeric(12, 2), nullable=False)
     status = Column(String, default="CONFIRMED")  # CONFIRMED, USED, CANCELLED
     booked_at = Column(DateTime(timezone=True), nullable=False)
+    # Wheelchair/priority-seating request — surfaced to crew so they can
+    # hold an accessible seat, not enforced against any seat-layout model
+    # (this system has no per-seat physical layout, just seat counts).
+    accessibility_flag = Column(Boolean, nullable=False, default=False)
 
     matatu = relationship("Matatu")
     route = relationship("Route")

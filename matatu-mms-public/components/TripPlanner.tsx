@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowUpDown, Bus, Footprints, Loader2, MapPin, Navigation } from "lucide-react";
 import StageSearchField, { StageOption } from "@/components/StageSearchField";
 import EmptyState from "@/components/EmptyState";
@@ -97,6 +97,17 @@ export default function TripPlanner({
     setNearestFallback(nearest ? { name: nearest.name, distanceMeters: nearest.distanceMeters } : null);
   };
 
+  // Auto-resolve rather than waiting for a manual tap, but only when
+  // location is already granted — requesting it here (no direct user
+  // gesture at this exact point) would silently fail in most browsers.
+  // When it isn't granted yet, the manual button below still works.
+  useEffect(() => {
+    if (results && results.length === 0 && location && !nearestFallback) {
+      findNearestTerminal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results, location]);
+
   const searchRow = (
     <div className="flex items-stretch gap-3">
       {/* Route connector: a filled dot for the boarding point, a pin for the
@@ -163,6 +174,11 @@ export default function TripPlanner({
               <Navigation size={13} strokeWidth={2.5} />
               Nearest terminal: {nearestFallback.name} ({(nearestFallback.distanceMeters / 1000).toFixed(1)} km away)
             </div>
+          ) : location ? (
+            <div className="flex items-center gap-2 text-xs text-black/50">
+              <Loader2 size={13} className="animate-spin" />
+              Finding your nearest terminal…
+            </div>
           ) : (
             <button
               type="button"
@@ -178,25 +194,36 @@ export default function TripPlanner({
 
       {!searching && results && results.length > 0 && (
         <div className="space-y-2">
-          {results.map((r) => (
-            <button
-              key={r.matatuId}
-              type="button"
-              onClick={() => onSelectMatatu?.(r.matatuId)}
-              className="w-full text-left p-3 rounded-xl border border-black/10 bg-white hover:border-county-green/50 transition-colors flex items-center justify-between gap-3"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 shrink-0 rounded-lg bg-county-black/5 text-county-black/60 flex items-center justify-center">
-                  <Bus size={16} strokeWidth={2} />
+          {results.map((r) => {
+            // Live crowding, right in the results list — the data was
+            // already returned per-result (seatsAvailable/capacity), it
+            // just wasn't shown visually before now.
+            const fillRatio = r.capacity > 0 ? 1 - r.seatsAvailable / r.capacity : 0;
+            const crowdColor =
+              fillRatio >= 0.85 ? "bg-county-red" : fillRatio >= 0.5 ? "bg-county-yellow" : "bg-county-green";
+            return (
+              <button
+                key={r.matatuId}
+                type="button"
+                onClick={() => onSelectMatatu?.(r.matatuId)}
+                className="w-full text-left p-3 rounded-xl border border-black/10 bg-white hover:border-county-green/50 transition-colors flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-8 w-8 shrink-0 rounded-lg bg-county-black/5 text-county-black/60 flex items-center justify-center">
+                    <Bus size={16} strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-sm text-county-black">{r.regNumber}</div>
+                    <div className="text-[11px] text-black/50">Route {r.routeCode} · {r.seatsAvailable} seats left</div>
+                    <div className="h-1 w-24 rounded-full bg-black/10 overflow-hidden mt-1">
+                      <div className={`h-full rounded-full ${crowdColor}`} style={{ width: `${Math.round(fillRatio * 100)}%` }} />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-extrabold text-sm text-county-black">{r.regNumber}</div>
-                  <div className="text-[11px] text-black/50">Route {r.routeCode} · {r.seatsAvailable} seats left</div>
-                </div>
-              </div>
-              <span className="badge bg-county-green/10 text-county-green font-bold shrink-0">KES {r.fareKes}</span>
-            </button>
-          ))}
+                <span className="badge bg-county-green/10 text-county-green font-bold shrink-0">KES {r.fareKes}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </>

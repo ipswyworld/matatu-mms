@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Search, Loader2 } from "lucide-react";
-import { searchStagesAction } from "@/lib/actions";
+import { Search, Loader2, LocateFixed } from "lucide-react";
+import { getNearestTerminalAction, searchStagesAction } from "@/lib/actions";
+import { usePassengerLocation } from "@/lib/geo";
 
 export interface StageOption {
   id: string;
@@ -30,7 +31,9 @@ export default function StageSearchField({
   const [results, setResults] = useState<StageOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [resolvingNearest, setResolvingNearest] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { location, status: geoStatus, request: requestLocation } = usePassengerLocation();
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -57,6 +60,25 @@ export default function StageSearchField({
     setOpen(false);
   };
 
+  // A typed place with no real stage match (e.g. "Muthua", a neighborhood
+  // with no terminal of its own) used to be a dead end — the passenger had
+  // no way to proceed. If they've already granted location, resolve
+  // straight to the nearest real stage instead of leaving them stuck;
+  // if not yet granted, this same tap requests it (a real user gesture,
+  // so the browser's permission prompt is expected here).
+  const handleUseNearest = async () => {
+    if (!location) {
+      requestLocation();
+      return;
+    }
+    setResolvingNearest(true);
+    const nearest = await getNearestTerminalAction(location.lat, location.lng);
+    setResolvingNearest(false);
+    if (nearest) {
+      handleSelect({ id: nearest.id, name: nearest.name, lat: nearest.lat, lng: nearest.lng });
+    }
+  };
+
   return (
     <div className="relative">
       <div className="relative">
@@ -77,7 +99,24 @@ export default function StageSearchField({
       {open && query.trim().length >= 2 && (
         <div className="absolute z-10 mt-1 w-full rounded-lg border border-black/10 bg-white shadow-lg max-h-56 overflow-y-auto scrollbar-ghost">
           {results.length === 0 && !loading ? (
-            <p className="px-3 py-3 text-xs text-black/40 text-center">No stage matches "{query}".</p>
+            <div className="px-3 py-3 space-y-2 text-center">
+              <p className="text-xs text-black/40">No stage matches "{query}".</p>
+              <button
+                type="button"
+                onMouseDown={handleUseNearest}
+                disabled={resolvingNearest || geoStatus === "unsupported"}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-county-blue hover:underline disabled:opacity-50 disabled:no-underline"
+              >
+                <LocateFixed size={12} strokeWidth={2.5} />
+                {resolvingNearest
+                  ? "Finding the nearest stage…"
+                  : geoStatus === "unsupported"
+                  ? "Location unavailable on this device"
+                  : location
+                  ? "Use my current location instead"
+                  : "Enable location to find the nearest stage"}
+              </button>
+            </div>
           ) : (
             results.map((s) => (
               <button

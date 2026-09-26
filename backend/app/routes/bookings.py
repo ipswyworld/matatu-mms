@@ -31,6 +31,7 @@ def _to_response(booking: Booking) -> BookingResponse:
         fare_kes=booking.fare_kes,
         status=booking.status,
         booked_at=booking.booked_at,
+        accessibility_flag=booking.accessibility_flag,
         reg_number=booking.matatu.reg_number if booking.matatu else None,
         route_name=booking.route.name if booking.route else None,
     )
@@ -203,6 +204,7 @@ async def create_booking(
         fare_kes=route.fare_kes * len(payload.seat_numbers),
         status="CONFIRMED",
         booked_at=datetime.datetime.now(datetime.timezone.utc),
+        accessibility_flag=payload.accessibility_flag,
     )
     db.add(new_booking)
     await db.commit()
@@ -224,6 +226,7 @@ async def create_booking(
         "fare_kes": saved.fare_kes,
         "stage_name": saved.stage_name,
         "user_id": current_user.id,
+        "accessibility_flag": saved.accessibility_flag,
     })
 
     return await idem.record(_to_response(saved).model_dump(mode="json"))

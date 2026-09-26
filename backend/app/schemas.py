@@ -622,6 +622,7 @@ class BookingCreate(BaseModelCamel):
     phone: str
     stage_name: str
     seat_numbers: List[int]
+    accessibility_flag: bool = False
 
 class BookingStatusUpdate(BaseModelCamel):
     status: str  # CONFIRMED, USED, CANCELLED
@@ -637,6 +638,7 @@ class BookingResponse(BaseModelCamel):
     fare_kes: MoneyKES
     status: str
     booked_at: datetime.datetime
+    accessibility_flag: bool = False
     reg_number: Optional[str] = None
     route_name: Optional[str] = None
 

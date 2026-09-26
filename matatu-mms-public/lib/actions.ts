@@ -964,6 +964,7 @@ export async function createBookingAction(input: {
   phone: string;
   stageName: string;
   seatNumbers: number[];
+  accessibilityFlag?: boolean;
 }): Promise<{ booking?: Booking; error?: string }> {
   try {
     const booking = await apiWrite<Booking>("/api/bookings", "POST", input);
@@ -1100,7 +1101,13 @@ export async function searchStagesAction(q: string): Promise<{ id: string; name:
 
 export async function getNearestTerminalAction(lat: number, lng: number): Promise<{ id: string; name: string; lat: number; lng: number; distanceMeters: number } | null> {
   try {
-    return await apiWrite(`/api/operator-terminals/nearest?lat=${lat}&lng=${lng}`, "GET");
+    // Was /api/operator-terminals/nearest, which requires the staff-only
+    // view_operator_terminals permission — a PASSENGER calling it always
+    // got a 403, silently swallowed by this catch into a null result. This
+    // is /api/search/nearest-stage's passenger-facing equivalent instead
+    // (same haversine-over-geocoded-stages logic, open to any authenticated
+    // user), so "find my nearest terminal" actually works for passengers.
+    return await apiWrite(`/api/search/nearest-stage?lat=${lat}&lng=${lng}`, "GET");
   } catch {
     return null;
   }

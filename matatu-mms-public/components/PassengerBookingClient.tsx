@@ -43,6 +43,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
 
   const [phone, setPhone] = useState("");
   const [passengerName, setPassengerName] = useState("");
+  const [accessibilityFlag, setAccessibilityFlag] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
 
@@ -107,6 +108,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
         phone: phone || "0712345678",
         stageName: boardingStageName || selectedMatatu.terminalSegment,
         seatNumbers: assignedSeats,
+        accessibilityFlag,
       });
 
       if (result.error) {
@@ -116,6 +118,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
       if (result.booking) {
         setActiveBooking(result.booking);
         setTakenSeats((prev) => [...prev, ...assignedSeats]);
+        setAccessibilityFlag(false);
       }
     });
   };
@@ -374,6 +377,11 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
                   <div className="text-xs font-bold text-county-green mt-2 p-2.5 bg-county-green/10 rounded-lg border border-county-green/20">
                     Payment Note: Pay cumulative total KES {activeBooking.fareKes} directly to the Conductor or Driver upon boarding.
                   </div>
+                  {activeBooking.accessibilityFlag && (
+                    <div className="text-xs font-bold text-county-blue mt-2 p-2.5 bg-county-blue/10 rounded-lg border border-county-blue/20">
+                      Wheelchair/priority seat requested — the crew has been notified.
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2 border-t border-county-green/20 text-center">
@@ -456,6 +464,16 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
                     className="input"
                   />
                 </div>
+
+                <label className="flex items-center gap-2.5 text-xs font-semibold text-county-black/70 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={accessibilityFlag}
+                    onChange={(e) => setAccessibilityFlag(e.target.checked)}
+                    className="h-4 w-4 rounded border-black/20 text-county-green focus:ring-county-green/30"
+                  />
+                  I need a wheelchair-accessible or priority seat
+                </label>
 
                 <div className="bg-black/5 p-3 rounded-lg text-xs space-y-1.5 border border-black/5">
                   <div className="flex justify-between border-t border-black/5 pt-1.5 first:border-0 first:pt-0">
