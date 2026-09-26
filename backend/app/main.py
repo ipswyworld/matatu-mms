@@ -74,6 +74,7 @@ from app.routes.analytics import router as analytics_router
 from app.routes.search import router as search_router
 from app.routes.demand import router as demand_router
 from app.routes.deviations import router as deviations_router
+from app.routes.position_reports import router as position_reports_router
 from app.routes.public_updates import router as public_updates_router
 from app.routes.trips import router as trips_router
 from app.routes.uploads import router as uploads_router
@@ -338,6 +339,7 @@ app.include_router(analytics_router)
 app.include_router(search_router)
 app.include_router(demand_router)
 app.include_router(deviations_router)
+app.include_router(position_reports_router)
 app.include_router(public_updates_router)
 app.include_router(trips_router)
 app.include_router(uploads_router)

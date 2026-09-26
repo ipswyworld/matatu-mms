@@ -10,7 +10,7 @@ import JourneyClient from "@/components/JourneyClient";
 import { StageOption } from "@/components/StageSearchField";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import EmptyState from "@/components/EmptyState";
-import { createBookingAction, getTakenSeatsAction, updateBookingStatusAction } from "@/lib/actions";
+import { createBookingAction, getTakenSeatsAction, submitVehiclePositionReportAction, updateBookingStatusAction } from "@/lib/actions";
 import { Booking, Matatu, MultiLegSearchResult, Route, Sacco } from "@/lib/types";
 import { useLiveVehicles } from "@/lib/useLiveVehicles";
 import { usePassengerLocation, haversineMeters, formatDistance, formatEta } from "@/lib/geo";
@@ -44,6 +44,7 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
   // the normal single-vehicle flow above, not fused into its state machine:
   // the two flows genuinely diverge (two bookings/two vehicles vs one).
   const [activeJourney, setActiveJourney] = useState<{ journey: MultiLegSearchResult; fromStage: StageOption; toStage: StageOption } | null>(null);
+  const [positionReportStatus, setPositionReportStatus] = useState<"idle" | "sending" | "sent">("idle");
   const [isPending, startTransition] = useTransition();
   const bookingPanelRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +66,17 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
     if (!live || !myLocation) return null;
     const meters = haversineMeters(myLocation.lat, myLocation.lng, live.lat, live.lng);
     return { meters, etaLabel: formatEta(meters, live.speed), speed: live.speed };
+  };
+
+  // Crowdsourced GPS sanity check (#16) — sends the passenger's own current
+  // GPS, not the position at the moment they noticed the mismatch; myLocation
+  // is already live-updating via usePassengerLocation() so this is accurate
+  // enough without a separate re-fetch.
+  const reportVehiclePosition = async (matatuId: string) => {
+    if (!myLocation || positionReportStatus === "sending") return;
+    setPositionReportStatus("sending");
+    await submitVehiclePositionReportAction(matatuId, myLocation.lat, myLocation.lng);
+    setPositionReportStatus("sent");
   };
 
   const handlePickMatatuFromPlanner = (matatuId: string) => {
@@ -343,11 +355,32 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
                 const distance = distanceTo(selectedMatatu.id);
                 if (distance) {
                   return (
-                    <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-white/10">
-                      <Navigation size={13} strokeWidth={2.5} className="text-county-blue shrink-0" />
-                      <span className="text-sm font-extrabold">{formatDistance(distance.meters)} away</span>
-                      <span className="text-white/40">·</span>
-                      <span className="text-xs font-semibold text-white/70">{distance.etaLabel}</span>
+                    <div className="pt-2 mt-1 border-t border-white/10 space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Navigation size={13} strokeWidth={2.5} className="text-county-blue shrink-0" />
+                        <span className="text-sm font-extrabold">{formatDistance(distance.meters)} away</span>
+                        <span className="text-white/40">·</span>
+                        <span className="text-xs font-semibold text-white/70">{distance.etaLabel}</span>
+                      </div>
+                      {/* Crowdsourced GPS sanity check (#16) — only surfaced
+                          when the map's claimed distance is large enough
+                          that a passenger who genuinely believes they're
+                          near this vehicle would actually notice the
+                          mismatch, not as a permanent always-there link. */}
+                      {distance.meters > 300 && (
+                        <button
+                          type="button"
+                          onClick={() => reportVehiclePosition(selectedMatatu.id)}
+                          disabled={positionReportStatus === "sending"}
+                          className="text-[11px] font-bold text-county-yellow hover:text-county-yellow/80 disabled:opacity-50"
+                        >
+                          {positionReportStatus === "sending"
+                            ? "Reporting…"
+                            : positionReportStatus === "sent"
+                            ? "Thanks — reported"
+                            : "This doesn't look right — report it"}
+                        </button>
+                      )}
                     </div>
                   );
                 }

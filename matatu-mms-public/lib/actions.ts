@@ -1236,6 +1236,23 @@ export async function createJourneyBookingAction(input: {
   }
 }
 
+// Crowdsourced GPS sanity check (#16) — best-effort, fire-and-forget from
+// the passenger's point of view: the report is either useful data for
+// staff or it isn't, but it should never surface as a booking-blocking
+// error to the person reporting it.
+export async function submitVehiclePositionReportAction(matatuId: string, reporterLat: number, reporterLng: number): Promise<{ flagged?: boolean; error?: string }> {
+  try {
+    const result = await apiWrite<{ flagged: boolean }>("/api/telemetry/sanity-reports", "POST", {
+      matatuId,
+      reporterLat,
+      reporterLng,
+    });
+    return { flagged: result.flagged };
+  } catch (err: any) {
+    return { error: err.message || "Could not submit this report right now." };
+  }
+}
+
 export async function submitOperatorTerminalAction(input: { routeId: string; label: string }): Promise<{ terminal?: OperatorTerminal; error?: string }> {
   try {
     const terminal = await apiWrite<OperatorTerminal>("/api/operator-terminals", "POST", input);

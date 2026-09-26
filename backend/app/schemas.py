@@ -969,6 +969,29 @@ class DeviationAlertResponse(BaseModelCamel):
     detected_at: datetime.datetime
     resolved: bool
 
+# --- Crowdsourced vehicle-position sanity check (#16) ---
+class VehiclePositionReportCreate(BaseModelCamel):
+    matatu_id: str
+    reporter_lat: float
+    reporter_lng: float
+
+class VehiclePositionReportResponse(BaseModelCamel):
+    id: str
+    matatu_id: str
+    discrepancy_meters: float
+    flagged: bool
+    created_at: datetime.datetime
+
+class DisputedVehicleResult(BaseModelCamel):
+    matatu_id: str
+    reg_number: str
+    report_count: int
+    distinct_reporters: int
+    latest_discrepancy_meters: float
+    latest_claimed_lat: float
+    latest_claimed_lng: float
+    latest_reported_at: datetime.datetime
+
 # --- Enforcement Cases (Arrest -> Release workflow) ---
 class EnforcementCaseCreate(BaseModelCamel):
     reg_number: str

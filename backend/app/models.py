@@ -445,6 +445,46 @@ class VehiclePosition(Base):
     matatu = relationship("Matatu")
 
 
+class VehiclePositionReport(Base):
+    """Crowdsourced sanity check on self-reported crew GPS (#16 of the
+    journey-planning plan, deliberately deferred past Phase 9 for its own
+    design pass on the spoofing/consensus question). A matatu's live
+    position (telemetry.py's Redis key) is entirely self-reported by the
+    crew device — nothing here verifies it against an independent source.
+    This lets any other authenticated user who believes they're physically
+    near a specific matatu report their own GPS at that moment; the backend
+    compares it against the vehicle's currently-claimed position and
+    records the discrepancy.
+
+    One report proves nothing on its own (an honest passenger's own GPS
+    drifts by 50-100m in dense Nairobi; a single malicious report from a
+    burner account proves even less) — the consensus rule lives in
+    routes/telemetry.py's disputed-vehicles query: a vehicle only surfaces
+    as disputed once multiple *distinct* reporters flag it within a short
+    window, which is what actually resists both accidental GPS noise and a
+    single spoofer trying to grief one vehicle.
+
+    resolved mirrors DeviationAlert's own field — staff can dismiss a
+    cluster of reports once investigated (crew GPS was just delayed,
+    device clock skew, etc.) without deleting the historical record.
+    """
+    __tablename__ = "vehicle_position_reports"
+
+    id = Column(String, primary_key=True, index=True)
+    matatu_id = Column(String, ForeignKey("matatus.id"), nullable=False)
+    reporter_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    reporter_lat = Column(Float, nullable=False)
+    reporter_lng = Column(Float, nullable=False)
+    claimed_lat = Column(Float, nullable=False)
+    claimed_lng = Column(Float, nullable=False)
+    discrepancy_meters = Column(Float, nullable=False)
+    flagged = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    resolved = Column(Boolean, nullable=False, default=False)
+
+    matatu = relationship("Matatu")
+
+
 class OfficerPosition(Base):
     """GPS history for enforcement officers on patrol — durable counterpart
     to the Redis-only "live position" key in app/routes/telemetry.py, same
