@@ -477,6 +477,7 @@ export interface AppNotification {
   title: string;
   message: string;
   level: "info" | "success" | "error";
+  type?: string;
   createdAt: string;
   readAt?: string | null;
 }

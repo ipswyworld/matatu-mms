@@ -112,6 +112,10 @@ export default function NotificationBell({
             title: payload.title,
             message: payload.message,
             level: payload.level || "info",
+            // Deliberately not "type" on the wire — that key is the
+            // transport envelope's own discriminator ({"type": "NOTIFICATION"}),
+            // so the backend sends this under "notificationType" instead.
+            type: payload.notificationType,
             createdAt: payload.createdAt || new Date().toISOString(),
             readAt: null,
           };
@@ -167,6 +171,15 @@ export default function NotificationBell({
     error: "bg-county-red",
   };
 
+  // Distinct glyphs for the two Phase 6 alert types, layered over the
+  // existing level dot rather than replacing it — level still carries
+  // color/urgency, this just adds "what kind of thing is this."
+  const typeIcon: Record<string, string> = {
+    NO_SHOW_WARNING: "⏱",
+    REASSIGNMENT_ALERT: "🚌",
+  };
+  const iconFor = (n: AppNotification) => (n.type ? typeIcon[n.type] : undefined);
+
   const handleOpen = () => {
     const next = !open;
     setOpen(next);
@@ -217,7 +230,11 @@ export default function NotificationBell({
       {toast && (
         <div className="fixed top-4 right-4 z-50 w-80 bg-white rounded-xl shadow-2xl border border-black/10 p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="flex items-start gap-2.5">
-            <span className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${levelDot[toast.level]}`} />
+            {iconFor(toast) ? (
+              <span className="text-sm mt-0.5 shrink-0">{iconFor(toast)}</span>
+            ) : (
+              <span className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${levelDot[toast.level]}`} />
+            )}
             <div className="min-w-0">
               <div className="font-extrabold text-sm text-county-black">{toast.title}</div>
               <p className="text-xs text-black/60 mt-0.5">{toast.message}</p>
@@ -254,7 +271,11 @@ export default function NotificationBell({
             <div className="divide-y divide-black/5">
               {items.map((n) => (
                 <div key={n.id} className={`p-3 flex items-start gap-2.5 ${n.readAt ? "" : "bg-county-blue/[0.04]"}`}>
-                  <span className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${levelDot[n.level]}`} />
+                  {iconFor(n) ? (
+                    <span className="text-sm mt-0.5 shrink-0">{iconFor(n)}</span>
+                  ) : (
+                    <span className={`h-2 w-2 rounded-full mt-1.5 shrink-0 ${levelDot[n.level]}`} />
+                  )}
                   <div className="min-w-0">
                     <div className="font-bold text-xs text-county-black">{n.title}</div>
                     <p className="text-[11px] text-black/60 mt-0.5">{n.message}</p>

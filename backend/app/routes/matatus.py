@@ -23,6 +23,7 @@ from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
 from app.abac import sacco_scope_query, enforce_own_sacco
+from app.scheduled_booking_scheduler import reassign_scheduled_bookings_for_matatu
 
 router = APIRouter(prefix="/api/matatus", tags=["Matatus"])
 
@@ -429,6 +430,16 @@ async def update_matatu_status(
             db, resource_type="matatu", resource_id=matatu.id, action="STATUS_CHANGE",
             user_id=current_user.id, old_values={"status": old_status}, new_values={"status": new_status},
         )
+
+        reassigned_count = 0
+        if new_status in ("FLAGGED", "IMPOUNDED", "DECOMMISSIONED"):
+            # Event-driven, not just the next cron tick — a stranded
+            # passenger shouldn't wait up to 5 minutes to learn their
+            # vehicle broke down. Runs in this same transaction so a
+            # partial failure never leaves the status change committed
+            # without its dependent bookings handled.
+            reassigned_count = await reassign_scheduled_bookings_for_matatu(db, matatu.id)
+
         await db.commit()
 
         dispatcher.dispatch("VEHICLE_STATUS_CHANGED", {
