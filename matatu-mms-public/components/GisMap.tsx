@@ -43,6 +43,15 @@ interface GisMapProps {
    * telemetry WebSocket; when that feed is backed by NTSA's IRMS instead,
    * this filtering logic doesn't change — it only cares about matatu_id. */
   focusedVehicleId?: string | null;
+  /** Once the passenger has actually boarded (not just selected) a matatu,
+   * the route line should follow where the vehicle really is right now,
+   * not the static two-point line from the original search selection —
+   * a straight line from an old position reads as wrong the moment the
+   * vehicle moves. When set, the line's starting point is driven by this
+   * vehicle's live telemetry on every update instead of `fromStage`, and
+   * the static "from" pin (which represented "where I'm boarding", now
+   * moot) is hidden in favor of the vehicle marker itself. */
+  boardedMatatuId?: string | null;
   /** When true, skip this component's own outer rounded/border/shadow
    * wrapper — used when a parent composes the map with another surface
    * (e.g. PassengerBookingClient's map+search instrument) and needs to own
@@ -99,7 +108,7 @@ function matatuMarkerElement(reg: string, speed: number) {
   return el;
 }
 
-export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded = false }: GisMapProps) {
+export default function GisMap({ fromStage, toStage, focusedVehicleId, boardedMatatuId, embedded = false }: GisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<TomTomMapType | null>(null);
   const mapReadyRef = useRef(false);
@@ -110,6 +119,14 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded 
   // WebSocket frame.
   const vehicleDataRef = useRef<Record<string, LiveVehicleTelemetry>>({});
   const focusedVehicleIdRef = useRef<string | null | undefined>(focusedVehicleId);
+  const boardedMatatuIdRef = useRef<string | null | undefined>(boardedMatatuId);
+  const toStageRef = useRef<TripPoint | null | undefined>(toStage);
+  useEffect(() => {
+    boardedMatatuIdRef.current = boardedMatatuId;
+  }, [boardedMatatuId]);
+  useEffect(() => {
+    toStageRef.current = toStage;
+  }, [toStage]);
   const fromMarkerRef = useRef<MaplibreMarker | null>(null);
   const toMarkerRef = useRef<MaplibreMarker | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -198,7 +215,10 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded 
       toMarkerRef.current?.remove();
       toMarkerRef.current = null;
 
-      if (fromStage) {
+      // Once boarded, the vehicle marker itself stands in for "from" — a
+      // static pin at the old boarding point would just be visual clutter
+      // next to the moving vehicle.
+      if (fromStage && !boardedMatatuId) {
         fromMarkerRef.current = new maplibregl.Marker({ element: tripPinElement("from") })
           .setLngLat([fromStage.lng, fromStage.lat])
           .addTo(glMap);
@@ -209,24 +229,29 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded 
           .addTo(glMap);
       }
 
-      const source = glMap.getSource("trip-route") as GeoJSONSource | undefined;
-      if (source) {
-        source.setData({
-          type: "FeatureCollection",
-          features:
-            fromStage && toStage
-              ? [
-                  {
-                    type: "Feature",
-                    properties: {},
-                    geometry: {
-                      type: "LineString",
-                      coordinates: [[fromStage.lng, fromStage.lat], [toStage.lng, toStage.lat]],
+      // While boarded, the line is driven by live telemetry instead (see
+      // upsertVehicle below) — skip the static draw so it doesn't
+      // momentarily flash the stale from→to line on every re-render.
+      if (!boardedMatatuId) {
+        const source = glMap.getSource("trip-route") as GeoJSONSource | undefined;
+        if (source) {
+          source.setData({
+            type: "FeatureCollection",
+            features:
+              fromStage && toStage
+                ? [
+                    {
+                      type: "Feature",
+                      properties: {},
+                      geometry: {
+                        type: "LineString",
+                        coordinates: [[fromStage.lng, fromStage.lat], [toStage.lng, toStage.lat]],
+                      },
                     },
-                  },
-                ]
-              : [],
-        });
+                  ]
+                : [],
+          });
+        }
       }
 
       if (fromStage || toStage) {
@@ -256,7 +281,7 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded 
       cancelled = true;
       clearInterval(retry);
     };
-  }, [fromStage, toStage]);
+  }, [fromStage, toStage, boardedMatatuId]);
 
   // Real-time telemetry over WebSocket, with reconnect/backoff (no fake simulated movement)
   useEffect(() => {
@@ -311,6 +336,29 @@ export default function GisMap({ fromStage, toStage, focusedVehicleId, embedded 
           el.addEventListener("mouseenter", () => popup.setLngLat([v.lng, v.lat]).addTo(glMap));
           el.addEventListener("mouseleave", () => popup.remove());
           vehicleMarkersRef.current[v.matatu_id] = marker;
+        }
+
+        // Boarded: the line follows this vehicle's real position on every
+        // tick instead of the static from→to line drawn at search time —
+        // it's an accurate "where I actually am right now" line, not a
+        // stale snapshot of where I planned to board.
+        if (boardedMatatuIdRef.current && v.matatu_id === boardedMatatuIdRef.current) {
+          const to = toStageRef.current;
+          const source = glMap.getSource("trip-route") as GeoJSONSource | undefined;
+          if (source) {
+            source.setData({
+              type: "FeatureCollection",
+              features: to
+                ? [
+                    {
+                      type: "Feature",
+                      properties: {},
+                      geometry: { type: "LineString", coordinates: [[v.lng, v.lat], [to.lng, to.lat]] },
+                    },
+                  ]
+                : [],
+            });
+          }
         }
       };
 

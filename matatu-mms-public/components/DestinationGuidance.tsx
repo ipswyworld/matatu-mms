@@ -203,8 +203,10 @@ export default function DestinationGuidance({
  * passenger's live position and the destination with a straight line
  * between them — the visual counterpart to the compass arrow above,
  * entirely within this app rather than a link out to Google/Apple Maps.
+ * Exported: PreBoardingGuidance.tsx reuses it verbatim for the walk-to-
+ * the-terminal case — same visual, different target.
  */
-function WalkingMap({ myLat, myLng, destLat, destLng }: { myLat: number; myLng: number; destLat: number; destLng: number }) {
+export function WalkingMap({ myLat, myLng, destLat, destLng }: { myLat: number; myLng: number; destLat: number; destLng: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const meMarkerRef = useRef<any>(null);

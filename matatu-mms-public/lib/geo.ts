@@ -24,9 +24,14 @@ export function formatDistance(meters: number): string {
 // (possibly near-zero) reported speed.
 const MIN_ETA_SPEED_KMH = 12;
 
-export function formatEta(meters: number, speedKmh: number): string {
+/** Raw minutes, for feasibility comparisons — formatEta() wraps this for display. */
+export function etaMinutes(meters: number, speedKmh: number): number {
   const effectiveSpeed = Math.max(speedKmh, MIN_ETA_SPEED_KMH);
-  const minutes = Math.round((meters / 1000 / effectiveSpeed) * 60);
+  return (meters / 1000 / effectiveSpeed) * 60;
+}
+
+export function formatEta(meters: number, speedKmh: number): string {
+  const minutes = Math.round(etaMinutes(meters, speedKmh));
   if (minutes < 1) return "under a minute away";
   if (minutes === 1) return "~1 min away";
   if (minutes > 60) return "over an hour away";
@@ -35,8 +40,13 @@ export function formatEta(meters: number, speedKmh: number): string {
 
 const WALKING_SPEED_KMH = 4.5;
 
+/** Raw minutes, for feasibility comparisons — formatWalkingEta() wraps this for display. */
+export function walkingEtaMinutes(meters: number): number {
+  return (meters / 1000 / WALKING_SPEED_KMH) * 60;
+}
+
 export function formatWalkingEta(meters: number): string {
-  const minutes = Math.round((meters / 1000 / WALKING_SPEED_KMH) * 60);
+  const minutes = Math.round(walkingEtaMinutes(meters));
   if (minutes < 1) return "under a minute";
   if (minutes === 1) return "~1 min walk";
   if (minutes > 90) return "over 1.5 hr walk";

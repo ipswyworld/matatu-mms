@@ -5,6 +5,7 @@ import { Ticket, MapPin, Bus, Armchair, XCircle, Navigation, LocateFixed } from 
 import GisMap from "@/components/GisMap";
 import TripPlanner from "@/components/TripPlanner";
 import DestinationGuidance from "@/components/DestinationGuidance";
+import PreBoardingGuidance from "@/components/PreBoardingGuidance";
 import { StageOption } from "@/components/StageSearchField";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import EmptyState from "@/components/EmptyState";
@@ -191,7 +192,13 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
                   docked flush beneath it, sharing one outer rounded/shadow
                   boundary instead of two stacked cards. */}
               <div className="rounded-2xl overflow-hidden bg-county-black shadow-2xl">
-                <GisMap embedded fromStage={fromStage} toStage={toStage} focusedVehicleId={selectedMatatu?.id ?? null} />
+                <GisMap
+                  embedded
+                  fromStage={fromStage}
+                  toStage={toStage}
+                  focusedVehicleId={selectedMatatu?.id ?? null}
+                  boardedMatatuId={activeBooking ? selectedMatatu?.id ?? null : null}
+                />
                 <TripPlanner
                   embedded
                   onSelectMatatu={handlePickMatatuFromPlanner}
@@ -342,6 +349,14 @@ export default function PassengerBookingClient({ routes, matatus, saccos }: Pass
                 );
               })()}
             </div>
+          )}
+
+          {selectedMatatu && fromStage && !activeBooking && (
+            <PreBoardingGuidance
+              targetStage={fromStage}
+              matatuId={selectedMatatu.id}
+              onPickDifferent={() => setSelectedMatatu(null)}
+            />
           )}
 
           <div className={selectedMatatu ? "card p-5 space-y-4" : "p-5 space-y-4 rounded-2xl bg-black/[0.02]"}>
