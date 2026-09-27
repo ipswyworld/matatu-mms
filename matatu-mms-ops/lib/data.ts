@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
+import { forwardedClientIpHeaders } from "./client-ip";
 import {
   SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview,
   OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery, SystemControls,
@@ -24,7 +25,7 @@ export function baseUrlFor(path: string): string {
 
 async function apiFetch<T>(path: string): Promise<T> {
   const session = readSession();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...forwardedClientIpHeaders() };
   if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
   const res = await fetch(`${baseUrlFor(path)}${path}`, { headers, cache: "no-store" });

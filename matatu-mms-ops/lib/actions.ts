@@ -6,6 +6,7 @@ import {
   setSessionCookie, clearSessionCookie, readSession,
   setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
 } from "./session";
+import { forwardedClientIpHeaders } from "./client-ip";
 import { FeatureFlag, ApiClientIssuedSecret, CostSnapshot, ConfigHistoryEntry } from "./types";
 
 // Same backend as the staff app — this console doesn't have its own user
@@ -24,7 +25,7 @@ function baseUrlFor(path: string): string {
 
 async function apiWrite<T = any>(path: string, method: string, body?: any): Promise<T> {
   const session = readSession();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...forwardedClientIpHeaders() };
   if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
   const res = await fetch(`${baseUrlFor(path)}${path}`, {
@@ -52,7 +53,7 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({ email, password }),
       cache: "no-store",
     });
@@ -101,7 +102,7 @@ export async function verifyMfaAction(_prevState: { error?: string } | undefined
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/verify-mfa`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({ mfaToken, code }),
       cache: "no-store",
     });
@@ -411,6 +412,7 @@ export async function reauthenticateAction(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.token}`,
+        ...forwardedClientIpHeaders(),
       },
       body: JSON.stringify({ password, mfa_code: mfaCode }),
       cache: "no-store",

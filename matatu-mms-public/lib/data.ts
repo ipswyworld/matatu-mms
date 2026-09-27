@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { readSession } from "./session";
+import { forwardedClientIpHeaders } from "./client-ip";
 import { ActivityLog, AuditLog, Booking, CrewAssignment, EnforcementCase, Fine, Matatu, NotificationHistory, OfficerAssignment, OffenceType, OperatorTerminal, PassengerReport, PendingRating, RecentSacco, Route, Sacco, Stage, SystemHealth, TimeseriesResponse, User, UserFavorite, Zone, PublicStatus, ScheduledBookingShare } from "./types";
 
 // Server-side calls run inside the Docker network (or on the same host in
@@ -52,6 +53,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   const session = readSession();
   const headers = {
     "Content-Type": "application/json",
+    ...forwardedClientIpHeaders(),
     ...(options.headers || {}),
   } as Record<string, string>;
 

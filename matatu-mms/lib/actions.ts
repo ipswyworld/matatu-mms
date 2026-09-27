@@ -7,6 +7,7 @@ import {
   setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
 } from "./session";
 import { getReports } from "./data";
+import { forwardedClientIpHeaders } from "./client-ip";
 import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType, Zone } from "./types";
 import { parseJsonStringList, homeForRole } from "./rbac";
 
@@ -22,6 +23,7 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   const session = readSession();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...forwardedClientIpHeaders(),
   };
   if (session?.token) {
     headers["Authorization"] = `Bearer ${session.token}`;
@@ -68,7 +70,7 @@ export async function refreshSessionAction(): Promise<{ accessToken?: string; er
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${session.token}` },
+      headers: { Authorization: `Bearer ${session.token}`, ...forwardedClientIpHeaders() },
       cache: "no-store",
     });
     if (!res.ok) {
@@ -114,7 +116,7 @@ export async function loginAction(_prevState: { error?: string } | undefined, fo
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({
         email, password, remember_me: rememberMe,
         turnstile_token: turnstileToken ? String(turnstileToken) : undefined,
@@ -195,7 +197,7 @@ export async function verifyMfaAction(_prevState: { error?: string } | undefined
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/verify-mfa`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({ mfaToken, code }),
       cache: "no-store",
     });
@@ -259,7 +261,7 @@ export async function stopImpersonationAction(): Promise<{ error?: string }> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/impersonate/stop`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.token}`, ...forwardedClientIpHeaders() },
       cache: "no-store",
     });
     if (!res.ok) {
@@ -325,7 +327,7 @@ export async function registerAction(_prevState: { error?: string } | undefined,
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({
         name,
         email,
@@ -379,6 +381,7 @@ export async function registerAction(_prevState: { error?: string } | undefined,
 export async function getPublicSaccosAction(): Promise<{ id: string; name: string }[]> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/saccos/public`, {
+      headers: forwardedClientIpHeaders(),
       cache: "no-store",
     });
     if (!res.ok) return [];
@@ -402,7 +405,7 @@ export async function operatorOnboardingRegisterAction(
   try {
     const res = await fetch(`${BACKEND_URL}/api/saccos/onboard`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({
         saccoName,
         saccoType,
@@ -440,7 +443,7 @@ export async function operatorOnboardingRegisterAction(
 
 async function apiWriteMultipart(path: string, formData: FormData): Promise<any> {
   const session = readSession();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...forwardedClientIpHeaders() };
   if (session?.token) {
     headers["Authorization"] = `Bearer ${session.token}`;
   }
@@ -902,6 +905,7 @@ const PUBLIC_BACKEND_URL = BACKEND_URL;
 export async function publicLookupCaseAction(caseReference: string): Promise<{ error?: string; caseData?: any }> {
   try {
     const res = await fetch(`${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(caseReference.trim())}`, {
+      headers: forwardedClientIpHeaders(),
       cache: "no-store",
     });
     if (!res.ok) {
@@ -920,6 +924,7 @@ export async function publicPayCaseAction(caseReference: string): Promise<{ erro
   try {
     const res = await fetch(`${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(caseReference.trim())}/pay`, {
       method: "POST",
+      headers: forwardedClientIpHeaders(),
       cache: "no-store",
     });
     if (!res.ok) {
@@ -1056,7 +1061,7 @@ export async function bulkImportVehiclesAction(formData: FormData): Promise<{
   upload.set("file", file);
 
   const session = readSession();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...forwardedClientIpHeaders() };
   if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
   try {
@@ -1489,7 +1494,7 @@ export async function forgotPasswordAction(
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({ email, turnstileToken: turnstileToken ? String(turnstileToken) : undefined }),
       cache: "no-store",
     });
@@ -1515,7 +1520,7 @@ export async function resetPasswordAction(
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({ token, newPassword }),
       cache: "no-store",
     });
