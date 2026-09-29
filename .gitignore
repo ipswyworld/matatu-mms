@@ -46,6 +46,12 @@ matatu-mms-ops/tsconfig.tsbuildinfo
 db-backups/
 backend/mms.db.bak*
 
+# Local tooling and scratch files
+.claude/
+.impeccable/
+graphify-out/
+/1000335176.jpg
+
 # Local dev-server logs at the repo root
 /*-dev.log
 

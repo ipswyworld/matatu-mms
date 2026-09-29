@@ -80,7 +80,18 @@ pm2 save                                        # remember the current process l
 pm2 resurrect                                   # bring the saved list back (run after a reboot)
 ```
 
-pm2 does not auto-start on boot by itself; run `pm2 resurrect` after restarting Windows.
+pm2 has no built-in startup support on Windows. A Task Scheduler task named `pm2-resurrect`
+runs `pm2 resurrect` 30 seconds after you log in, so whatever was last `pm2 save`d comes back
+after a reboot. Re-run `pm2 save` whenever you add or remove an app. To recreate the task on
+another machine (PowerShell, adjust the paths):
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$env:APPDATA\npm\pm2.cmd`" resurrect"
+$t = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"; $t.Delay = "PT30S"
+Register-ScheduledTask -TaskName "pm2-resurrect" -Action $a -Trigger $t -Force
+Get-ScheduledTask pm2-resurrect                 # check it exists
+Unregister-ScheduledTask pm2-resurrect -Confirm:$false   # remove it
+```
 
 ### Backend (FastAPI)
 
