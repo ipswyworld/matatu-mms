@@ -44,6 +44,10 @@ matatu-mms-ops/tsconfig.tsbuildinfo
 # Database backups — real user PII (phone numbers, names, audit trails).
 # Never commit these regardless of how temporary they feel in the moment.
 db-backups/
+backend/mms.db.bak*
+
+# Local dev-server logs at the repo root
+/*-dev.log
 
 # OS/editor
 .DS_Store

@@ -46,41 +46,7 @@ docker-compose up --build
 
 ### Individual services, for day-to-day dev
 
-**Backend** (FastAPI, port 8000):
-
-```bash
-cd backend
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Admin dashboard** (Next.js, port 3000):
-
-```bash
-cd matatu-mms
-npm install
-npm run dev
-```
-
-**Passenger app** (Next.js, port 3001):
-
-```bash
-cd matatu-mms-public
-npm install
-npm run dev        # or: npm run dev:public from matatu-mms/ if running both from one checkout
-```
-
-**Ops dashboard** (Next.js, port 3002):
-
-```bash
-cd matatu-mms-ops
-npm install
-npm run dev
-```
-
-Each frontend also has `npm run build`, `npm start` (production server), and `npm run lint`.
+See the [Command reference](#command-reference) below for backend, frontend, pm2 and test commands.
 
 ### Demo accounts (admin dashboard)
 
@@ -90,6 +56,101 @@ Each frontend also has `npm run build`, `npm start` (production server), and `np
 | Enforcement Officer | enforcement@nairobi.go.ke | enforce123 |
 | Sacco Operator | operator@umoinner.co.ke | sacco123 |
 | Viewer / Executive | viewer@nairobi.go.ke | viewer123 |
+
+## Command reference
+
+All commands run from the repo root unless a `cd` is shown. Ports: backend `8000`,
+staff dashboard `3000`, public app `3001`, ops dashboard `3002`.
+
+### Keep dev servers running with pm2 (recommended on Windows)
+
+[`ecosystem.config.js`](ecosystem.config.js) defines `backend`, `staff`, `public` and `ops`.
+It points at each app's local `next` binary and the backend's venv Python, because pm2 can't
+launch `npm.cmd` directly on Windows. pm2 processes survive closed terminals and tool sessions.
+
+```bash
+npm install -g pm2                              # one-time
+pm2 start ecosystem.config.js --only backend,staff,public   # add ",ops" if needed
+pm2 list                                        # status, restarts, memory
+pm2 logs staff                                  # tail one app's logs (backend | staff | public | ops)
+pm2 restart public                              # restart one app
+pm2 stop all                                    # stop everything (keeps the entries)
+pm2 delete all                                  # remove everything
+pm2 save                                        # remember the current process list
+pm2 resurrect                                   # bring the saved list back (run after a reboot)
+```
+
+pm2 does not auto-start on boot by itself; run `pm2 resurrect` after restarting Windows.
+
+### Backend (FastAPI)
+
+```bash
+cd backend
+python -m venv venv && venv\Scripts\activate    # macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+alembic upgrade head                            # apply DB migrations
+alembic current                                 # which migration the DB is on
+alembic heads                                   # latest migration in the code (should be one)
+alembic revision -m "describe change"           # new migration
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+API docs are served at `http://127.0.0.1:8000/docs`.
+
+### Backend tests
+
+```bash
+cd backend
+pip install pytest pytest-asyncio               # test-only deps, not in requirements.txt
+python -m pytest -q                             # security-regression + weather-bias suites
+python test_backend.py                          # standalone legacy script (not collected by pytest)
+```
+
+### Frontends (staff `matatu-mms`, public `matatu-mms-public`, ops `matatu-mms-ops`)
+
+```bash
+cd matatu-mms                                   # or matatu-mms-public / matatu-mms-ops
+npm install
+npm run dev                                     # dev server
+npm run build && npm start                      # production build and server
+npm run lint
+npx tsc --noEmit                                # type-check without building
+```
+
+### Docker
+
+```bash
+cp .env.example .env                            # then fill in secrets
+docker-compose up --build                       # full stack incl. Postgres, Redis, nginx, monitoring
+docker-compose down                             # stop and remove containers
+docker-compose logs -f backend                  # follow one service's logs
+```
+
+### Health and troubleshooting
+
+```bash
+netstat -ano | findstr ":3000 :3001 :3002 :8000"   # what is listening (Windows)
+curl -I http://localhost:3000                       # staff app (307 redirect to /login is normal)
+curl -I http://localhost:3001                       # public app
+curl http://127.0.0.1:8000/docs                     # backend
+```
+
+| Symptom | Fix |
+|---|---|
+| "Unable to connect" on `localhost:3000/3001` | Nothing is running (often after a reboot). `pm2 resurrect`, or `pm2 start ecosystem.config.js --only backend,staff,public`. |
+| Dev page shows "System error / Something broke down" | Check `pm2 logs <app>`; if you see `__webpack_modules__[moduleId] is not a function` or `Cannot find module ...\.next\server\...`, stop the app, delete that app's `.next` folder, and start it again. |
+| Browser console: CSP `connect-src` violations for `127.0.0.1:8000` | The dev server is stale. `next.config.mjs` is only read at startup, so `pm2 restart` the app. |
+| First page load takes 40-75 s | Normal cold compile in `next dev`; later loads are fast. |
+
+### Git
+
+```bash
+git status -sb
+git add <files> && git commit -m "message"      # prefer naming files over `git add .`
+git push origin deploy/render-demo              # this branch deploys to Render
+```
+
+Never commit `.env`, `backend/mms.db`, or `backend/mms.db.bak-*` (real user data); they are gitignored.
 
 ## Deployment
 
