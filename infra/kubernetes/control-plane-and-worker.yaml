@@ -1,0 +1,187 @@
+# Ops control plane and ARQ worker (Readiness List §1).
+#
+# Both exist as separate Deployments for reasons the single-process Render
+# deploy could not accommodate. Not applied anywhere today.
+#
+# Image paths fixed to match .github/workflows/ci.yml's actual publish
+# path (see backend.yaml's header comment for the full explanation).
+---
+# The control plane runs the same image under APP_ROLE=control-plane
+# (backend/docker-entrypoint.sh). Its own process, event loop and DB pool,
+# so an operator can still act when the API is saturated — which only holds
+# if it does not share the API's capacity.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mms-control-plane
+  namespace: matatu-mms
+  labels:
+    app: mms-control-plane
+    component: ops
+spec:
+  # Two for availability, not throughput. This serves a handful of
+  # operators; scaling it would be solving a problem it does not have.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mms-control-plane
+  template:
+    metadata:
+      labels:
+        app: mms-control-plane
+        component: ops
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: control-plane
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
+          ports:
+            - name: http
+              containerPort: 8001
+          env:
+            - name: APP_ROLE
+              value: "control-plane"
+            - name: PORT
+              value: "8001"
+            - name: OPS_CORS_ORIGINS
+              value: "https://ops.matatu.nairobi.go.ke"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: DATABASE_URL }
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: REDIS_URL }
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: SECRET_KEY }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mms-control-plane
+  namespace: matatu-mms
+spec:
+  # ClusterIP and no Ingress anywhere. This is the enforcement of "the ops
+  # console must not be on the public internet" — the readiness list's
+  # highest outstanding security item. Reachable only from inside the
+  # cluster, by the ops app.
+  type: ClusterIP
+  selector:
+    app: mms-control-plane
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# ARQ worker, split out of the API process. It runs in-process on Render
+# only because Render offers no second process type; background job load
+# spikes on a different schedule from web traffic, so scaling them together
+# wastes money and still lags.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mms-worker
+  namespace: matatu-mms
+  labels:
+    app: mms-worker
+    component: worker
+spec:
+  replicas: 2
+  strategy:
+    # Recreate, not RollingUpdate. Overlapping workers during a rollout
+    # would briefly double consumers on the same queue; jobs here are
+    # idempotent so that is survivable, but a brief pause is cheaper than
+    # reasoning about duplicate execution on every deploy.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mms-worker
+  template:
+    metadata:
+      labels:
+        app: mms-worker
+        component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: worker
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
+          command: ["python", "-m", "arq", "app.worker.WorkerSettings"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: DATABASE_URL }
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: REDIS_URL }
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: SECRET_KEY }
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits: { memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+      # Generous: a long-running report or webhook batch should finish
+      # rather than be killed mid-flight on a routine rollout.
+      terminationGracePeriodSeconds: 120
+---
+# Migrations as a Job, not an initContainer. An initContainer runs per pod,
+# so a three-replica rollout would run `alembic upgrade head` three times
+# concurrently against one database.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mms-migrate
+  namespace: matatu-mms
+  annotations:
+    # This is deployed via Argo CD sourcing this directory through
+    # Kustomize (infra/argocd/), not a Helm chart — Argo only honours
+    # helm.sh/hook annotations for a Helm-sourced Application, so that
+    # annotation (this Job's original form) was silently inert under the
+    # actual deployment path. argocd.argoproj.io/hook is the native
+    # equivalent: PreSync runs this Job, and waits for it to succeed,
+    # before syncing the Deployments below — same intent (migrate before
+    # rollout), correct mechanism for how this is actually deployed.
+    "argocd.argoproj.io/hook": PreSync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation
+    "argocd.argoproj.io/sync-wave": "-5"
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: migrate
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: DATABASE_URL }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }

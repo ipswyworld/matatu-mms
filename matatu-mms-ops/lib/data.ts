@@ -1,0 +1,178 @@
+import { redirect } from "next/navigation";
+import { readSession } from "./session";
+import { forwardedClientIpHeaders } from "./client-ip";
+import {
+  SystemHealth, AuditLog, StaffUser, FeatureFlag, JobSummary, LoginOverview,
+  OpsSnapshot, RateLimitState, CircuitBreakerState, WebhookDelivery, SystemControls,
+  ApiClient, ApiScope, ApiClientUsageDay, SaccoOption, MessagingSpendSummary, SyntheticCheckTarget, CiScanStatus,
+  CostSnapshot, ConfigHistoryEntry, BackupRestoreTest, RetentionReviewRow, DataSubjectRequest, DataQualityCheck,
+  PendingRoleGrant,
+} from "./types";
+
+const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+const AUDIT_LOG_PAGE_SIZE = 50;
+
+// Ops Console Rebuild Spec §3.1 (Path A): once the control plane runs as
+// its own process, /api/control lives there rather than on the main API.
+// Falls back to BACKEND_URL so the un-split single-process deployment
+// (Render today) keeps working with no configuration at all.
+export const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || BACKEND_URL;
+
+/** Control endpoints go to the control plane; everything else to the main API. */
+export function baseUrlFor(path: string): string {
+  return path.startsWith("/api/control") ? CONTROL_PLANE_URL : BACKEND_URL;
+}
+
+async function apiFetch<T>(path: string): Promise<T> {
+  const session = readSession();
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...forwardedClientIpHeaders() };
+  if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
+
+  const res = await fetch(`${baseUrlFor(path)}${path}`, { headers, cache: "no-store" });
+
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) redirect("/login");
+    const text = await res.text();
+    let msg = `Request to ${path} failed with status ${res.status}`;
+    try { msg = JSON.parse(text).detail || msg; } catch {}
+    throw new Error(msg);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+export async function getSystemHealth(): Promise<SystemHealth> {
+  return apiFetch<SystemHealth>("/api/system/health");
+}
+
+// The audit log viewer (OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.5 #2) —
+// embedded here rather than just linking out to the staff app's
+// /audit-logs page, per that doc's explicit instruction. Same endpoint the
+// staff app's own (unlinked-from-nav) audit page reads, same keyset
+// pagination (before_id, not offset — see audit_logs.py's own docstring
+// for why offset doesn't scale here).
+export async function getAuditLogsPage(beforeId?: number): Promise<{ logs: AuditLog[]; nextCursor: number | null }> {
+  const qs = beforeId ? `?limit=${AUDIT_LOG_PAGE_SIZE}&before_id=${beforeId}` : `?limit=${AUDIT_LOG_PAGE_SIZE}`;
+  const logs = await apiFetch<AuditLog[]>(`/api/audit-logs${qs}`);
+  const nextCursor = logs.length === AUDIT_LOG_PAGE_SIZE ? logs[logs.length - 1].id : null;
+  return { logs, nextCursor };
+}
+
+// A filtered read over already-captured IMPERSONATION_START/END events
+// (auth.py stages both under resource_type="user") — the dedicated
+// impersonation-session-log view, not new capture.
+export async function getImpersonationLog(): Promise<AuditLog[]> {
+  return apiFetch<AuditLog[]>("/api/audit-logs?limit=100&action=IMPERSONATION_START,IMPERSONATION_END");
+}
+
+// id->name lookup for the audit viewer's "performed by" column — AuditLog
+// only carries user_id, same convention the staff app's own AuditLogTable
+// uses (join client-side against the user list, since that's already a
+// single cheap fetch this account has permission for).
+export async function getStaffUsers(): Promise<StaffUser[]> {
+  const users = await apiFetch<Array<{ id: string; name: string; role: string; isActive?: boolean }>>("/api/users");
+  return users.map((u) => ({ id: u.id, name: u.name, role: u.role, isActive: u.isActive !== false }));
+}
+
+export async function getFeatureFlags(): Promise<FeatureFlag[]> {
+  return apiFetch<FeatureFlag[]>("/api/feature-flags");
+}
+
+export async function getJobQueue(): Promise<JobSummary[]> {
+  return apiFetch<JobSummary[]>("/api/jobs/queue");
+}
+
+export async function getLoginOverview(): Promise<LoginOverview> {
+  return apiFetch<LoginOverview>("/api/users/activity/overview");
+}
+
+// --- Ops control plane (Ops Console Rebuild Spec §6) -----------------------
+// Server-side reads for each page's first paint. The SSE stream
+// (app/api/stream/route.ts -> /api/control/stream) supersedes these for
+// ongoing updates, so a page renders instantly and then goes live rather
+// than showing a spinner while the first event arrives.
+
+export async function getOpsOverview(): Promise<OpsSnapshot> {
+  return apiFetch<OpsSnapshot>("/api/control/overview");
+}
+
+export async function getRateLimits(): Promise<RateLimitState[]> {
+  return apiFetch<RateLimitState[]>("/api/control/rate-limits");
+}
+
+export async function getCircuitBreakers(): Promise<CircuitBreakerState[]> {
+  return apiFetch<CircuitBreakerState[]>("/api/control/circuit-breakers");
+}
+
+export async function getWebhookDeliveries(): Promise<WebhookDelivery[]> {
+  return apiFetch<WebhookDelivery[]>("/api/control/webhooks/recent?limit=50");
+}
+
+export async function getSystemControls(): Promise<SystemControls> {
+  return apiFetch<SystemControls>("/api/control/system-controls");
+}
+
+// --- Partner API client management ------------------------------------
+
+export async function getApiClients(): Promise<ApiClient[]> {
+  return apiFetch<ApiClient[]>("/api/control/api-clients");
+}
+
+export async function getApiScopes(): Promise<{ scopes: ApiScope[]; quotaTiers: Record<string, string> }> {
+  return apiFetch("/api/control/api-clients/scopes");
+}
+
+export async function getApiClientUsageHistory(clientId: string): Promise<ApiClientUsageDay[]> {
+  const res = await apiFetch<{ clientId: string; days: ApiClientUsageDay[] }>(
+    `/api/control/api-clients/${encodeURIComponent(clientId)}/usage-history`
+  );
+  return res.days;
+}
+
+// Minimal id+name only — this console needs a Sacco picker for scoping a
+// new API client, nothing more of the full Sacco record.
+export async function getSaccoOptions(): Promise<SaccoOption[]> {
+  const saccos = await apiFetch<Array<{ id: string; name: string }>>("/api/saccos");
+  return saccos.map((s) => ({ id: s.id, name: s.name }));
+}
+
+export async function getMessagingSpend(days = 30): Promise<MessagingSpendSummary> {
+  return apiFetch<MessagingSpendSummary>(`/api/messaging/spend?days=${days}`);
+}
+
+export async function getSyntheticChecks(): Promise<SyntheticCheckTarget[]> {
+  return apiFetch<SyntheticCheckTarget[]>("/api/control/synthetic-checks");
+}
+
+export async function getCiScanStatus(): Promise<CiScanStatus | null> {
+  return apiFetch<CiScanStatus | null>("/api/control/ci-status");
+}
+
+export async function getCostSnapshots(): Promise<CostSnapshot[]> {
+  return apiFetch<CostSnapshot[]>("/api/control/cost-snapshots");
+}
+
+export async function getConfigHistory(beforeId?: number): Promise<{ entries: ConfigHistoryEntry[]; nextCursor: number | null }> {
+  const qs = beforeId ? `?before_id=${beforeId}` : "";
+  return apiFetch(`/api/control/config-history${qs}`);
+}
+
+export async function getBackupRestoreTests(): Promise<BackupRestoreTest[]> {
+  return apiFetch<BackupRestoreTest[]>("/api/control/backup/restore-tests");
+}
+
+export async function getRetentionReview(): Promise<RetentionReviewRow[]> {
+  return apiFetch<RetentionReviewRow[]>("/api/control/retention/review");
+}
+
+export async function getDataSubjectRequests(): Promise<DataSubjectRequest[]> {
+  return apiFetch<DataSubjectRequest[]>("/api/control/dsr");
+}
+
+export async function getDataQualityChecks(): Promise<DataQualityCheck[]> {
+  return apiFetch<DataQualityCheck[]>("/api/control/data-quality");
+}
+
+export async function getRoleGrants(): Promise<PendingRoleGrant[]> {
+  return apiFetch<PendingRoleGrant[]>("/api/control/role-grants");
+}

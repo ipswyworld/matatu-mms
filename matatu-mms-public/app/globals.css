@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --county-green: #0F5132;
+  --county-green-dark: #0A3823;
+  --county-green-deep: #082A1A;
+  --county-yellow: #F5C518;
+  --county-yellow-dark: #C99B00;
+  --county-cream: #FBF6E5;
+  --county-cream-dark: #F0E9CE;
+  --county-ink: #0D1E14;
+  --county-red: #B4232C;
+  --county-blue: #0F47AF;
+}
+
+body {
+  background-color: var(--county-cream);
+  color: var(--county-ink);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Light-only design. Declaring it stops browser auto-dark-mode (Samsung
+   Internet, Chrome "force dark", Edge auto-dark) from darkening field
+   backgrounds while leaving their inherited dark text alone, which left
+   typed text invisible. */
+:root {
+  color-scheme: light;
+}
+
+@layer base {
+  /* Every text field states its own text and background color instead of
+     inheriting one from whatever container it happens to sit in.
+     Element selectors on purpose: Tailwind's reset sets
+     `input { color: inherit }` (specificity 0,0,1), which a :where() rule
+     (0,0,0) cannot beat. Plain element selectors tie with it and win by
+     coming later, yet still lose to every utility class (0,1,0), so
+     deliberately styled fields (text-white, bg-white/10, ...) are untouched. */
+  input,
+  textarea,
+  select {
+    color: var(--county-ink);
+    caret-color: var(--county-ink);
+  }
+
+  input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="submit"]):not([type="button"])),
+  textarea,
+  select {
+    background-color: #fff;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgb(13 30 20 / 0.45);
+    opacity: 1;
+  }
+
+  /* Autofill paints its own background; without this the typed/filled text
+     can end up dark-on-dark. */
+  input:-webkit-autofill,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--county-ink);
+    caret-color: var(--county-ink);
+    box-shadow: 0 0 0 1000px #fff inset;
+  }
+}
+
+
+.badge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold transition-all duration-200;
+}
+
+.card {
+  @apply bg-white rounded-2xl border border-black/5 shadow-sm hover:shadow-md transition-all duration-300;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-lg bg-county-green px-4 py-2.5 text-sm font-bold text-white hover:bg-county-green-dark transition-all duration-200 shadow-sm hover:shadow active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-lg border border-county-ink/15 bg-white px-4 py-2.5 text-sm font-bold text-county-ink hover:bg-county-cream-dark transition-all duration-200 active:scale-[0.98];
+}
+
+.btn-danger {
+  @apply inline-flex items-center justify-center rounded-lg bg-county-red px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 transition-all duration-200 active:scale-[0.98];
+}
+
+.btn-blue {
+  @apply inline-flex items-center justify-center rounded-lg bg-county-blue px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 transition-all duration-200 active:scale-[0.98];
+}
+
+.input {
+  @apply w-full rounded-lg border border-county-ink/15 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-county-green/30 focus:border-county-green transition-all duration-200 bg-white;
+}
+
+.label {
+  @apply block text-[11px] font-bold uppercase tracking-wider text-county-ink/50 mb-1.5;
+}
+
+table th {
+  @apply text-left text-[11px] font-bold uppercase tracking-wider text-county-ink/45 px-4 py-3 border-b border-county-ink/[0.08];
+}
+
+table td {
+  @apply px-4 py-3.5 text-sm border-t border-county-ink/[0.06];
+}
+
+/* Custom Scrollbar for premium feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(13, 30, 20, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 30, 20, 0.2);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 30, 20, 0.1) transparent;
+}
+
+/* Near-invisible scrollbar for surfaces where scrolling is an edge case, not
+   a feature (the auth card, when Demo Accounts is expanded on a short
+   viewport) — a thumb should only read as present while actually in use. */
+.scrollbar-ghost {
+  scrollbar-width: none;
+}
+.scrollbar-ghost::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.scrollbar-ghost:hover,
+.scrollbar-ghost:focus-within {
+  scrollbar-width: thin;
+}
+.scrollbar-ghost:hover::-webkit-scrollbar,
+.scrollbar-ghost:focus-within::-webkit-scrollbar {
+  width: 5px;
+}
+
+/* Auth-card entrance: a single motivated transition (state transition -
+   "you've arrived") on login/register/reset/etc. Off entirely for reduced
+   motion instead of collapsing to a jump-cut. */
+@media (prefers-reduced-motion: no-preference) {
+  .auth-card-enter {
+    animation: auth-card-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+@keyframes auth-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

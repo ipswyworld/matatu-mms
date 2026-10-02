@@ -2,6 +2,8 @@ import asyncio
 from typing import Dict, List, Callable, Any, Awaitable
 import logging
 
+from app.database import IS_SQLITE
+
 logger = logging.getLogger("app.events")
 
 class EventDispatcher:
@@ -19,7 +21,21 @@ class EventDispatcher:
         """
         Dispatches an event asynchronously in the background.
         Ensures execution is concurrent and isolated (one failure doesn't halt others).
+
+        Also durably records the event to a Redis Stream (app/streams.py) in
+        Postgres/prod mode — additive, not a replacement: listener
+        invocation below is unchanged, so a Redis outage degrades event
+        durability (see streams.py's fail-open publish_event) without ever
+        blocking or breaking the actual notification/webhook dispatch a
+        caller is relying on. Skipped in SQLite/dev mode to keep the fast,
+        no-services local/CI path exactly as it was (ARCHITECTURE_
+        DECISIONS.md §14.1 — the whole point of that job is needing no
+        Redis/Postgres services at all).
         """
+        if not IS_SQLITE:
+            from app.streams import publish_event
+            asyncio.create_task(publish_event(event_type, data))
+
         listeners = self._listeners.get(event_type, [])
         if not listeners:
             return

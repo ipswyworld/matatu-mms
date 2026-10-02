@@ -1,0 +1,204 @@
+databases:
+  - name: matatu-mms-db
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  - type: redis
+    name: matatu-mms-redis
+    plan: free
+    ipAllowList: []
+
+  - type: web
+    name: matatu-mms-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: matatu-mms-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: matatu-mms-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: NAIROBIPAY_CALLBACK_SECRET
+        generateValue: true
+      # Real TomTom key, set manually in the Render dashboard once you have
+      # one — not generated (it's an external account credential, same
+      # category as the S3_* keys below) and not required (the feed
+      # degrades to crowdsourced-only with this unset).
+      - key: TOMTOM_API_KEY
+        sync: false
+      - key: SESSION_COOKIE_NAME
+        value: mms_session
+      - key: TERMS_VERSION
+        value: "2026-07-25"
+      # Uploaded files (SACCO verification docs, enforcement/crime scene
+      # photos) — local disk resets to empty on every deploy/restart on this
+      # plan (no persistent Disk attached to a free/starter web service), so
+      # app/storage.py needs a different backend here. "db" (file bytes
+      # stored as a row in the same Postgres this service already has) is
+      # the default for this deploy — no object-storage account or payment
+      # method needed. Once there's a real bucket with billing set up
+      # somewhere (R2, B2, Supabase Storage...), fill in the six S3_* vars
+      # below AND change this value to "s3" — explicit, not automatic, so a
+      # half-configured bucket can't silently start being used.
+      - key: STORAGE_BACKEND
+        value: db
+      # sync: false means set these manually in the Render dashboard —
+      # they're real credentials, not something to generate or commit.
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_PUBLIC_URL_BASE
+        sync: false
+      # Must match both frontends' actual Render URLs (comma-separated —
+      # app/main.py splits on ","). Render assigns https://<name>.onrender.com
+      # by default (subject to a random suffix if that exact name is taken)
+      # — after first deploy, confirm the real URLs in the Render dashboard
+      # and update this if either differs.
+      - key: CORS_ORIGINS
+        value: https://matatu-mms-frontend.onrender.com,https://matatu-mms-public.onrender.com
+      # OpenTelemetry trace export (app/tracing.py) — the module already
+      # fully supports this; setting these two vars is the entire
+      # activation, no code change needed. OTEL_EXPORTER_OTLP_HEADERS is
+      # the OTel SDK's own standard env var name — OTLPSpanExporter() picks
+      # it up automatically without any code passing it explicitly, so
+      # tracing.py stays exactly as-is. sync: false on both: the endpoint
+      # is provider-specific (not secret, but pointless to commit before a
+      # provider is chosen) and the header carries the actual API key.
+      # Honeycomb example values:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT = https://api.honeycomb.io/v1/traces
+      #   OTEL_EXPORTER_OTLP_HEADERS  = x-honeycomb-team=<your API key>
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+
+  # Staff app — county government back-office (admin, enforcement,
+  # director/chief officer, viewer). Front door is /login. Split from the
+  # public app below so each has its own deployment, URL, and (locally) port
+  # — a Sacco operator or passenger never shares infrastructure with staff
+  # beyond the same backend API.
+  - type: web
+    name: matatu-mms-frontend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./matatu-mms/Dockerfile
+    dockerContext: ./matatu-mms
+    healthCheckPath: /api/health
+    envVars:
+      # Server-side (Server Components/Actions) — read at request time, not
+      # baked into the client bundle. `fromService: property: host` gives a
+      # bare hostname with no scheme (e.g. "matatu-mms-backend"), which
+      # Node's server-side fetch() cannot parse as a URL on its own — it
+      # needs an absolute URL. Using the public HTTPS URL directly sidesteps
+      # Render's internal-networking hostname format entirely and matches
+      # NEXT_PUBLIC_BACKEND_URL below, so there's one backend URL to keep in
+      # sync, not two different formats.
+      - key: BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      # Client-side — NEXT_PUBLIC_* vars are inlined into the JS bundle at
+      # `npm run build`. Render passes envVars to the Docker build as ARGs
+      # when the Dockerfile declares a matching ARG name (already added to
+      # matatu-mms/Dockerfile), so these reach the browser bundle correctly.
+      # Same URL-confirmation caveat as CORS_ORIGINS above applies here.
+      - key: NEXT_PUBLIC_BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://matatu-mms-backend.onrender.com
+      # The "Looking to book a ride?" link on the staff sign-in page has to
+      # cross to the separate public app's own origin now, not a relative path.
+      - key: NEXT_PUBLIC_PUBLIC_APP_URL
+        value: https://matatu-mms-public.onrender.com
+      # Signs the session cookie (see lib/sessionSign.ts). Was previously
+      # unset in production, silently falling back to the hardcoded
+      # dev-only default — every deploy effectively shared one fixed,
+      # public (checked into git) signing key. Each frontend gets its own
+      # generated secret; cookies aren't shared across the two origins
+      # anyway, so there's no reason for them to share a key either.
+      - key: SESSION_SECRET
+        generateValue: true
+      # Set manually in the Render dashboard (not committed — restrict this
+      # key to the deployed frontend domain in the TomTom console too).
+      - key: NEXT_PUBLIC_TOMTOM_API_KEY
+        sync: false
+      # Where the retired /system page redirects to (see
+      # app/(app)/system/page.tsx) — the ops console's real Render URL,
+      # not the internal service name (this redirect runs in the user's
+      # browser, which can't resolve Render's internal networking).
+      - key: OPS_APP_URL
+        value: https://matatu-mms-ops.onrender.com
+
+  # Ops console (ADMIN_DASHBOARD_AUDIT §4.3 Option B) — Superadmin-only
+  # infrastructure/security console, split out as its own app/process so a
+  # crash or bad deploy in the staff app above can't take it down too. Its
+  # own session cookie, own signing secret — same backend accounts/MFA as
+  # the staff app, but a genuinely separate session. On the self-hosted
+  # docker-compose stack this sits behind nginx's :3002 network
+  # restriction; on Render there's no equivalent network-layer gate, so its
+  # own SUPERADMIN-only session check (matatu-mms-ops/middleware.ts) plus
+  # the backend's requires_permission("view_system_health") are the only
+  # two layers protecting it — reachable at its own public URL, not
+  # hidden.
+  - type: web
+    name: matatu-mms-ops
+    runtime: docker
+    plan: free
+    dockerfilePath: ./matatu-mms-ops/Dockerfile
+    dockerContext: ./matatu-mms-ops
+    healthCheckPath: /api/health
+    envVars:
+      - key: BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      # Independent of the staff app's SESSION_SECRET and the public app's
+      # — a compromise of one app's session-signing key shouldn't forge
+      # sessions in another.
+      - key: OPS_SESSION_SECRET
+        generateValue: true
+      # No nginx /grafana/ proxy exists on Render (that's the
+      # docker-compose-only Option A path) — Grafana isn't deployed as a
+      # Render service in this blueprint, so the embed has nothing to
+      # point at yet. Leaving this unset means the iframe shows nothing
+      # rather than erroring; set it once Grafana is actually reachable
+      # from the public internet somewhere.
+      - key: GRAFANA_EMBED_URL
+        sync: false
+      # For the "Open Audit Trail" link back to the staff app.
+      - key: STAFF_APP_URL
+        value: https://matatu-mms-frontend.onrender.com
+
+  # Public app — passengers, crew, and Sacco operators. Front door is "/"
+  # (booking, live tracking, registration, operator onboarding, pay-fine).
+  - type: web
+    name: matatu-mms-public
+    runtime: docker
+    plan: free
+    dockerfilePath: ./matatu-mms-public/Dockerfile
+    dockerContext: ./matatu-mms-public
+    healthCheckPath: /api/health
+    envVars:
+      - key: BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      - key: NEXT_PUBLIC_BACKEND_URL
+        value: https://matatu-mms-backend.onrender.com
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://matatu-mms-backend.onrender.com
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_TOMTOM_API_KEY
+        sync: false

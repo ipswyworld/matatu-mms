@@ -1,4 +1,5 @@
 export type Role =
+  | "SUPERADMIN"
   | "ADMIN"
   | "ENFORCEMENT"
   | "SACCO_OPERATOR"
@@ -9,13 +10,13 @@ export type Role =
   | "CHIEF_OFFICER"
   | "ARRESTING_OFFICER"
   | "RELEASING_OFFICER"
-  | "ENFORCEMENT_COMMANDER"
-  | "DATA_ANALYST";
+  | "ENFORCEMENT_COMMANDER";
 
 export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   password: string; // DEMO ONLY
   role: Role;
   saccoId?: string;
@@ -25,12 +26,209 @@ export interface User {
   enforcementDuty?: "ARRESTING" | "RELEASING" | null;
   assignedZoneId?: string | null;
   commanderTitle?: string | null;
+  isActive?: boolean;
+  // Raw JSON string of individual extra permission grants on top of the
+  // role's own bundle (backend/app/rbac.py's ROLE_MATRIX) — Super Admin
+  // only, see EditUserModal. Null/undefined means "just the role's own
+  // permissions," true for almost every account.
+  extraPermissions?: string | null;
+  // Raw JSON string of additional predefined roles layered on top of
+  // `role` (backend/app/rbac.py's ROLE_MATRIX keys) — Super Admin only,
+  // see EditUserModal. Not custom role creation: only existing role names
+  // can be granted. Null/undefined means "just the primary role."
+  additionalRoles?: string | null;
 }
 
 export interface Zone {
   id: string;
   name: string;
   description?: string;
+  // PTCU duty geography. All optional — the four legacy corridor zones
+  // predate the sector hierarchy and carry none of it.
+  sectorId?: string | null;
+  sectorCode?: string | null;
+  sectorName?: string | null;
+  code?: string | null;
+  centerLat?: number | null;
+  centerLng?: number | null;
+  boundaryGeojson?: string | null;
+  displayOrder?: number;
+  isActive?: boolean;
+  officerCount?: number;
+}
+
+// --- PTCU duty allocation ---
+
+export interface Sector {
+  id: string;
+  code: string;        // "1".."11", "5B", "MEU"
+  name: string;
+  description?: string | null;
+  commanderId?: string | null;
+  commanderName?: string | null;
+  deputyCommanderId?: string | null;
+  deputyCommanderName?: string | null;
+  contactPhone?: string | null;
+  centerLat?: number | null;
+  centerLng?: number | null;
+  boundaryGeojson?: string | null;
+  displayOrder: number;
+  isActive: boolean;
+  zoneCount: number;
+  officerCount: number;
+}
+
+export type DutyStatus = "ON_DUTY" | "OFF_DUTY" | "LEAVE" | "SICK" | "SUSPENDED" | "TRAINING";
+export type DutyShift = "DAY" | "NOON" | "NIGHT";
+export type DutyCoverage = "DAILY" | "WEEKDAY" | "WEEKEND";
+
+export interface OfficerRoster {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  role: Role;
+  manpowerNo?: string | null;
+  rank?: string | null;
+  gender?: string | null;
+  dutyStatus: DutyStatus;
+  dutyStatusFrom?: string | null;
+  dutyStatusUntil?: string | null;
+  dutyStatusNote?: string | null;
+  enforcementDuty?: string | null;
+  commanderTitle?: string | null;
+  canReleaseCases: boolean;
+  isActive: boolean;
+  // Populated only when the roster was queried within an allocation.
+  assignmentId?: string | null;
+  sectorId?: string | null;
+  sectorCode?: string | null;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  workStation?: string | null;
+  shift?: DutyShift | null;
+  coverage?: DutyCoverage | null;
+  postingRole?: string | null;
+}
+
+export interface DutyAllocation {
+  id: string;
+  year: number;
+  month: number;
+  referenceNo?: string | null;
+  title?: string | null;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  notes?: string | null;
+  createdBy: string;
+  createdByName?: string | null;
+  createdAt: string;
+  publishedBy?: string | null;
+  publishedByName?: string | null;
+  publishedAt?: string | null;
+  assignmentCount: number;
+  // The sheet's own footer.
+  maleOnDuty: number;
+  femaleOnDuty: number;
+  totalAssigned: number;
+}
+
+export interface DutyAssignment {
+  id: string;
+  allocationId: string;
+  officerId: string;
+  officerName: string;
+  officerRank?: string | null;
+  officerManpowerNo?: string | null;
+  officerPhone?: string | null;
+  officerDutyStatus: DutyStatus;
+  sectorId?: string | null;
+  sectorCode?: string | null;
+  sectorName?: string | null;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  workStation: string;
+  shift: DutyShift;
+  coverage: DutyCoverage;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+  postingRole?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface DutyCalendarDay {
+  date: string;
+  isWeekend: boolean;
+  assignmentCount: number;
+  shifts: DutyShift[];
+}
+
+export interface DutyCalendar {
+  year: number;
+  month: number;
+  allocationId?: string | null;
+  allocationStatus?: string | null;
+  days: DutyCalendarDay[];
+}
+
+export interface MyDuty {
+  date: string;
+  onDutyToday: boolean;
+  dutyStatus: DutyStatus;
+  dutyStatusUntil?: string | null;
+  dutyStatusNote?: string | null;
+  allocationMonth?: string | null;
+  allocationReference?: string | null;
+  today: DutyAssignment[];
+  month: DutyAssignment[];
+  unreadBroadcasts: number;
+}
+
+export interface Broadcast {
+  id: string;
+  subject: string;
+  body: string;
+  priority: "NORMAL" | "URGENT";
+  audience: "ALL" | "SECTOR" | "ZONE" | "OFFICER";
+  audienceSectorId?: string | null;
+  audienceZoneId?: string | null;
+  audienceLabel?: string | null;
+  sentBy: string;
+  sentByName?: string | null;
+  sentAt: string;
+  recipientCount: number;
+  readCount: number;
+  readAt?: string | null;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  level: "info" | "success" | "error";
+  createdAt: string;
+  readAt?: string | null;
+}
+
+export interface NotificationHistory {
+  items: AppNotification[];
+  unreadCount: number;
+}
+
+export interface Beat {
+  id: string;
+  name: string;
+  routeId: string;
+  fromStageId: string;
+  toStageId: string;
+  zoneId?: string | null;
+  createdAt: string;
+  // Denormalized from the linked stages — null when a stage isn't geocoded
+  // yet, in which case the beat just isn't drawn as a line on the map.
+  fromLat?: number | null;
+  fromLng?: number | null;
+  toLat?: number | null;
+  toLng?: number | null;
 }
 
 export interface OffenceType {
@@ -40,8 +238,25 @@ export interface OffenceType {
   isOther: boolean;
 }
 
-export type EnforcementCaseStatus = "ARRESTED" | "PAID" | "RELEASED" | "DISPUTED" | "WAIVED";
+export type EnforcementCaseStatus =
+  | "ARRESTED"
+  | "PAID"
+  | "RELEASED"
+  | "DISPUTED"
+  | "UNDER_REVIEW"
+  | "RESOLVED_UPHELD"
+  | "RESOLVED_OVERTURNED"
+  | "RESOLVED_PARTIAL"
+  | "WAIVED";
+export type CaseResolution = "UPHELD" | "OVERTURNED" | "PARTIAL";
 export type EnforcementAction = "IMPOUND" | "SELF_DRIVE_IMPOUND" | "TOLL";
+
+export interface CaseReviewNote {
+  authorId: string;
+  authorName: string;
+  note: string;
+  at: string;
+}
 
 export interface EnforcementCase {
   id: string;
@@ -65,6 +280,15 @@ export interface EnforcementCase {
   releasingOfficerName?: string;
   releasedAt?: string;
   disputeReason?: string;
+  disputedAt?: string;
+  reviewerId?: string;
+  reviewerName?: string;
+  reviewNotes: CaseReviewNote[];
+  resolution?: CaseResolution;
+  resolutionReason?: string;
+  resolvedById?: string;
+  resolvedByName?: string;
+  resolvedAt?: string;
   waivedReason?: string;
   waivedAuthorizedBy?: string;
 }
@@ -79,7 +303,7 @@ export interface OfficerAssignment {
   commanderTitle?: string | null;
 }
 
-export type SaccoStatus = "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "SUSPENDED";
+export type SaccoStatus = "UNREGISTERED" | "INVITED" | "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "SUSPENDED";
 export type SaccoLicenseStatus = "ACTIVE" | "RENEWAL_DUE" | "RENEWAL_SUBMITTED" | "EXPIRED";
 
 export interface SaccoOfficialContact {
@@ -98,6 +322,16 @@ export interface SaccoDocuments {
   singleBusinessPermit: string;
   bonafideOfficialsContacts: SaccoOfficialContact;
 }
+
+// Must match backend/app/routes/saccos.py's DOC_FIELD_MAP keys exactly.
+export type SaccoDocType =
+  | "registrationCert"
+  | "roadServiceLicense"
+  | "countyPermit"
+  | "singleBusinessPermit"
+  | "taxComplianceCert"
+  | "fareChart"
+  | "letterNoObjection";
 
 export type SaccoType = "NEW" | "EXISTING";
 export type VerificationStageStatus = "PENDING" | "APPROVED" | "REJECTED";
@@ -120,6 +354,7 @@ export interface Sacco {
   docSingleBusinessPermit?: string;
   docOfficialsContacts?: string; // JSON string
   docTaxComplianceCert?: string;
+  docFareChart?: string;
   docLetterNoObjection?: string;
   directorMobilityStatus?: VerificationStageStatus;
   directorMobilityReason?: string;
@@ -129,6 +364,30 @@ export interface Sacco {
   chiefOfficerReason?: string;
   chiefOfficerDecidedBy?: string;
   chiefOfficerDecidedAt?: string;
+  shadowContactName?: string;
+  shadowContactPhone?: string;
+  shadowSource?: string;
+  complianceDeadline?: string;
+  invitedAt?: string;
+}
+
+export interface ComplianceFunnelEntry {
+  id: string;
+  name: string;
+  status: SaccoStatus;
+  contactPhone?: string;
+  complianceDeadline?: string;
+  daysRemaining?: number;
+  invitedAt?: string;
+}
+
+export interface ComplianceFunnel {
+  unregistered: number;
+  invited: number;
+  pendingVerification: number;
+  active: number;
+  rejectedOrSuspended: number;
+  entries: ComplianceFunnelEntry[];
 }
 
 export type MatatuStatus = "REGISTRATION_PENDING" | "ACTIVE" | "FLAGGED" | "IMPOUNDED" | "DECOMMISSIONED";
@@ -161,6 +420,36 @@ export interface Route {
   description: string;
   fareKes: number;
   vehicleCount?: number;
+}
+
+export interface RouteGeometryPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface RouteGeometry {
+  id: string;
+  code: string;
+  name: string;
+  corridor: string | null;
+  color: string;
+  points: RouteGeometryPoint[];
+}
+
+export type CrewRole = "DRIVER" | "CONDUCTOR";
+
+// Real login-linked crew, distinct from Matatu.driverName/conductorName
+// (plain free text). See ARCHITECTURE_DECISIONS.md §29.1.
+export interface CrewAssignment {
+  id: string;
+  userId: string;
+  matatuId: string;
+  crewRole: CrewRole;
+  assignedAt: string;
+  unassignedAt: string | null;
+  userName: string;
+  userEmail: string;
+  matatuRegNumber: string;
 }
 
 export type ActivityType = "TRIP" | "INSPECTION" | "INCIDENT";
@@ -203,6 +492,7 @@ export interface CrimeRecord {
   officerName?: string;
   timestamp: string;
   status: "PENDING" | "PROCESSED" | "PAID" | "DISPUTED";
+  photoPath?: string;
 }
 
 export interface SessionData {
@@ -211,6 +501,89 @@ export interface SessionData {
   role: Role;
   saccoId?: string;
   token?: string;
+  // True when this account's role requires MFA (ADMIN/SUPERADMIN) but
+  // hasn't enrolled yet — middleware force-redirects every page except
+  // /mfa/setup until this flips to false (see backend's "enforce, don't
+  // just offer" design, SESSION_SECURITY_STATUS.md).
+  mfaSetupRequired?: boolean;
+  // Additional predefined roles beyond `role` (see User.additionalRoles) —
+  // decoded to a real array here (unlike the raw-JSON-string convention on
+  // User) since the session cookie is what nav/dashboard/middleware read
+  // directly. Absent/empty means "just the primary role," true for almost
+  // every account.
+  additionalRoles?: Role[];
+  // Set only while a Super Admin is impersonating this account (ops
+  // console's "login as" — OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md A.3/A.5
+  // #5). Drives the persistent ImpersonationBanner; absent for every normal
+  // session.
+  impersonatedBy?: { id: string; name: string };
+  // Set at login, read back by refreshSessionAction() so a background
+  // token refresh re-applies the same cookie maxAge the user originally
+  // got (setSessionCookie's second argument) instead of silently
+  // defaulting to the short 8-hour lifetime every time it refreshes.
+  rememberMe?: boolean;
+}
+
+export interface AbacPolicy {
+  id: string;
+  description: string;
+  appliesToRoles: string[];
+}
+
+export interface SystemHealth {
+  uptimeSeconds: number;
+  database: {
+    reachable: boolean;
+    error: string | null;
+    engine: string;
+    pool: Record<string, string | number>;
+  };
+  redis: {
+    reachable: boolean;
+    error: string | null;
+  };
+  config: {
+    secretKeyConfigured: boolean;
+    nairobiPayCallbackSecretConfigured: boolean;
+    sentryConfigured: boolean;
+  };
+  abacPolicies: AbacPolicy[];
+}
+
+export interface ODMatrixCell {
+  fromStageId: string;
+  fromStageName: string;
+  toStageId: string;
+  toStageName: string;
+  searchCount: number;
+  bookingCount: number;
+}
+
+export interface BoardingHeatmapPoint {
+  stageId: string;
+  stageName: string;
+  lat: number | null;
+  lng: number | null;
+  activityCount: number;
+}
+
+export interface RouteRidership {
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  totalPassengers: number;
+  tripsCompleted: number;
+  tripsWithCount: number;
+}
+
+export interface ScheduledBookingsByRoute {
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  scheduledCount: number;
+  mostCommonHour?: number | null;
+  topOriginStageId?: string | null;
+  topOriginStageName?: string | null;
 }
 
 export interface AuditLog {
@@ -222,6 +595,23 @@ export interface AuditLog {
   newValues?: string;
   userId: string;
   timestamp: string;
+}
+
+// LOGIN_SUCCESS | LOGIN_FAILED | LOGOUT | REGISTER — see backend/app/models.py's LoginEvent.
+export interface LoginEvent {
+  id: number;
+  userId?: string | null;
+  email?: string | null;
+  eventType: string;
+  reason?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+}
+
+export interface UserActivity {
+  loginEvents: LoginEvent[];
+  auditLogs: AuditLog[];
 }
 
 export interface Seat {
@@ -241,6 +631,26 @@ export interface Stage {
   lng: number;
 }
 
+export type OperatorTerminalMatchStatus =
+  | "PENDING"
+  | "MATCHED_EXISTING_STAGE"
+  | "GEOCODED_NEW"
+  | "MANUALLY_SET"
+  | "UNRESOLVED";
+
+export interface OperatorTerminal {
+  id: string;
+  saccoId: string;
+  routeId: string;
+  label: string;
+  stageId?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  geocoded: boolean;
+  matchStatus: OperatorTerminalMatchStatus;
+  createdAt: string;
+}
+
 export type ReportStatus = "PENDING" | "REVIEWED" | "ESCALATED" | "DISMISSED";
 
 export interface PassengerReport {
@@ -250,6 +660,7 @@ export interface PassengerReport {
   message: string;
   reporterName?: string;
   reporterPhone?: string;
+  photoPath?: string;
   status: ReportStatus;
   createdAt: string;
 }
@@ -267,4 +678,31 @@ export interface Booking {
   fareKes: number;
   bookedAt: string;
   status: "CONFIRMED" | "USED" | "CANCELLED";
+}
+
+export interface TimeseriesPoint {
+  bucket: string;
+  count: number;
+  value: number;
+}
+
+export interface TimeseriesResponse {
+  metric: string;
+  grouping: string;
+  points: TimeseriesPoint[];
+}
+
+export interface SupportTicket {
+  id: number;
+  subject: string;
+  description: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  assigneeId: string | null;
+  reporterName: string;
+  reporterContact: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
 }

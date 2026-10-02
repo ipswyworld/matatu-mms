@@ -2,8 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { clearSessionCookie, readSession, setSessionCookie } from "./session";
-import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role } from "./types";
+import {
+  clearSessionCookie, readSession, setSessionCookie,
+  setMfaPendingCookie, readMfaPendingCookie, clearMfaPendingCookie,
+} from "./session";
+import { getReports } from "./data";
+import { forwardedClientIpHeaders } from "./client-ip";
+import { Booking, MatatuStatus, PassengerReport, ReportStatus, Role, SaccoDocType, Zone } from "./types";
+import { parseJsonStringList, homeForRole } from "./rbac";
 
 // Server-side calls (Server Actions run in Node, not the browser) —
 // overridable so docker-compose can point this at the internal service
@@ -17,6 +23,7 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   const session = readSession();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...forwardedClientIpHeaders(),
   };
   if (session?.token) {
     headers["Authorization"] = `Bearer ${session.token}`;
@@ -47,51 +54,264 @@ async function apiWrite<T = any>(path: string, method: string, body?: any): Prom
   return res.json() as Promise<T>;
 }
 
+// The access token embedded in the session cookie expires after 60
+// minutes (backend's ACCESS_TOKEN_EXPIRE_MINUTES), but the cookie itself
+// lasts 8 hours (30 days with "remember me" — those tokens already get a
+// matching long expiry up front and never hit this path). Without this,
+// every fetch and every open WebSocket (NotificationBell) would silently
+// start failing an hour into any normal session while the UI still looks
+// logged in. Called proactively by NotificationBell before its token
+// would expire, and safe to call after it already has (the backend
+// tolerates a recently-expired token here, not just a valid one).
+export async function refreshSessionAction(): Promise<{ accessToken?: string; error?: string }> {
+  const session = readSession();
+  if (!session?.token) return { error: "No session to refresh." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.token}`, ...forwardedClientIpHeaders() },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let msg = "Could not refresh session.";
+      try {
+        msg = (await res.json()).detail || msg;
+      } catch {}
+      return { error: msg };
+    }
+    const data = await res.json();
+    // Same session, fresh token — every other field carries over untouched
+    // (including impersonatedBy, so a support session mid-impersonation
+    // doesn't get silently dropped by a background refresh). Re-applying
+    // session.rememberMe as the maxAge argument matters: without it, a
+    // remember-me user's 30-day cookie would quietly shrink to the default
+    // 8 hours on the very first background refresh.
+    await setSessionCookie({ ...session, token: data.accessToken }, session.rememberMe);
+    return { accessToken: data.accessToken };
+  } catch {
+    return { error: "Could not reach the authentication server." };
+  }
+}
+
+// Single source of truth for "where does a freshly-authenticated user land"
+// is lib/rbac.ts's homeForRole (shared with the impersonate-consume Route
+// Handler, which can't import from this "use server" file for a plain sync
+// helper — every export here must be async). This just wraps it with the
+// throw-based redirect() that Server Actions use.
+function redirectHome(role: Role): never {
+  redirect(homeForRole(role));
+}
+
 export async function loginAction(_prevState: { error?: string } | undefined, formData: FormData) {
   const email = String(formData.get("email") || "").trim();
   const password = String(formData.get("password") || "");
+  const rememberMe = formData.get("rememberMe") === "on";
+  // Present only when TurnstileWidget actually rendered a widget (a site
+  // key is configured) and the visitor completed it — the Cloudflare
+  // script injects this field into the form itself. Absent otherwise,
+  // which the backend already treats as "not configured, allow through."
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
+      body: JSON.stringify({
+        email, password, remember_me: rememberMe,
+        turnstile_token: turnstileToken ? String(turnstileToken) : undefined,
+      }),
       cache: "no-store",
     });
 
     if (!res.ok) {
-      return { error: "Invalid email or password." };
+      // A non-2xx response was previously always shown as "Invalid email
+      // or password" regardless of cause — including a 502/503 while the
+      // backend is cold-starting (Render's free tier spins services down
+      // after inactivity) or a 429 from the login rate limiter, both of
+      // which are not the user's fault and look nothing like a wrong
+      // password. Distinguish by status so the message actually matches
+      // what happened.
+      if (res.status === 401) {
+        return { error: "Invalid email or password." };
+      }
+      if (res.status === 429) {
+        return { error: "Too many sign-in attempts. Please wait a minute and try again." };
+      }
+      if (res.status >= 500 || res.status === 502 || res.status === 503) {
+        return { error: "The system is starting up — this can take up to a minute on first use. Please try again shortly." };
+      }
+      let detail: string | undefined;
+      try {
+        detail = (await res.json()).detail;
+      } catch {}
+      return { error: detail || `Sign-in failed (${res.status}). Please try again.` };
     }
 
     const data = await res.json();
+
+    // Password was correct but this account has MFA enabled — no session
+    // yet. The backend's short-lived mfaToken goes into its own cookie
+    // (not the real session) and the user finishes the second step at
+    // /mfa/verify. See lib/session.ts for why these are separate cookies.
+    if (data.mfaRequired) {
+      setMfaPendingCookie(data.mfaToken);
+      redirect("/mfa/verify");
+    }
+
     const userRole = data.user.role as Role;
+    await setSessionCookie(
+      {
+        userId: data.user.id,
+        name: data.user.name,
+        role: userRole,
+        saccoId: data.user.saccoId,
+        token: data.accessToken,
+        mfaSetupRequired: !!data.mfaSetupRequired,
+        additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
+        rememberMe,
+      },
+      rememberMe
+    );
+
+    redirectHome(userRole);
+  } catch (err: any) {
+    if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
+    // fetch() itself throwing (as opposed to resolving with a non-2xx
+    // response) means the request never completed — a real network/
+    // connectivity failure, or the backend timing out entirely during a
+    // cold start. Same honesty principle as above: don't call this a
+    // wrong password.
+    return { error: "Could not reach the authentication server. Please check your connection and try again." };
+  }
+}
+
+export async function verifyMfaAction(_prevState: { error?: string } | undefined, formData: FormData) {
+  const code = String(formData.get("code") || "").trim();
+  const mfaToken = readMfaPendingCookie();
+
+  if (!mfaToken) {
+    return { error: "This sign-in attempt has expired. Please sign in again." };
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/verify-mfa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
+      body: JSON.stringify({ mfaToken, code }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      // Deliberately NOT clearing the pending cookie here — a mistyped code
+      // shouldn't force the user back through their password too. The
+      // cookie carries its own 5-minute expiry matching the backend JWT, so
+      // it stops working on its own once actually stale.
+      if (res.status === 401) {
+        return { error: "That code is incorrect. Please try again." };
+      }
+      let detail: string | undefined;
+      try { detail = (await res.json()).detail; } catch {}
+      return { error: detail || `Verification failed (${res.status}). Please try again.` };
+    }
+
+    const data = await res.json();
+    clearMfaPendingCookie();
+
+    const userRole = data.user.role as Role;
+    // rememberMe was chosen on the *previous* step (the login form, before
+    // MFA kicked in) — this page has no other way to know it, so the
+    // backend echoes it back on the token response (Token.remember_me)
+    // rather than the frontend silently defaulting to the short cookie
+    // lifetime for every MFA-enabled account regardless of what was
+    // actually chosen.
+    const rememberMe = !!data.rememberMe;
+    await setSessionCookie(
+      {
+        userId: data.user.id,
+        name: data.user.name,
+        role: userRole,
+        saccoId: data.user.saccoId,
+        token: data.accessToken,
+        mfaSetupRequired: !!data.mfaSetupRequired,
+        additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
+        rememberMe,
+      },
+      rememberMe
+    );
+
+    redirectHome(userRole);
+  } catch (err: any) {
+    if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
+    return { error: "Could not reach the authentication server. Please check your connection and try again." };
+  }
+}
+
+// --- Impersonation ("login as") — the ops console mints a short-lived
+// ticket and redirects here (see OPS_CONSOLE_AND_USER_ACTIVITY_SPEC.md
+// A.3/A.5 #5). The consume half lives in app/impersonate/consume/route.ts as
+// a Route Handler, not a Server Action called from a page's render: Next.js
+// only allows mutating cookies from a Server Action or Route Handler, never
+// from a Server Component during render, and this exchange must set the real
+// session cookie. Never the actual bearer token crosses the redirect from
+// the ops console, only the single-use ticket. ----------------------------
+
+export async function stopImpersonationAction(): Promise<{ error?: string }> {
+  const session = readSession();
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/impersonate/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.token}`, ...forwardedClientIpHeaders() },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let msg = "Could not end impersonation.";
+      try { msg = (await res.json()).detail || msg; } catch {}
+      return { error: msg };
+    }
+    const data = await res.json();
+    const role = data.user.role as Role;
     await setSessionCookie({
       userId: data.user.id,
       name: data.user.name,
-      role: userRole,
+      role,
       saccoId: data.user.saccoId,
       token: data.accessToken,
+      additionalRoles: parseJsonStringList(data.user.additionalRoles) as Role[],
     });
-
-    if (userRole === "PASSENGER") {
-      redirect("/passenger-portal");
-    } else if (userRole === "CREW") {
-      redirect("/crew-portal");
-    } else if (userRole === "SACCO_OPERATOR") {
-      redirect("/sacco-portal");
-    } else if (
-      userRole === "ENFORCEMENT" ||
-      userRole === "ARRESTING_OFFICER" ||
-      userRole === "RELEASING_OFFICER" ||
-      userRole === "ENFORCEMENT_COMMANDER"
-    ) {
-      redirect("/enforcement");
-    } else {
-      redirect("/dashboard");
-    }
+    redirect("/users");
   } catch (err: any) {
     if (err.digest?.startsWith("NEXT_REDIRECT")) throw err;
-    return { error: err.message || "Failed to reach authentication server." };
+    return { error: "Could not reach the authentication server. Please check your connection and try again." };
+  }
+}
+
+// --- MFA enrollment (called directly from client components, not via a
+// <form> action — see components/MfaSetupFlow.tsx) ------------------------
+
+export async function enrollMfaAction(): Promise<{ qrCodeDataUri: string; manualEntryKey: string } | { error: string }> {
+  try {
+    return await apiWrite("/api/auth/mfa/enroll", "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not start MFA enrollment." };
+  }
+}
+
+export async function confirmMfaAction(_prevState: { error?: string; backupCodes?: string[] } | undefined, formData: FormData) {
+  const code = String(formData.get("code") || "").trim();
+  try {
+    const result = await apiWrite<{ backupCodes: string[] }>("/api/auth/mfa/confirm", "POST", { code });
+    // MFA is now enabled and satisfied for this session — flip the flag
+    // immediately so middleware stops confining the user to /mfa/setup as
+    // soon as they click through past the backup-codes screen, without
+    // waiting for a fresh login.
+    const session = readSession();
+    if (session) {
+      await setSessionCookie({ ...session, mfaSetupRequired: false });
+    }
+    return { backupCodes: result.backupCodes };
+  } catch (err: any) {
+    return { error: err.message || "That code didn't match. Check your authenticator app and try again." };
   }
 }
 
@@ -102,11 +322,12 @@ export async function registerAction(_prevState: { error?: string } | undefined,
   const role = String(formData.get("role") || "PASSENGER") as Role;
   const saccoId = String(formData.get("saccoId") || "").trim() || undefined;
   const signature = String(formData.get("signature") || "").trim();
+  const turnstileToken = formData.get("cf-turnstile-response");
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({
         name,
         email,
@@ -115,6 +336,7 @@ export async function registerAction(_prevState: { error?: string } | undefined,
         saccoId,
         termsAccepted: true,
         termsSignature: signature,
+        turnstileToken: turnstileToken ? String(turnstileToken) : undefined,
       }),
       cache: "no-store",
     });
@@ -151,6 +373,24 @@ export async function registerAction(_prevState: { error?: string } | undefined,
   }
 }
 
+/**
+ * Unauthenticated Sacco list for the pre-login registration page's Crew
+ * "Assigned Operator" picker. Hits the public backend endpoint (id + name
+ * only) since the visitor has no session/token yet to call GET /api/saccos.
+ */
+export async function getPublicSaccosAction(): Promise<{ id: string; name: string }[]> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/saccos/public`, {
+      headers: forwardedClientIpHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function operatorOnboardingRegisterAction(
   _prevState: { error?: string } | undefined,
   formData: FormData
@@ -165,7 +405,7 @@ export async function operatorOnboardingRegisterAction(
   try {
     const res = await fetch(`${BACKEND_URL}/api/saccos/onboard`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
       body: JSON.stringify({
         saccoName,
         saccoType,
@@ -203,7 +443,7 @@ export async function operatorOnboardingRegisterAction(
 
 async function apiWriteMultipart(path: string, formData: FormData): Promise<any> {
   const session = readSession();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...forwardedClientIpHeaders() };
   if (session?.token) {
     headers["Authorization"] = `Bearer ${session.token}`;
   }
@@ -224,7 +464,7 @@ async function apiWriteMultipart(path: string, formData: FormData): Promise<any>
 
 export async function uploadSaccoDocumentAction(
   saccoId: string,
-  docType: string,
+  docType: SaccoDocType,
   formData: FormData
 ): Promise<{ error?: string }> {
   const file = formData.get("file");
@@ -305,6 +545,19 @@ export async function decideDirectorStageAction(
   return {};
 }
 
+export async function resolveOperatorTerminalAction(
+  terminalId: string,
+  payload: { stageId?: string } | { lat: number; lng: number }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/operator-terminals/${terminalId}/resolve`, "PATCH", payload);
+  } catch (err: any) {
+    return { error: err.message || "Could not resolve this terminal." };
+  }
+  revalidatePath("/saccos/verify");
+  return {};
+}
+
 export async function decideChiefOfficerStageAction(
   saccoId: string,
   decisionStatus: "APPROVED" | "REJECTED",
@@ -382,6 +635,75 @@ export async function waiveEnforcementCaseAction(caseId: string, reason: string,
   return {};
 }
 
+export async function addShadowSaccosAction(
+  entries: { name: string; contactName?: string; contactPhone: string; complianceDeadline?: string }[]
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite("/api/saccos/shadow", "POST", { entries });
+  } catch (err: any) {
+    return { error: err.message || "Could not add these operators to the registry." };
+  }
+  revalidatePath("/saccos/verify");
+  revalidatePath("/dashboard");
+  return {};
+}
+
+export async function inviteShadowSaccoAction(saccoId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/saccos/${saccoId}/invite`, "PATCH");
+  } catch (err: any) {
+    return { error: err.message || "Could not send the invite." };
+  }
+  revalidatePath("/saccos/verify");
+  revalidatePath("/dashboard");
+  return {};
+}
+
+export async function deleteShadowSaccoAction(saccoId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/saccos/${saccoId}/shadow`, "DELETE");
+  } catch (err: any) {
+    return { error: err.message || "Could not remove this entry." };
+  }
+  revalidatePath("/saccos/verify");
+  revalidatePath("/dashboard");
+  return {};
+}
+
+export async function assignCaseReviewerAction(caseId: string, reviewerId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/enforcement/cases/${caseId}/assign-reviewer`, "PATCH", { reviewerId });
+  } catch (err: any) {
+    return { error: err.message || "Could not assign a reviewer to this case." };
+  }
+  revalidatePath("/enforcement/disputes");
+  return {};
+}
+
+export async function addCaseNoteAction(caseId: string, note: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/enforcement/cases/${caseId}/notes`, "POST", { note });
+  } catch (err: any) {
+    return { error: err.message || "Could not add this note." };
+  }
+  revalidatePath("/enforcement/disputes");
+  return {};
+}
+
+export async function resolveCaseDisputeAction(
+  caseId: string,
+  resolution: "UPHELD" | "OVERTURNED" | "PARTIAL",
+  reason: string
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/enforcement/cases/${caseId}/resolve`, "PATCH", { resolution, reason });
+  } catch (err: any) {
+    return { error: err.message || "Could not resolve this dispute." };
+  }
+  revalidatePath("/enforcement/disputes");
+  return {};
+}
+
 export async function updateOfficerAssignmentAction(
   userId: string,
   update: { enforcementDuty?: string | null; assignedZoneId?: string | null; commanderTitle?: string | null }
@@ -395,11 +717,195 @@ export async function updateOfficerAssignmentAction(
   return {};
 }
 
+// --- PTCU duty allocation ---
+
+export async function createDutyAllocationAction(input: {
+  year: number;
+  month: number;
+  referenceNo?: string;
+  title?: string;
+  notes?: string;
+  copyFromAllocationId?: string;
+}): Promise<{ error?: string; allocationId?: string }> {
+  try {
+    const result = await apiWrite<{ id: string }>("/api/duty/allocations", "POST", input);
+    revalidatePath("/duty");
+    return { allocationId: result.id };
+  } catch (err: any) {
+    return { error: err.message || "Could not create the allocation." };
+  }
+}
+
+export async function publishDutyAllocationAction(allocationId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/allocations/${allocationId}/publish`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not publish the allocation." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function createDutyAssignmentAction(
+  allocationId: string,
+  input: {
+    officerId: string;
+    workStation: string;
+    sectorId?: string | null;
+    zoneId?: string | null;
+    shift?: string;
+    coverage?: string;
+    postingRole?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/allocations/${allocationId}/assignments`, "POST", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not post the officer." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function updateDutyAssignmentAction(
+  assignmentId: string,
+  input: Record<string, unknown>
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/assignments/${assignmentId}`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update the posting." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function deleteDutyAssignmentAction(assignmentId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/assignments/${assignmentId}`, "DELETE");
+  } catch (err: any) {
+    return { error: err.message || "Could not remove the posting." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function updateOfficerDutyStatusAction(
+  officerId: string,
+  input: {
+    dutyStatus: string;
+    dutyStatusFrom?: string | null;
+    dutyStatusUntil?: string | null;
+    dutyStatusNote?: string | null;
+  }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/officers/${officerId}/status`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update duty status." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+/**
+ * Easy officer intake for a commander, filling in from the paper sheet —
+ * not the generic admin "create user" form, which asks for things (a
+ * chosen password, an email) a commander copying a manpower number off a
+ * sheet does not have and should not have to invent. The temp password is
+ * generated here, server-side, and handed back once so it can be given to
+ * the officer; only its hash is ever stored.
+ */
+export async function createOfficerAction(input: {
+  name: string;
+  role: string;
+  manpowerNo: string;
+  rank?: string;
+  phone?: string;
+  email?: string;
+}): Promise<{ error?: string; tempPassword?: string }> {
+  const crypto = await import("crypto");
+  const tempPassword = crypto.randomBytes(6).toString("base64url");
+
+  try {
+    const created = await apiWrite<{ id: string }>("/api/users", "POST", {
+      name: input.name.trim(),
+      role: input.role,
+      phone: input.phone?.trim() || null,
+      email: input.email?.trim() || null,
+      password: tempPassword,
+    });
+    const service = await updateOfficerServiceRecordAction(created.id, {
+      manpowerNo: input.manpowerNo.trim(),
+      rank: input.rank?.trim() || null,
+    });
+    if (service.error) {
+      return { error: service.error };
+    }
+  } catch (err: any) {
+    return { error: err.message || "Could not add the officer." };
+  }
+  revalidatePath("/enforcement");
+  return { tempPassword };
+}
+
+export async function updateOfficerServiceRecordAction(
+  officerId: string,
+  input: { manpowerNo?: string | null; rank?: string | null; gender?: string | null; canReleaseCases?: boolean }
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/duty/officers/${officerId}/service`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update the service record." };
+  }
+  revalidatePath("/duty");
+  return {};
+}
+
+export async function sendBroadcastAction(input: {
+  subject: string;
+  body: string;
+  priority?: string;
+  audience: string;
+  sectorId?: string | null;
+  zoneId?: string | null;
+  officerIds?: string[];
+}): Promise<{ error?: string; recipientCount?: number }> {
+  try {
+    const result = await apiWrite<{ recipientCount: number }>("/api/broadcasts", "POST", input);
+    revalidatePath("/duty");
+    return { recipientCount: result.recipientCount };
+  } catch (err: any) {
+    return { error: err.message || "Could not send the broadcast." };
+  }
+}
+
+export async function markBroadcastReadAction(broadcastId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/broadcasts/${broadcastId}/read`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not mark as read." };
+  }
+  revalidatePath("/my-duty");
+  return {};
+}
+
+export async function markNotificationsReadAction(): Promise<{ error?: string; unreadCount?: number }> {
+  try {
+    const result = await apiWrite<{ unreadCount: number }>("/api/notifications/read", "POST");
+    return { unreadCount: result.unreadCount };
+  } catch (err: any) {
+    return { error: err.message || "Could not mark notifications read." };
+  }
+}
+
 const PUBLIC_BACKEND_URL = BACKEND_URL;
 
 export async function publicLookupCaseAction(caseReference: string): Promise<{ error?: string; caseData?: any }> {
   try {
     const res = await fetch(`${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(caseReference.trim())}`, {
+      headers: forwardedClientIpHeaders(),
       cache: "no-store",
     });
     if (!res.ok) {
@@ -418,6 +924,7 @@ export async function publicPayCaseAction(caseReference: string): Promise<{ erro
   try {
     const res = await fetch(`${PUBLIC_BACKEND_URL}/api/enforcement/cases/public/${encodeURIComponent(caseReference.trim())}/pay`, {
       method: "POST",
+      headers: forwardedClientIpHeaders(),
       cache: "no-store",
     });
     if (!res.ok) {
@@ -472,16 +979,18 @@ export async function addRouteAction(_prevState: { error?: string } | undefined,
   const code = String(formData.get("code") || "").trim();
   const name = String(formData.get("name") || "").trim();
   const description = String(formData.get("description") || "").trim();
-  const fareKes = Number(formData.get("fareKes") || 0);
 
-  if (!code || !name || !fareKes) {
-    return { error: "Route code, name, and fare are required." };
+  if (!code || !name) {
+    return { error: "Route code and name are required." };
   }
 
   const id = `route-${code.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
 
   try {
-    await apiWrite("/api/routes", "POST", { id, code, name, description, fareKes });
+    // Fare is set separately (per-route, once operators have real corridor
+    // data) rather than guessed at creation time — backend applies a
+    // placeholder default until it's set.
+    await apiWrite("/api/routes", "POST", { id, code, name, description });
   } catch (err: any) {
     return { error: err.message };
   }
@@ -552,7 +1061,7 @@ export async function bulkImportVehiclesAction(formData: FormData): Promise<{
   upload.set("file", file);
 
   const session = readSession();
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...forwardedClientIpHeaders() };
   if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
   try {
@@ -598,28 +1107,42 @@ export async function removeMatatuAction(matatuId: string): Promise<{ error?: st
 }
 
 export async function recordCrimeAction(_prevState: { error?: string } | undefined, formData: FormData) {
-  const offenceCommitted = String(formData.get("offenceCommitted") || "").trim();
+  let offenceCommitted = String(formData.get("offenceCommitted") || "").trim();
+  const offenceOtherText = String(formData.get("offenceOtherText") || "").trim();
   const regNumber = String(formData.get("regNumber") || "").trim().toUpperCase();
   const driverName = String(formData.get("driverName") || "").trim();
   const driverLicense = String(formData.get("driverLicense") || "").trim();
   const location = String(formData.get("location") || "").trim();
   const fineAmountKes = Number(formData.get("fineAmountKes") || 0);
   const remarks = String(formData.get("remarks") || "").trim();
+  const photo = formData.get("photo");
 
-  if (!offenceCommitted || !regNumber || !location) {
-    return { error: "Offence committed, plate number, and location are required." };
+  if (offenceCommitted === "Other") {
+    if (!offenceOtherText) {
+      return { error: "Please describe the offence." };
+    }
+    offenceCommitted = `Other: ${offenceOtherText}`;
   }
 
+  if (!offenceCommitted || offenceCommitted === "Select" || !regNumber || !location) {
+    return { error: "Offence committed, plate number, and location are required." };
+  }
+  if (!(photo instanceof File) || photo.size === 0) {
+    return { error: "Photo evidence is required." };
+  }
+
+  const upload = new FormData();
+  upload.set("offence_committed", offenceCommitted);
+  upload.set("reg_number", regNumber);
+  upload.set("driver_name", driverName || "Unidentified Driver");
+  upload.set("driver_license", driverLicense || "N/A");
+  upload.set("location", location);
+  upload.set("fine_amount_kes", String(fineAmountKes));
+  upload.set("remarks", remarks);
+  upload.set("photo", photo);
+
   try {
-    await apiWrite("/api/enforcement/crimes", "POST", {
-      offenceCommitted,
-      regNumber,
-      driverName: driverName || "Unidentified Driver",
-      driverLicense: driverLicense || "N/A",
-      location,
-      fineAmountKes,
-      remarks,
-    });
+    await apiWriteMultipart("/api/enforcement/crimes", upload);
   } catch (err: any) {
     return { error: err.message };
   }
@@ -739,6 +1262,22 @@ export async function getTakenSeatsAction(matatuId: string): Promise<number[]> {
   }
 }
 
+export async function getTimeseriesAction(
+  metric: "fines" | "bookings",
+  days: number,
+  grouping: "day" | "week" | "month" = "day"
+): Promise<{ points: { bucket: string; count: number; value: number }[]; error?: string }> {
+  try {
+    const data = await apiWrite<{ points: { bucket: string; count: number; value: number }[] }>(
+      `/api/analytics/timeseries?metric=${metric}&days=${days}&grouping=${grouping}`,
+      "GET"
+    );
+    return { points: data.points };
+  } catch (err: any) {
+    return { points: [], error: err.message || "Could not load chart data." };
+  }
+}
+
 export async function createBookingAction(input: {
   matatuId: string;
   routeId: string;
@@ -811,13 +1350,48 @@ export async function submitReportAction(input: {
   message: string;
   reporterName?: string;
   reporterPhone?: string;
+  photo?: File | null;
 }): Promise<{ report?: PassengerReport; error?: string }> {
+  const formData = new FormData();
+  formData.set("category", input.category);
+  formData.set("message", input.message);
+  if (input.matatuRegNumber) formData.set("matatu_reg_number", input.matatuRegNumber);
+  if (input.reporterName) formData.set("reporter_name", input.reporterName);
+  if (input.reporterPhone) formData.set("reporter_phone", input.reporterPhone);
+  if (input.photo && input.photo.size > 0) formData.set("photo", input.photo);
+
   try {
-    const report = await apiWrite<PassengerReport>("/api/reports", "POST", input);
+    const report = await apiWriteMultipart("/api/reports", formData);
     return { report };
   } catch (err: any) {
     return { error: err.message || "Could not submit report. Please try again." };
   }
+}
+
+export async function submitPublicCommentAction(input: {
+  message: string;
+  name?: string;
+  phone?: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const formData = new FormData();
+  formData.set("message", input.message);
+  if (input.name) formData.set("reporter_name", input.name);
+  if (input.phone) formData.set("reporter_phone", input.phone);
+
+  try {
+    await apiWriteMultipart("/api/reports/public-comment", formData);
+    return { ok: true };
+  } catch (err: any) {
+    return { error: err.message || "Could not send your comment. Please try again." };
+  }
+}
+
+export async function getCrewReportsAction(regNumber: string): Promise<PassengerReport[]> {
+  const reports = await getReports();
+  return reports
+    .filter((r) => (r.matatuRegNumber || "").toUpperCase() === regNumber.toUpperCase())
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    .slice(0, 10);
 }
 
 export async function reviewReportAction(reportId: string, status: ReportStatus) {
@@ -848,4 +1422,244 @@ export async function addUserAction(_prevState: { error?: string } | undefined, 
 
   revalidatePath("/users");
   redirect("/users");
+}
+
+export async function updateUserAction(
+  userId: string,
+  input: { name?: string; email?: string; role?: Role; saccoId?: string | null; newPassword?: string; isActive?: boolean; extraPermissions?: string[]; additionalRoles?: string[] }
+): Promise<{ error?: string; pendingRoleGrantId?: number }> {
+  let response: { pendingRoleGrantId?: number };
+  try {
+    response = await apiWrite(`/api/users/${userId}`, "PATCH", input);
+  } catch (err: any) {
+    return { error: err.message || "Could not update user." };
+  }
+  revalidatePath("/users");
+  return { pendingRoleGrantId: response.pendingRoleGrantId };
+}
+
+export async function setUserActiveAction(userId: string, isActive: boolean): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/users/${userId}`, "PATCH", { isActive });
+  } catch (err: any) {
+    return { error: err.message || "Could not update this account." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
+export async function revokeUserSessionsAction(userId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/users/${userId}/revoke-sessions`, "POST");
+  } catch (err: any) {
+    return { error: err.message || "Could not revoke this account's sessions." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
+// Reuses the ops console's control-plane endpoint (backend/app/routes/
+// control.py's reset_user_mfa) rather than duplicating it under /api/users
+// — reachable from here today only because this is a single-process
+// deployment (BACKEND_URL serves both). If the control plane ever splits
+// into its own process (Ops Console Rebuild Spec §3.1 Path A), this call
+// needs a CONTROL_PLANE_URL of its own, the same split lib/data.ts already
+// has in matatu-mms-ops.
+export async function resetUserMfaAction(userId: string, reason: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/control/users/${userId}/reset-mfa`, "POST", { reason });
+  } catch (err: any) {
+    return { error: err.message || "Could not reset MFA for this account." };
+  }
+  revalidatePath("/users");
+  return {};
+}
+
+export async function getUserActivityAction(userId: string): Promise<import("./types").UserActivity | { error: string }> {
+  try {
+    return await apiWrite<import("./types").UserActivity>(`/api/users/${userId}/activity`, "GET");
+  } catch (err: any) {
+    return { error: err.message || "Could not load this account's activity." };
+  }
+}
+
+export async function forgotPasswordAction(
+  _prevState: { message?: string; error?: string } | undefined,
+  formData: FormData
+): Promise<{ message?: string; error?: string }> {
+  const email = String(formData.get("email") || "").trim();
+  if (!email) return { error: "Enter your account email." };
+  const turnstileToken = formData.get("cf-turnstile-response");
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
+      body: JSON.stringify({ email, turnstileToken: turnstileToken ? String(turnstileToken) : undefined }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return { message: data.message || "If that email is registered, a password reset link has been sent." };
+  } catch {
+    return { error: "Could not process your request. Please try again." };
+  }
+}
+
+export async function resetPasswordAction(
+  _prevState: { message?: string; error?: string } | undefined,
+  formData: FormData
+): Promise<{ message?: string; error?: string }> {
+  const token = String(formData.get("token") || "").trim();
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (!token) return { error: "Missing or invalid reset link." };
+  if (newPassword.length < 6) return { error: "Password must be at least 6 characters." };
+  if (newPassword !== confirmPassword) return { error: "Passwords do not match." };
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...forwardedClientIpHeaders() },
+      body: JSON.stringify({ token, newPassword }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { error: data.detail || "Could not reset your password." };
+    }
+    return { message: data.message || "Password updated. You can now sign in." };
+  } catch {
+    return { error: "Could not process your request. Please try again." };
+  }
+}
+
+type CrewIssueState = {
+  error?: string;
+  success?: { crewName: string; crewEmail: string; generatedPassword: string; matatuRegNumber: string };
+};
+
+// Doesn't redirect (unlike onboardSaccoVehicleAction) — the generated
+// password is shown to the operator exactly once, so the modal that calls
+// this stays open on success to display it.
+export async function issueCrewCredentialsAction(
+  _prevState: CrewIssueState | undefined,
+  formData: FormData
+): Promise<CrewIssueState> {
+  const name = String(formData.get("name") || "").trim();
+  const email = String(formData.get("email") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
+  const licenseNumber = String(formData.get("licenseNumber") || "").trim();
+  const matatuId = String(formData.get("matatuId") || "");
+  const crewRole = String(formData.get("crewRole") || "DRIVER");
+
+  if (!name || !email || !matatuId) {
+    return { error: "Name, email, and vehicle are required." };
+  }
+
+  try {
+    const data = await apiWrite<{ assignment: { userName: string; userEmail: string; matatuRegNumber: string }; generatedPassword: string }>(
+      "/api/crew",
+      "POST",
+      { name, email, phone: phone || undefined, licenseNumber: licenseNumber || undefined, matatuId, crewRole }
+    );
+    revalidatePath("/sacco-portal");
+    return {
+      success: {
+        crewName: data.assignment.userName,
+        crewEmail: data.assignment.userEmail,
+        generatedPassword: data.generatedPassword,
+        matatuRegNumber: data.assignment.matatuRegNumber,
+      },
+    };
+  } catch (err: any) {
+    return { error: err.message || "Could not issue crew credentials." };
+  }
+}
+
+export async function revokeCrewAssignmentAction(assignmentId: string): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/crew/${assignmentId}/revoke`, "PATCH");
+  } catch (err: any) {
+    return { error: err.message || "Could not revoke this crew assignment." };
+  }
+  revalidatePath("/sacco-portal");
+  return {};
+}
+
+// --- Zone/sector boundary editing (Phase 3 — PolygonBoundaryEditor) --------
+// Both duty.py's Zone and Sector rows share the identical boundary_geojson/
+// center_lat/center_lng field shape, so one input type and one pair of
+// actions covers both call sites; the caller picks the endpoint.
+
+export interface ZoneUpsertInput {
+  name: string;
+  description?: string;
+  sectorId?: string;
+  code?: string;
+  centerLat?: number;
+  centerLng?: number;
+  boundaryGeojson?: string;
+  displayOrder?: number;
+}
+
+export async function createZoneAction(input: ZoneUpsertInput): Promise<{ zone?: Zone; error?: string }> {
+  try {
+    const zone = await apiWrite<Zone>("/api/duty/zones", "POST", input);
+    revalidatePath("/zones");
+    return { zone };
+  } catch (err: any) {
+    return { error: err.message || "Could not create this zone." };
+  }
+}
+
+export async function updateZoneAction(zoneId: string, input: ZoneUpsertInput): Promise<{ zone?: Zone; error?: string }> {
+  try {
+    const zone = await apiWrite<Zone>(`/api/duty/zones/${encodeURIComponent(zoneId)}`, "PATCH", input);
+    revalidatePath("/zones");
+    return { zone };
+  } catch (err: any) {
+    return { error: err.message || "Could not update this zone." };
+  }
+}
+
+export interface CreateSupportTicketInput {
+  subject: string;
+  description: string;
+  priority: string;
+  reporterName: string;
+  reporterContact: string;
+}
+
+export async function createSupportTicketAction(input: CreateSupportTicketInput): Promise<{ error?: string }> {
+  try {
+    await apiWrite("/api/support-tickets", "POST", {
+      subject: input.subject,
+      description: input.description,
+      priority: input.priority,
+      reporter_name: input.reporterName,
+      reporter_contact: input.reporterContact,
+    });
+  } catch (err: any) {
+    return { error: err.message || "Could not create this ticket." };
+  }
+  revalidatePath("/support");
+  return {};
+}
+
+export async function updateSupportTicketAction(
+  ticketId: number,
+  input: { status?: string; priority?: string; assigneeId?: string | null },
+): Promise<{ error?: string }> {
+  try {
+    await apiWrite(`/api/support-tickets/${ticketId}`, "PATCH", {
+      status: input.status,
+      priority: input.priority,
+      assignee_id: input.assigneeId,
+    });
+  } catch (err: any) {
+    return { error: err.message || "Could not update this ticket." };
+  }
+  revalidatePath("/support");
+  return {};
 }

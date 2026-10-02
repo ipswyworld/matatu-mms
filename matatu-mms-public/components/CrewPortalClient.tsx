@@ -1,0 +1,728 @@
+"use client";
+
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { UserCog, Armchair, UserX, UserCheck, Coins, TicketCheck, ShieldAlert, MessageSquare, CheckCircle2, Send, Navigation, Flag, Bus } from "lucide-react";
+import StatCard from "@/components/StatCard";
+import LiveIndicator from "@/components/LiveIndicator";
+import EmptyState from "@/components/EmptyState";
+import PageBanner from "@/components/PageBanner";
+import GisMap from "@/components/GisMap";
+import {
+  activateTripAction,
+  completeTripAction,
+  departTripAction,
+  getActiveTripAction,
+  getBookingByIdAction,
+  getBookingsForMatatuAction,
+  getCrewReportsAction,
+  getQueueStatusAction,
+  getRouteStagesAction,
+  getScheduledBookingsAction,
+  logCrewIncidentAction,
+  updateBookingStatusAction,
+} from "@/lib/actions";
+import { Booking, Matatu, PassengerReport, QueueStatus, Route, RouteStagePoint, ScheduledBooking, Seat, Trip } from "@/lib/types";
+
+const REPORTS_POLL_MS = 20000;
+const QUEUE_POLL_MS = 8000;
+
+const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
+
+interface CrewPortalClientProps {
+  matatus: Matatu[];
+  routes: Route[];
+  token: string;
+}
+
+export default function CrewPortalClient({ matatus, routes, token }: CrewPortalClientProps) {
+  const [selectedMatatu, setSelectedMatatu] = useState<Matatu | null>(matatus[0] || null);
+  const [isBroadcastingGps, setIsBroadcastingGps] = useState(true);
+  // "unavailable" is a first-class, visible state — the crew has to be able
+  // to tell that nothing is being tracked. There is deliberately no
+  // "simulated" source; see the broadcast effect below.
+  const [gpsSource, setGpsSource] = useState<"device" | "acquiring" | "unavailable" | "idle">("idle");
+
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [scheduledBookings, setScheduledBookings] = useState<ScheduledBooking[]>([]);
+  const [isPending, startTransition] = useTransition();
+
+  const [liveReports, setLiveReports] = useState<PassengerReport[]>([]);
+
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [scannedTicket, setScannedTicket] = useState<Booking | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
+
+  const [incidentLocation, setIncidentLocation] = useState("");
+  const [incidentReport, setIncidentReport] = useState("");
+  const [incidentSent, setIncidentSent] = useState(false);
+  const [incidentError, setIncidentError] = useState<string | null>(null);
+
+  const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
+  const [routeStages, setRouteStages] = useState<RouteStagePoint[]>([]);
+  const [originStageId, setOriginStageId] = useState("");
+  const [destinationStageId, setDestinationStageId] = useState("");
+  const [tripError, setTripError] = useState<string | null>(null);
+  // Optional headcount logged when a trip completes — the real-ridership
+  // counterpart to app bookings (see backend/app/models.py's Trip.
+  // passenger_count comment). Left blank is a valid choice, not an error.
+  const [passengerCountInput, setPassengerCountInput] = useState("");
+  const [isTripPending, startTripTransition] = useTransition();
+
+  const routeById = useMemo(() => new Map(routes.map((r) => [r.id, r])), [routes]);
+
+  const refreshBookings = () => {
+    if (!selectedMatatu) return;
+    getBookingsForMatatuAction(selectedMatatu.id).then(setBookings);
+    getScheduledBookingsAction(selectedMatatu.id).then(setScheduledBookings);
+  };
+
+  useEffect(() => {
+    refreshBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMatatu]);
+
+  // Live passenger requests & complaints for the active vehicle — polled
+  // rather than pushed, since reports don't have a dedicated WS channel yet.
+  useEffect(() => {
+    if (!selectedMatatu) return;
+    let cancelled = false;
+
+    const poll = () => {
+      getCrewReportsAction(selectedMatatu.regNumber).then((reports) => {
+        if (!cancelled) setLiveReports(reports);
+      });
+    };
+
+    poll();
+    const interval = setInterval(poll, REPORTS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selectedMatatu]);
+
+  // Trip: load the vehicle's own stage list + whatever trip is already
+  // active whenever the crew switches vehicles.
+  useEffect(() => {
+    if (!selectedMatatu) return;
+    let cancelled = false;
+    setTripError(null);
+    setOriginStageId("");
+    setDestinationStageId("");
+    Promise.all([
+      getRouteStagesAction(selectedMatatu.routeId),
+      getActiveTripAction(selectedMatatu.id),
+    ]).then(([stages, trip]) => {
+      if (cancelled) return;
+      setRouteStages(stages);
+      setActiveTrip(trip);
+      setQueueStatus(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMatatu]);
+
+  // Queue position only matters once a trip exists — polled so "n vehicles
+  // ahead of you" stays live without the crew refreshing the page.
+  useEffect(() => {
+    if (!selectedMatatu || !activeTrip) return;
+    let cancelled = false;
+    const poll = () => {
+      getQueueStatusAction(selectedMatatu.id).then((status) => {
+        if (!cancelled) setQueueStatus(status);
+      });
+    };
+    poll();
+    const interval = setInterval(poll, QUEUE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selectedMatatu, activeTrip]);
+
+  const handleActivateTrip = () => {
+    if (!selectedMatatu || !originStageId || !destinationStageId) return;
+    if (originStageId === destinationStageId) {
+      setTripError("Pick two different stages.");
+      return;
+    }
+    setTripError(null);
+    startTripTransition(async () => {
+      const result = await activateTripAction({
+        matatuId: selectedMatatu.id,
+        originStageId,
+        destinationStageId,
+      });
+      if (result.error) {
+        setTripError(result.error);
+        return;
+      }
+      setActiveTrip(result.trip || null);
+    });
+  };
+
+  const handleDepartTrip = () => {
+    if (!activeTrip) return;
+    setTripError(null);
+    startTripTransition(async () => {
+      const result = await departTripAction(activeTrip.id);
+      if (result.error) {
+        setTripError(result.error);
+        return;
+      }
+      setActiveTrip(result.trip || null);
+    });
+  };
+
+  const handleCompleteTrip = () => {
+    if (!activeTrip) return;
+    setTripError(null);
+    const trimmed = passengerCountInput.trim();
+    const passengerCount = trimmed ? Number(trimmed) : undefined;
+    if (trimmed && (!Number.isInteger(passengerCount) || passengerCount! < 0)) {
+      setTripError("Passenger count must be a whole number, 0 or more.");
+      return;
+    }
+    startTripTransition(async () => {
+      const result = await completeTripAction(activeTrip.id, passengerCount);
+      if (result.error) {
+        setTripError(result.error);
+        return;
+      }
+      setActiveTrip(null);
+      setQueueStatus(null);
+      setPassengerCountInput("");
+    });
+  };
+
+  const takenSeatMap = useMemo(() => {
+    const map = new Map<number, Booking>();
+    bookings
+      .filter((b) => b.status === "CONFIRMED")
+      .forEach((b) => b.seatNumbers.forEach((seatId) => map.set(seatId, b)));
+    return map;
+  }, [bookings]);
+
+  const currentSeats: Seat[] = selectedMatatu
+    ? Array.from({ length: selectedMatatu.capacity }, (_, i) => {
+        const id = i + 1;
+        const route = routeById.get(selectedMatatu.routeId);
+        return {
+          id,
+          label: `S${id}`,
+          isOccupied: takenSeatMap.has(id),
+          fareKes: route?.fareKes || 0,
+        };
+      })
+    : [];
+
+  const fullSeatsCount = currentSeats.filter((s) => s.isOccupied).length;
+  const emptySeatsCount = selectedMatatu ? selectedMatatu.capacity - fullSeatsCount : 0;
+  const totalCollectedKes = bookings
+    .filter((b) => b.status === "CONFIRMED" || b.status === "USED")
+    .reduce((sum, b) => sum + b.fareKes, 0);
+
+  // Stream live GPS to the passenger map — real device location only.
+  //
+  // There is deliberately no simulated fallback here. The payload carries no
+  // provenance field, so by the time a position reaches Redis
+  // (telemetry:vehicle:*) and the public passenger map it is
+  // indistinguishable from a real fix: faking one shows commuters a vehicle
+  // at a place it has never been. This is the same rule the officer channel
+  // already documents (backend/app/routes/telemetry.py, OnPatrolToggle.tsx)
+  // — no fix means nothing is broadcast, and the crew is told so.
+  useEffect(() => {
+    if (!isBroadcastingGps || !selectedMatatu) return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let watchId: number | null = null;
+    let cancelled = false;
+    let attempt = 0;
+
+    const routeCode = routeById.get(selectedMatatu.routeId)?.code || "N/A";
+
+    const send = (lat: number, lng: number, bearing: number, speed: number) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            matatu_id: selectedMatatu.id,
+            reg_number: selectedMatatu.regNumber,
+            route_code: routeCode,
+            lat,
+            lng,
+            bearing,
+            speed,
+          })
+        );
+      }
+    };
+
+    const startDeviceGeolocation = () => {
+      if (!("geolocation" in navigator)) {
+        setGpsSource("unavailable");
+        return;
+      }
+      setGpsSource("acquiring");
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGpsSource("device");
+          send(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords.heading || 0,
+            Math.round((pos.coords.speed || 0) * 3.6)
+          );
+        },
+        // Permission denied, or the fix timed out: broadcast nothing and say
+        // so. The watch stays registered, so a later fix recovers on its own.
+        () => setGpsSource("unavailable"),
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
+      );
+    };
+
+    const connect = () => {
+      if (cancelled || !token) return;
+      ws = new WebSocket(`${WS_BASE_URL}/api/telemetry/ws/crew/${selectedMatatu.id}?token=${encodeURIComponent(token)}`);
+      ws.onopen = () => {
+        attempt = 0;
+        startDeviceGeolocation();
+      };
+      ws.onclose = () => {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        // Nothing is reaching the map while the socket is down — don't keep
+        // showing "Device GPS Live" through the reconnect backoff.
+        setGpsSource("idle");
+        if (cancelled) return;
+        const delay = Math.min(1000 * 2 ** attempt, 15000);
+        attempt += 1;
+        reconnectTimeout = setTimeout(connect, delay);
+      };
+      ws.onerror = () => ws?.close();
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      ws?.close();
+      setGpsSource("idle");
+    };
+  }, [isBroadcastingGps, selectedMatatu, routeById, token]);
+
+  const handleValidateTicket = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticketSearch) return;
+    setTicketError(null);
+    startTransition(async () => {
+      const result = await getBookingByIdAction(ticketSearch.trim().toUpperCase());
+      if (result.error) {
+        setTicketError(result.error);
+        setScannedTicket(null);
+        return;
+      }
+      setScannedTicket(result.booking || null);
+    });
+  };
+
+  const handleMarkBoarded = () => {
+    if (!scannedTicket) return;
+    startTransition(async () => {
+      const result = await updateBookingStatusAction(scannedTicket.id, "USED");
+      if (result.booking) {
+        setScannedTicket(result.booking);
+        refreshBookings();
+      }
+    });
+  };
+
+  const handleSendIncident = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!incidentReport || !incidentLocation || !selectedMatatu) return;
+    setIncidentError(null);
+    startTransition(async () => {
+      const result = await logCrewIncidentAction({
+        matatuId: selectedMatatu.id,
+        location: incidentLocation,
+        description: incidentReport,
+      });
+      if (result.error) {
+        setIncidentError(result.error);
+        return;
+      }
+      setIncidentSent(true);
+      setTimeout(() => {
+        setIncidentReport("");
+        setIncidentLocation("");
+        setIncidentSent(false);
+      }, 2500);
+    });
+  };
+
+  const gpsLabel =
+    !isBroadcastingGps ? "OFF" :
+    gpsSource === "device" ? "Device GPS Live" :
+    gpsSource === "unavailable" ? "Unavailable — Not Tracked" :
+    "Connecting…";
+
+  if (!selectedMatatu) {
+    return (
+      <div className="card">
+        <EmptyState
+          title="No active vehicles assigned to your Operator"
+          hint="Once your Operator onboards a vehicle and it's marked active, it will appear here for you to drive."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageBanner
+        icon={UserCog}
+        eyebrow="Nairobi City County · Crew Dashboard"
+        title="Driver & Conductor Live Dashboard"
+        subtitle="Manage seat occupancy, stream live GPS to the passenger app, validate tickets, and report incidents."
+        action={
+          <>
+            <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/15">
+              <LiveIndicator
+                label={`GPS: ${gpsLabel}`}
+                state={
+                  !isBroadcastingGps || gpsSource === "unavailable"
+                    ? "offline"
+                    : gpsSource === "device"
+                      ? "live"
+                      : "connecting"
+                }
+                className="text-white normal-case tracking-normal font-bold"
+              />
+              <button
+                onClick={() => setIsBroadcastingGps(!isBroadcastingGps)}
+                className="rounded px-2 py-0.5 text-[10px] font-extrabold bg-white/10 hover:bg-white/20 ml-1"
+              >
+                Toggle
+              </button>
+            </div>
+
+            <select
+              value={selectedMatatu.id}
+              onChange={(e) => {
+                const m = matatus.find((m) => m.id === e.target.value) || null;
+                setSelectedMatatu(m);
+                setScannedTicket(null);
+              }}
+              className="rounded-lg border-none bg-white/95 px-3 py-2 text-xs font-bold text-county-black focus:outline-none focus:ring-2 focus:ring-county-yellow/60"
+            >
+              {matatus.map((m) => (
+                <option key={m.id} value={m.id}>{m.regNumber} ({m.capacity}-Seater)</option>
+              ))}
+            </select>
+          </>
+        }
+      />
+
+      {isBroadcastingGps && gpsSource === "unavailable" && (
+        <div
+          role="status"
+          className="card p-4 border-county-red/40 bg-county-red/10 flex items-start gap-3"
+        >
+          <ShieldAlert size={18} strokeWidth={2} className="text-county-red shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-county-red">
+              GPS unavailable — your vehicle is not being tracked
+            </p>
+            <p className="text-xs text-black/60">
+              Passengers cannot see this vehicle on the live map, and no position is being
+              recorded. Allow location access for this site (or move somewhere with a clearer
+              view of the sky), then toggle GPS off and on again.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Total Vehicle Seats" value={selectedMatatu.capacity} hint="Licensed seating capacity" icon={Armchair} />
+        <StatCard label="Full / Occupied Seats" value={fullSeatsCount} accent="red" hint="Confirmed passengers on board" icon={UserX} />
+        <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" icon={UserCheck} />
+        <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" icon={Coins} />
+      </div>
+
+      {scheduledBookings.filter((s) => s.status === "PENDING" || s.status === "CONFIRMED").length > 0 && (
+        <div className="card p-5 space-y-3">
+          <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+            <TicketCheck size={15} strokeWidth={2} className="text-county-ink/50" />
+            Today's Scheduled Passengers
+          </h3>
+          <p className="text-xs text-black/50 -mt-2">Advance bookings for this vehicle — hold these seats.</p>
+          <div className="space-y-1.5">
+            {scheduledBookings
+              .filter((s) => s.status === "PENDING" || s.status === "CONFIRMED")
+              .map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 text-xs py-1.5 border-b border-black/5 last:border-0">
+                  <div>
+                    <span className="font-bold text-county-black">{s.passengerName}</span>
+                    <span className="text-black/40"> · {s.seatNumbers.length} seat{s.seatNumbers.length !== 1 ? "s" : ""}</span>
+                    {s.accessibilityFlag && <span className="badge bg-county-blue/10 text-county-blue font-bold ml-1.5">Accessible</span>}
+                  </div>
+                  <span className="font-semibold text-black/60">{new Date(s.scheduledDeparture).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card p-5 space-y-4">
+        <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+          <Navigation size={15} strokeWidth={2} className="text-county-ink/50" />
+          Trip
+        </h3>
+
+        {tripError && (
+          <div className="bg-county-red/10 text-county-red border border-county-red/30 rounded-lg p-2.5 text-xs font-semibold">
+            {tripError}
+          </div>
+        )}
+
+        {!activeTrip ? (
+          <div className="space-y-3">
+            <p className="text-xs text-black/50">
+              Tell the system where you're headed. This keeps you off routes going the wrong way, and puts you in the pickup queue.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-bold text-black/50 block mb-1">Starting from</label>
+                <select value={originStageId} onChange={(e) => setOriginStageId(e.target.value)} className="input text-xs w-full">
+                  <option value="">Select a stage…</option>
+                  {routeStages.map((s) => (
+                    <option key={s.stageId} value={s.stageId}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-black/50 block mb-1">Heading to</label>
+                <select value={destinationStageId} onChange={(e) => setDestinationStageId(e.target.value)} className="input text-xs w-full">
+                  <option value="">Select a stage…</option>
+                  {routeStages.map((s) => (
+                    <option key={s.stageId} value={s.stageId}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={handleActivateTrip}
+              disabled={isTripPending || !originStageId || !destinationStageId}
+              className="btn-primary w-full !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Bus size={14} strokeWidth={2} />
+              {isTripPending ? "Starting…" : "Start Trip"}
+            </button>
+          </div>
+        ) : activeTrip.status === "QUEUED" ? (
+          <div className="space-y-3">
+            <div className="bg-county-yellow/10 border border-county-yellow/30 rounded-xl p-4 text-center space-y-1">
+              <p className="text-[11px] font-bold text-black/50 uppercase tracking-wide">Waiting at {activeTrip.originStageName}</p>
+              <p className="text-3xl font-black text-county-black">
+                {queueStatus?.vehiclesAhead ?? "…"}
+              </p>
+              <p className="text-xs font-semibold text-black/60">
+                vehicle{queueStatus?.vehiclesAhead === 1 ? "" : "s"} ahead of you that {queueStatus?.vehiclesAhead === 1 ? "hasn't" : "haven't"} picked yet
+              </p>
+              {queueStatus && (
+                <p className="text-[11px] text-black/40">
+                  {queueStatus.activeOnRoute} vehicle{queueStatus.activeOnRoute === 1 ? "" : "s"} already moving on this route right now
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-black/50 text-center">Heading to {activeTrip.destinationStageName}</p>
+            <button
+              onClick={handleDepartTrip}
+              disabled={isTripPending}
+              className="btn-primary w-full !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Bus size={14} strokeWidth={2} />
+              {isTripPending ? "…" : "I'm Full — Depart"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="bg-county-green/10 border border-county-green/30 rounded-xl p-4 text-center space-y-1">
+              <LiveIndicator label="On the road" state="live" className="mx-auto" />
+              <p className="text-sm font-bold text-county-black">
+                {activeTrip.originStageName} → {activeTrip.destinationStageName}
+              </p>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-black/50 block mb-1">
+                How many passengers rode this trip? <span className="font-normal text-black/35">(optional — helps the county plan routes)</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={passengerCountInput}
+                onChange={(e) => setPassengerCountInput(e.target.value)}
+                placeholder="e.g. 41"
+                className="input text-xs w-full"
+              />
+            </div>
+            <button
+              onClick={handleCompleteTrip}
+              disabled={isTripPending}
+              className="btn-primary w-full !py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Flag size={14} strokeWidth={2} />
+              {isTripPending ? "…" : "Arrived — End Trip"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+          <div className="card p-5 space-y-4">
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <TicketCheck size={15} strokeWidth={2} className="text-county-ink/50" />
+              Commuter Ticket Validator
+            </h3>
+            <form onSubmit={handleValidateTicket} className="flex gap-2">
+              <input
+                type="text"
+                value={ticketSearch}
+                onChange={(e) => setTicketSearch(e.target.value)}
+                placeholder="Enter Ticket ID (e.g. PASS-178481809975)"
+                className="input text-xs"
+              />
+              <button type="submit" className="btn-primary shrink-0 !py-1.5 text-xs font-bold flex items-center gap-1">
+                <TicketCheck size={13} strokeWidth={2} />
+                Verify
+              </button>
+            </form>
+
+            {ticketError && (
+              <div className="bg-county-red/10 text-county-red border border-county-red/30 rounded-lg p-2.5 text-xs font-semibold">
+                {ticketError}
+              </div>
+            )}
+
+            {scannedTicket && (
+              <div className="bg-black/5 rounded-xl p-3.5 space-y-2 text-xs border border-black/10">
+                <div className="flex justify-between items-center border-b border-black/10 pb-1.5">
+                  <span className={`font-bold ${scannedTicket.status === "CONFIRMED" ? "text-county-green" : "text-county-blue"}`}>
+                    {scannedTicket.status === "USED" ? "ALREADY BOARDED" : "TICKET VALIDATED"}
+                  </span>
+                  <span className="font-mono font-extrabold">{scannedTicket.id}</span>
+                </div>
+                <div className="space-y-1 text-black/70">
+                  <div>Passenger: <span className="font-bold text-black">{scannedTicket.passengerName}</span></div>
+                  <div>Seat Number: <span className="font-bold text-county-blue">Seat {scannedTicket.seatNumbers.join(", ")}</span></div>
+                  <div>Route: <span className="font-semibold">{scannedTicket.routeName}</span></div>
+                  <div>Fare Payable to Crew: <span className="font-bold text-county-green">KES {scannedTicket.fareKes}</span></div>
+                </div>
+                {scannedTicket.status === "CONFIRMED" && (
+                  <button onClick={handleMarkBoarded} className="btn-primary w-full !py-1.5 text-xs font-bold flex items-center justify-center gap-1.5">
+                    <CheckCircle2 size={14} strokeWidth={2} />
+                    Mark as Boarded
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="card p-5 space-y-4">
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <ShieldAlert size={15} strokeWidth={2} className="text-county-ink/50" />
+              Alert County Enforcement
+            </h3>
+            <p className="text-xs text-black/50">Direct dispatch line to County Traffic & Enforcement Officers.</p>
+
+            {incidentSent ? (
+              <div className="bg-county-green/10 text-county-green border border-county-green/30 rounded-lg p-3 text-xs font-bold text-center">
+                Incident Alert Sent to County Enforcement!
+              </div>
+            ) : (
+              <form onSubmit={handleSendIncident} className="space-y-3">
+                {incidentError && (
+                  <div className="bg-county-red/10 text-county-red border border-county-red/30 rounded-lg p-2.5 text-xs font-semibold">
+                    {incidentError}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={incidentLocation}
+                  onChange={(e) => setIncidentLocation(e.target.value)}
+                  placeholder="Location (e.g. Langata Rd Junction)"
+                  className="input text-xs"
+                  required
+                />
+                <textarea
+                  rows={3}
+                  value={incidentReport}
+                  onChange={(e) => setIncidentReport(e.target.value)}
+                  placeholder="Describe delay, mechanical failure, or route checkpoint status..."
+                  className="input text-xs"
+                  required
+                />
+                <button type="submit" className="btn-danger w-full !py-2 text-xs font-bold flex items-center justify-center gap-1.5">
+                  <Send size={13} strokeWidth={2} />
+                  Send Rapid Incident Alert
+                </button>
+              </form>
+            )}
+          </div>
+      </div>
+
+      {/* Live Ops: passenger requests/complaints for this vehicle, plus the
+          county-wide live fleet map so crew can see their own position among
+          other vehicles in real time. */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <GisMap />
+        </div>
+
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <MessageSquare size={15} strokeWidth={2} className="text-county-ink/50" />
+              Passenger Requests & Complaints
+            </h3>
+            <LiveIndicator label="Live" state="live" className="text-[10px]" />
+          </div>
+          <p className="text-xs text-black/50 -mt-2">Reports filed against {selectedMatatu.regNumber}, newest first.</p>
+
+          {liveReports.length === 0 ? (
+            <div className="py-8 text-center text-xs text-black/40 italic">
+              No passenger reports for this vehicle right now.
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-96 overflow-y-auto">
+              {liveReports.map((r) => (
+                <div key={r.id} className="p-3 rounded-lg border border-black/10 bg-black/[0.01] text-xs space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-county-black">{r.category}</span>
+                    <span
+                      className={`badge text-[9px] font-extrabold ${
+                        r.status === "PENDING"
+                          ? "bg-amber-100 text-amber-700"
+                          : r.status === "ESCALATED"
+                          ? "bg-county-red/10 text-county-red"
+                          : "bg-county-green/10 text-county-green"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                  </div>
+                  <p className="text-black/60">{r.message}</p>
+                  <p className="text-[10px] text-black/30">{new Date(r.createdAt).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

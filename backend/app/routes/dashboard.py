@@ -23,7 +23,9 @@ async def get_dashboard_stats(
     
     fines_query = select(
         func.count(Fine.id).label("count"),
-        func.coalesce(func.sum(Fine.amount_kes), 0.0).label("value")
+        # 0, not 0.0 — Fine.amount_kes is now NUMERIC; COALESCE(numeric, double precision)
+        # is a Postgres type mismatch, whereas the integer literal coerces cleanly.
+        func.coalesce(func.sum(Fine.amount_kes), 0).label("value")
     ).where(Fine.status == "PENDING")
     
     activity_query = select(ActivityLog).join(Matatu, ActivityLog.matatu_id == Matatu.id).order_by(ActivityLog.timestamp.desc()).limit(5)

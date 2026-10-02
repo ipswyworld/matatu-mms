@@ -1,3 +1,4 @@
+import { FileWarning } from "lucide-react";
 import { getOffenceTypes } from "@/lib/data";
 import PageBanner from "@/components/PageBanner";
 import EnforcementSceneForm from "@/components/EnforcementSceneForm";
@@ -8,6 +9,7 @@ export default async function EnforcementScenePage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={FileWarning}
         eyebrow="Nairobi City County · Enforcement"
         title="Report Offence at Scene"
         subtitle="For Arresting Officers — plate number, offence, and action taken. The fine locks automatically from the offence you select."

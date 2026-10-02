@@ -1,0 +1,69 @@
+# Argo CD Application — the actual GitOps link between this repo and a
+# target cluster. Tracks `master` specifically, not `deploy/render-demo`:
+# the latter is what Render's own git-push auto-deploy watches for the
+# current live demo (a completely different deploy path to a completely
+# different target), while `master` is the branch
+# .github/workflows/ci.yml's build-and-push job actually builds and pushes
+# images from ("build once, promote the same artefact" —
+# ARCHITECTURE_DECISIONS.md §14.4). A Kubernetes/Argo CD deployment is a
+# second, independent target for the same mainline codebase, not a
+# replacement for the Render demo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: matatu-mms
+  namespace: argocd
+  finalizers:
+    # Ensures `argocd app delete` also removes everything this Application
+    # created, rather than orphaning Deployments/Services in the cluster.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: matatu-mms
+
+  source:
+    repoURL: https://github.com/ipswyworld/matatu-mms.git
+    targetRevision: master
+    path: infra/kubernetes
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: matatu-mms
+
+  syncPolicy:
+    automated:
+      # Pruning is safe here specifically because this Application's scope
+      # is exactly one Kustomize base with no manually-applied extras
+      # coexisting in the same namespace (secrets.example.yaml/derived
+      # secrets are deliberately excluded from kustomization.yaml's
+      # resources — see that file — so pruning never touches them).
+      prune: true
+      # Reverts a manual `kubectl edit` back to what git says within
+      # minutes. This is meant to be true — the CI job that updates
+      # kustomization.yaml's image tags (update-gitops-manifests) is the
+      # only intended way a running image changes, not someone free-handing
+      # `kubectl set image` during an incident. If that ever needs to be a
+      # supported escape hatch, disable selfHeal deliberately at that
+      # point rather than fighting it silently.
+      selfHeal: true
+    syncOptions:
+      # False, deliberately: namespace.yaml already declares the Namespace
+      # (plus its ResourceQuota/LimitRange) as a resource this Application
+      # manages directly. Argo CD's own CreateNamespace=true is for the
+      # opposite situation — no Namespace manifest in the source at all —
+      # and turning it on here would mean two different mechanisms both
+      # trying to own the same object.
+      - CreateNamespace=false
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  # Argo CD's own drift/health view already reduces most manual diffing —
+  # revisionHistoryLimit just bounds how many old ReplicaSets/Application
+  # revisions it keeps around for rollback, matching the same instinct
+  # behind backend.yaml's Deployment-level revisionHistoryLimit: 5.
+  revisionHistoryLimit: 10

@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import os
 import sys
 import shutil
@@ -6,13 +7,28 @@ import httpx
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select
 
-# Set environment variables for testing before imports
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_mms.db"
+# Set environment variables for testing before imports. Defaults to the
+# throwaway SQLite DB (no services needed) but respects a pre-set
+# DATABASE_URL — the Postgres/PostGIS CI integration job (ARCHITECTURE_
+# DECISIONS.md §14.2) exports a real Postgres service-container URL before
+# invoking this script, exercising the exact same boot-smoke suite against
+# the engine actually deployed, not just SQLite.
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_mms.db")
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["WEBHOOK_MAX_RETRIES"] = "1"
+# Distinct from DATABASE_URL/IS_SQLITE: this suite deliberately registers a
+# loopback webhook target (127.0.0.1:9999) to simulate a delivery failure
+# in TEST 8/9, which the webhook SSRF guard (app/security.py, Task 25)
+# would otherwise correctly reject regardless of which database backs the
+# run — that guard's job is exactly to block loopback/private targets, so
+# gating it on the database engine was the wrong signal. TESTING is the
+# right one: "are we deliberately running the test suite," independent of
+# whether that suite happens to run against SQLite or a real Postgres
+# service container (the Postgres/PostGIS CI integration job, Task 12).
+os.environ["TESTING"] = "1"
 
 from app.main import app
-from app.database import Base, engine, get_db
+from app.database import Base, engine, get_db, IS_SQLITE
 from app.models import User, Matatu, Fine, AuditLog, WebhookSubscription, WebhookLog
 from app.auth import get_password_hash
 
@@ -20,17 +36,23 @@ from app.seed import seed_data
 from app.listeners import register_listeners
 
 async def setup_test_db():
-    # Remove existing test DB if any
-    if os.path.exists("./test_mms.db"):
-        os.remove("./test_mms.db")
-        
-    # Re-create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
+    if IS_SQLITE:
+        # Remove existing test DB if any
+        if os.path.exists("./test_mms.db"):
+            os.remove("./test_mms.db")
+        # Re-create tables directly — no Alembic involved for the SQLite
+        # dev/fast-path run.
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    # else: Postgres — the CI job runs `alembic upgrade head` against this
+    # same DATABASE_URL before invoking this script, so the schema already
+    # exists via the real migration chain (the whole point of this path:
+    # prove migrations work against Postgres/PostGIS, not just that the
+    # ORM models can build a schema from scratch).
+
     # Register listeners
     register_listeners()
-        
+
     # Seed data manually
     from app.database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
@@ -38,7 +60,7 @@ async def setup_test_db():
 
 async def cleanup_test_db():
     await engine.dispose()
-    if os.path.exists("./test_mms.db"):
+    if IS_SQLITE and os.path.exists("./test_mms.db"):
         os.remove("./test_mms.db")
 
 async def run_tests():
@@ -129,24 +151,23 @@ async def run_tests():
         assert disputed_fine["status"] == "DISPUTED"
         print(f"  [OK] Fine status successfully disputed.")
 
-        # Test Case 7: M-Pesa Callback Payment Simulation
-        print("\n[TEST 7] Testing M-Pesa Webhook Callback Simulation...")
-        mpesa_payload = {
+        # Test Case 7: NairobiPay Callback Payment Simulation
+        print("\n[TEST 7] Testing NairobiPay Webhook Callback Simulation...")
+        nairobipay_payload = {
             "transaction_type": "Pay Bill",
-            "trans_id": "MPESA100293",
-            "trans_time": "20260717143000",
-            "trans_amount": "5000.00",
-            "business_short_code": "123456",
-            "bill_ref_number": fine_id,
-            "msisdn": "254711223344",
-            "first_name": "James",
-            "middle_name": "Mwangi"
+            "transaction_id": "NRBPAY100293",
+            "transaction_time": "20260717143000",
+            "amount": "5000.00",
+            "reference": fine_id,
+            "payer_phone": "254711223344",
+            "payer_name": "James Mwangi"
         }
-        res = await client.post("/api/payments/mpesa-callback", json=mpesa_payload)
-        assert res.status_code == 200, f"Mpesa callback failed: {res.text}"
+        from app.config import NAIROBIPAY_CALLBACK_SECRET
+        res = await client.post(f"/api/payments/nairobipay-callback/{NAIROBIPAY_CALLBACK_SECRET}", json=nairobipay_payload)
+        assert res.status_code == 200, f"NairobiPay callback failed: {res.text}"
         callback_res = res.json()
-        assert callback_res["ResultCode"] == 0
-        print("  [OK] M-Pesa Callback Accepted.")
+        assert callback_res["resultCode"] == 0
+        print("  [OK] NairobiPay Callback Accepted.")
         
         # Verify fine is indeed paid now
         res = await client.get(f"/api/matatus/m-2", headers=sacco_headers)
@@ -188,6 +209,161 @@ async def run_tests():
         logs = res.json()
         assert len(logs) > 0, "No webhook delivery attempts logged!"
         print(f"  [OK] Webhook Log entries found. First delivery error message (expected since URL is mock): {logs[0]['errorMessage']}")
+
+        print("\n[TEST 10] Testing PTCU duty allocation (sectors, postings, publish, broadcast)...")
+        # Covers the path a commander actually walks: a sector has zones, a
+        # month gets an allocation, officers get posted, the sheet is
+        # published, and only then does the officer see it.
+        res = await client.get("/api/duty/sectors", headers=admin_headers)
+        assert res.status_code == 200, f"Sectors unavailable: {res.status_code}"
+        sectors = res.json()
+        assert len(sectors) >= 13, f"Expected the seeded PTCU sectors, got {len(sectors)}"
+        assert any(s["code"] == "5B" for s in sectors), "Sector 5B missing — the sheet does not renumber"
+        print(f"  [OK] {len(sectors)} PTCU sectors seeded, including 5B.")
+
+        res = await client.get("/api/duty/zones", headers=admin_headers, params={"sector_id": "sector-1"})
+        assert res.status_code == 200 and len(res.json()) == 2, "Sector 1 should hold Zones 1 and 2"
+        print("  [OK] Sector -> zone drill-down returns the right zones.")
+
+        today = datetime.date.today()
+        # DutyAllocation has a UNIQUE(year, month) constraint, so a second
+        # run of this suite against a persistent (Postgres) database on the
+        # same calendar month would otherwise fail at creation with a 400 —
+        # this is what made the suite non-idempotent. Clearing this month's
+        # test-created allocation (and everything hanging off it) first
+        # means the suite behaves the same whether the DB was just wiped
+        # (the SQLite dev path) or has last month's/today's earlier run
+        # still sitting in it (the Postgres CI path).
+        from app.models import DutyAllocation, DutyAssignment, Broadcast, BroadcastRecipient
+        async with AsyncSessionLocal() as cleanup_session:
+            existing = (
+                await cleanup_session.execute(
+                    select(DutyAllocation).where(
+                        DutyAllocation.year == today.year, DutyAllocation.month == today.month
+                    )
+                )
+            ).scalars().first()
+            if existing:
+                await cleanup_session.execute(
+                    DutyAssignment.__table__.delete().where(DutyAssignment.allocation_id == existing.id)
+                )
+                # Scoped to this test's own broadcast subject, not a blanket
+                # wipe of the Broadcast table — a shared Postgres CI database
+                # could hold rows from other runs or callers.
+                broadcast_ids = (
+                    await cleanup_session.execute(
+                        select(Broadcast.id).where(Broadcast.subject == "Parade 0600")
+                    )
+                ).scalars().all()
+                if broadcast_ids:
+                    await cleanup_session.execute(
+                        BroadcastRecipient.__table__.delete().where(
+                            BroadcastRecipient.broadcast_id.in_(broadcast_ids)
+                        )
+                    )
+                    await cleanup_session.execute(
+                        Broadcast.__table__.delete().where(Broadcast.id.in_(broadcast_ids))
+                    )
+                await cleanup_session.execute(
+                    DutyAllocation.__table__.delete().where(DutyAllocation.id == existing.id)
+                )
+                await cleanup_session.commit()
+
+        res = await client.post(
+            "/api/duty/allocations",
+            json={"year": today.year, "month": today.month, "referenceNo": "TEST/PTCU/1"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 201, f"Allocation create failed: {res.text[:200]}"
+        allocation = res.json()
+        assert allocation["status"] == "DRAFT"
+        print(f"  [OK] Monthly allocation created as DRAFT ({allocation['id']}).")
+
+        res = await client.get("/api/duty/officers", headers=admin_headers)
+        assert res.status_code == 200 and res.json(), "No enforcement officers on the roster"
+        test_officer = next(o for o in res.json() if o["role"] == "ARRESTING_OFFICER")
+        assert test_officer["dutyStatus"] == "ON_DUTY", "Officers should default to ON_DUTY"
+
+        res = await client.post(
+            f"/api/duty/allocations/{allocation['id']}/assignments",
+            json={"officerId": test_officer["id"], "zoneId": "ptcu-zone-1",
+                  "workStation": "Khoja / Kilome Road", "shift": "DAY", "coverage": "DAILY"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 201, f"Posting failed: {res.text[:200]}"
+        assert res.json()["sectorId"] == "sector-1", "Posting should inherit its zone's sector"
+        print("  [OK] Officer posted to a zone; sector denormalized from the zone.")
+
+        res = await client.post(
+            f"/api/duty/allocations/{allocation['id']}/assignments",
+            json={"officerId": test_officer["id"], "zoneId": "ptcu-zone-2",
+                  "workStation": "Timboroa", "shift": "DAY", "coverage": "DAILY"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 400, "Double-posting the same officer on one shift must be refused"
+        print("  [OK] Double-posting on the same shift refused.")
+
+        officer_login = await client.post(
+            "/api/auth/login",
+            json={"email": "arresting.officer@nairobi.go.ke", "password": "arrest123"},
+        )
+        assert officer_login.status_code == 200
+        officer_headers = {"Authorization": f"Bearer {officer_login.json()['accessToken']}"}
+
+        res = await client.get("/api/duty/my-duty", headers=officer_headers)
+        assert res.status_code == 200 and res.json()["today"] == [], \
+            "A DRAFT allocation must not be visible to officers"
+        print("  [OK] Draft allocation correctly hidden from the officer.")
+
+        res = await client.post(f"/api/duty/allocations/{allocation['id']}/publish", headers=admin_headers)
+        assert res.status_code == 200 and res.json()["status"] == "PUBLISHED", res.text[:200]
+
+        res = await client.get("/api/duty/my-duty", headers=officer_headers)
+        my_duty = res.json()
+        assert len(my_duty["today"]) == 1, f"Officer should see their posting once published: {my_duty}"
+        assert my_duty["today"][0]["workStation"] == "Khoja / Kilome Road"
+        print("  [OK] Published allocation visible to the posted officer.")
+
+        res = await client.patch(
+            f"/api/duty/officers/{test_officer['id']}/status",
+            json={"dutyStatus": "LEAVE", "dutyStatusNote": "Annual leave"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 200 and res.json()["dutyStatus"] == "LEAVE"
+        res = await client.get("/api/duty/my-duty", headers=officer_headers)
+        assert res.json()["onDutyToday"] is False, \
+            "An officer on leave is not on duty, even holding a posting"
+        print("  [OK] Duty status (LEAVE) overrides an active posting.")
+
+        # Restore ON_DUTY — otherwise a second run against a persistent
+        # database would fail this test's own earlier assertion that the
+        # officer defaults to ON_DUTY (line ~242 above).
+        res = await client.patch(
+            f"/api/duty/officers/{test_officer['id']}/status",
+            json={"dutyStatus": "ON_DUTY"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 200 and res.json()["dutyStatus"] == "ON_DUTY"
+
+        res = await client.post(
+            "/api/broadcasts",
+            json={"subject": "Parade 0600", "body": "Report to Khoja at 0600.",
+                  "audience": "ZONE", "zoneId": "ptcu-zone-1", "priority": "URGENT"},
+            headers=admin_headers,
+        )
+        assert res.status_code == 201, f"Broadcast failed: {res.text[:200]}"
+        assert res.json()["recipientCount"] == 1, res.json()
+        res = await client.get("/api/broadcasts/mine", headers=officer_headers)
+        assert len(res.json()) == 1 and res.json()[0]["readAt"] is None, res.json()
+        print("  [OK] Zone broadcast delivered to the posted officer, unread.")
+
+        res = await client.post(
+            "/api/broadcasts",
+            json={"subject": "nope", "body": "x", "audience": "ALL"},
+            headers=officer_headers,
+        )
+        assert res.status_code == 403, "An officer must not be able to broadcast"
+        print("  [OK] Broadcast permission enforced (officer refused).")
 
     print("\n==================================================")
     print("        ALL AUTOMATED TESTS PASSED SUCCESSFULLY!  ")

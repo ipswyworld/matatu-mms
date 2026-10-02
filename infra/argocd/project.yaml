@@ -1,0 +1,42 @@
+# Argo CD AppProject for matatu-mms. Scopes what the Application below
+# (application.yaml) is allowed to do, independently of whatever else
+# might later run on the same Argo CD instance/cluster — a
+# misconfigured or compromised matatu-mms Application still can't touch
+# another project's namespace or source repo.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: matatu-mms
+  namespace: argocd
+spec:
+  description: Nairobi County's Mji-Move platform — backend, control plane, worker, and three frontends.
+
+  sourceRepos:
+    - https://github.com/ipswyworld/matatu-mms.git
+
+  destinations:
+    # Restricted to this one namespace deliberately (matches the "small
+    # team, minimal footprint" reasoning throughout infra/kubernetes/
+    # README.md) — everything this system deploys already lives in
+    # `matatu-mms` (namespace.yaml). Tighten `server` to the actual target
+    # cluster's API server URL once one is provisioned; `*` here is a
+    # placeholder for "whichever cluster this Argo CD instance manages",
+    # not an invitation to expand scope.
+    - namespace: matatu-mms
+      server: "*"
+
+  # Namespace itself is cluster-scoped (namespace.yaml creates it), so it
+  # must be explicitly whitelisted here or Argo CD refuses to sync it —
+  # everything else this project deploys (Deployment, Service, Ingress,
+  # Job, HPA, PDB, ResourceQuota, LimitRange) is namespaced and covered by
+  # the `destinations` scoping above instead.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  orphanedResources:
+    warn: true

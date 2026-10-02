@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { ArrowLeft, ClipboardList, Loader2 } from "lucide-react";
 import { addActivityAction } from "@/lib/actions";
 
 // Mirrors seed data ids from lib/data.ts for the client-side select.
@@ -18,7 +19,8 @@ const MATATUS = [
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn-primary" disabled={pending}>
+    <button type="submit" className="btn-primary flex items-center justify-center gap-2" disabled={pending}>
+      {pending ? <Loader2 size={16} className="animate-spin" /> : <ClipboardList size={16} strokeWidth={2} />}
       {pending ? "Saving..." : "Log activity"}
     </button>
   );
@@ -39,9 +41,15 @@ function NewActivityForm() {
 
   return (
     <div className="max-w-lg">
-      <Link href="/activity" className="text-xs font-semibold text-county-green hover:underline">← Back to log</Link>
+      <Link href="/activity" className="text-xs font-semibold text-county-green hover:underline inline-flex items-center gap-1">
+        <ArrowLeft size={13} strokeWidth={2.5} />
+        Back to log
+      </Link>
       <div className="card p-6 mt-3">
-        <h2 className="font-bold mb-4">Log vehicle activity</h2>
+        <h2 className="font-bold mb-4 flex items-center gap-2">
+          <ClipboardList size={18} strokeWidth={2} className="text-county-green" />
+          Log vehicle activity
+        </h2>
         <form action={formAction} className="space-y-4">
           <div>
             <label className="label" htmlFor="matatuId">Vehicle</label>

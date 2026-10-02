@@ -1,7 +1,7 @@
 import csv
 import datetime
 import io
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,10 +17,13 @@ from app.schemas import (
     MatatuDetailResponse,
     BulkImportResult,
     BulkImportRowError,
+    validate_reg_number,
 )
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.abac import sacco_scope_query, enforce_own_sacco
+from app.scheduled_booking_scheduler import reassign_scheduled_bookings_for_matatu
 
 router = APIRouter(prefix="/api/matatus", tags=["Matatus"])
 
@@ -31,10 +34,8 @@ async def get_matatus(
 ):
     query = select(Matatu).options(selectinload(Matatu.sacco), selectinload(Matatu.route))
     
-    # Sacco Operators and Crew only see vehicles belonging to their own Sacco
-    if current_user.role in ("SACCO_OPERATOR", "CREW"):
-        query = query.where(Matatu.sacco_id == current_user.sacco_id)
-        
+    query = sacco_scope_query(current_user, query, Matatu.sacco_id)
+
     result = await db.execute(query)
     matatus = result.scalars().all()
     
@@ -50,6 +51,14 @@ async def create_matatu(
     current_user: User = Depends(requires_permission("add_matatu")),
     db: AsyncSession = Depends(get_db)
 ):
+    # add_matatu is only ever granted to SACCO_OPERATOR (app/rbac.py) — every
+    # caller here is onboarding into their own fleet, never another
+    # operator's. payload.sacco_id was previously trusted as-is, which let
+    # any operator onboard a vehicle under an arbitrary Sacco ID just by
+    # putting a different one in the request body; enforce it matches their
+    # own the same way every other write in this router does.
+    enforce_own_sacco(current_user, payload.sacco_id, "You can only onboard vehicles under your own Sacco.")
+
     # Verify Sacco exists
     sacco_result = await db.execute(select(Sacco).where(Sacco.id == payload.sacco_id))
     sacco = sacco_result.scalars().first()
@@ -61,10 +70,7 @@ async def create_matatu(
     if not route_result.scalars().first():
         raise HTTPException(status_code=400, detail="Invalid Route ID")
 
-    # Generate incremental/unique ID
-    count_result = await db.execute(select(Matatu))
-    total_count = len(count_result.scalars().all())
-    matatu_id = f"m-{1000 + total_count + random.randint(1, 99)}"
+    matatu_id = f"m-{uuid.uuid4().hex[:8]}"
 
     new_matatu = Matatu(
         id=matatu_id,
@@ -74,7 +80,7 @@ async def create_matatu(
         terminal_segment=payload.terminal_segment or f"{sacco.name}: CBD-Terminal Stage",
         capacity=payload.capacity,
         status=payload.status or "ACTIVE",
-        created_at=datetime.date.today().isoformat(),
+        created_at=datetime.datetime.now(datetime.timezone.utc),
         driver_name=payload.driver_name,
         driver_license=payload.driver_license,
         driver_phone=payload.driver_phone,
@@ -255,9 +261,6 @@ async def bulk_import_matatus(
     sacco_result = await db.execute(select(Sacco).where(Sacco.id == sacco_id))
     sacco = sacco_result.scalars().first()
 
-    count_result = await db.execute(select(Matatu))
-    total_count = len(count_result.scalars().all())
-
     created: List[Matatu] = []
     errors: List[BulkImportRowError] = []
 
@@ -283,14 +286,17 @@ async def bulk_import_matatus(
             errors.append(BulkImportRowError(row=idx, reg_number=row.get("reg_number"), missing_fields=missing, message="Missing or invalid: " + ", ".join(missing)))
             continue
 
-        reg_number = row["reg_number"].upper().strip()
+        try:
+            reg_number = validate_reg_number(row["reg_number"])
+        except ValueError as e:
+            errors.append(BulkImportRowError(row=idx, reg_number=row.get("reg_number"), missing_fields=[], message=str(e)))
+            continue
         existing = await db.execute(select(Matatu).where(Matatu.reg_number == reg_number))
         if existing.scalars().first():
             errors.append(BulkImportRowError(row=idx, reg_number=reg_number, missing_fields=[], message=f"A vehicle with plate {reg_number} is already registered."))
             continue
 
-        total_count += 1
-        matatu_id = f"m-{1000 + total_count + random.randint(1, 99)}"
+        matatu_id = f"m-{uuid.uuid4().hex[:8]}"
         new_matatu = Matatu(
             id=matatu_id,
             reg_number=reg_number,
@@ -299,7 +305,7 @@ async def bulk_import_matatus(
             terminal_segment=row.get("terminal_segment") or (f"{sacco.name}: CBD-Terminal Stage" if sacco else "CBD-Terminal Stage"),
             capacity=capacity_value,
             status="REGISTRATION_PENDING",
-            created_at=datetime.date.today().isoformat(),
+            created_at=datetime.datetime.now(datetime.timezone.utc),
             driver_name=row.get("driver_name"),
             driver_license=row.get("driver_license"),
             driver_phone=row.get("driver_phone"),
@@ -338,8 +344,7 @@ async def remove_matatu(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu not found")
 
-    if current_user.role == "SACCO_OPERATOR" and matatu.sacco_id != current_user.sacco_id:
-        raise HTTPException(status_code=403, detail="You can only remove vehicles from your own Sacco.")
+    enforce_own_sacco(current_user, matatu.sacco_id, "You can only remove vehicles from your own Sacco.")
 
     pending_fines = await db.execute(
         select(Fine).where(Fine.matatu_id == id, Fine.status == "PENDING")
@@ -389,8 +394,7 @@ async def get_matatu_by_id(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu not found")
         
-    if current_user.role == "SACCO_OPERATOR" and matatu.sacco_id != current_user.sacco_id:
-        raise HTTPException(status_code=403, detail="Forbidden: This vehicle belongs to another Sacco.")
+    enforce_own_sacco(current_user, matatu.sacco_id, "Forbidden: This vehicle belongs to another Sacco.")
         
     if not matatu.terminal_segment:
         matatu.terminal_segment = f"{matatu.sacco.name if matatu.sacco else 'County'}: CBD Terminal Stage"
@@ -426,6 +430,16 @@ async def update_matatu_status(
             db, resource_type="matatu", resource_id=matatu.id, action="STATUS_CHANGE",
             user_id=current_user.id, old_values={"status": old_status}, new_values={"status": new_status},
         )
+
+        reassigned_count = 0
+        if new_status in ("FLAGGED", "IMPOUNDED", "DECOMMISSIONED"):
+            # Event-driven, not just the next cron tick — a stranded
+            # passenger shouldn't wait up to 5 minutes to learn their
+            # vehicle broke down. Runs in this same transaction so a
+            # partial failure never leaves the status change committed
+            # without its dependent bookings handled.
+            reassigned_count = await reassign_scheduled_bookings_for_matatu(db, matatu.id)
+
         await db.commit()
 
         dispatcher.dispatch("VEHICLE_STATUS_CHANGED", {

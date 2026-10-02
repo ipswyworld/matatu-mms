@@ -21,6 +21,19 @@ DASHBOARD_RELEVANT_EVENTS = {
     "VEHICLE_STATUS_CHANGED",
     "SACCO_LICENSE_RENEWAL_SUBMITTED",
     "SACCO_LICENSE_RENEWAL_DECIDED",
+    # Enforcement case lifecycle — without these, a newly filed case (or a
+    # payment/release/waiver on an existing one) never nudges an open
+    # admin/enforcement dashboard; it only shows up on the next manual
+    # reload. Dispatched from routes/enforcement_cases.py.
+    "ENFORCEMENT_CASE_FILED",
+    "ENFORCEMENT_FINE_PAID",
+    "ENFORCEMENT_CASE_RELEASED",
+    "ENFORCEMENT_CASE_DISPUTED",
+    "ENFORCEMENT_CASE_WAIVED",
+    # Crew "Send Rapid Incident Alert" (routes/activity.py) — without this,
+    # an incident a crew member reports never nudges an open admin
+    # dashboard, only the Sacco operator's own notification toast.
+    "CREW_INCIDENT_ALERT",
 }
 
 DASHBOARD_CHANNEL = "dashboard:broadcast"
@@ -46,7 +59,8 @@ def register_dashboard_broadcast_listeners():
 
 def _token_is_valid(token: str) -> bool:
     try:
-        pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        from app.auth import JWT_AUDIENCE
+        pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], audience=JWT_AUDIENCE)
         return True
     except Exception:
         return False
@@ -61,6 +75,11 @@ async def dashboard_live_updates_ws(websocket: WebSocket, token: str = ""):
     on receiving it — this socket carries no data itself.
     """
     if not _token_is_valid(token):
+        # A custom close code can only travel over a real close frame, which
+        # requires the handshake to have completed — closing before accept()
+        # collapses to a generic HTTP 403 and silently drops the intended
+        # 4401 signal. Accept first so the code actually reaches the client.
+        await websocket.accept()
         await websocket.close(code=4401)
         return
 

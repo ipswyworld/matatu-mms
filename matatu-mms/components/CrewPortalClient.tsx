@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import SeatMap from "@/components/SeatMap";
+import { UserCog, Armchair, UserX, UserCheck, Coins, TicketCheck, ShieldAlert, MessageSquare, CheckCircle2, Send } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import LiveIndicator from "@/components/LiveIndicator";
 import EmptyState from "@/components/EmptyState";
 import PageBanner from "@/components/PageBanner";
+import GisMap from "@/components/GisMap";
 import {
-  createBookingAction,
   getBookingByIdAction,
   getBookingsForMatatuAction,
+  getCrewReportsAction,
   logCrewIncidentAction,
   updateBookingStatusAction,
 } from "@/lib/actions";
-import { Booking, Matatu, Route, Seat } from "@/lib/types";
+import { Booking, Matatu, PassengerReport, Route, Seat } from "@/lib/types";
+
+const REPORTS_POLL_MS = 20000;
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000";
 
@@ -26,10 +29,15 @@ interface CrewPortalClientProps {
 export default function CrewPortalClient({ matatus, routes, token }: CrewPortalClientProps) {
   const [selectedMatatu, setSelectedMatatu] = useState<Matatu | null>(matatus[0] || null);
   const [isBroadcastingGps, setIsBroadcastingGps] = useState(true);
-  const [gpsSource, setGpsSource] = useState<"device" | "simulated" | "idle">("idle");
+  // "unavailable" is a first-class, visible state — the crew has to be able
+  // to tell that nothing is being tracked. There is deliberately no
+  // "simulated" source; see the broadcast effect below.
+  const [gpsSource, setGpsSource] = useState<"device" | "acquiring" | "unavailable" | "idle">("idle");
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isPending, startTransition] = useTransition();
+
+  const [liveReports, setLiveReports] = useState<PassengerReport[]>([]);
 
   const [ticketSearch, setTicketSearch] = useState("");
   const [scannedTicket, setScannedTicket] = useState<Booking | null>(null);
@@ -50,6 +58,26 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   useEffect(() => {
     refreshBookings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMatatu]);
+
+  // Live passenger requests & complaints for the active vehicle — polled
+  // rather than pushed, since reports don't have a dedicated WS channel yet.
+  useEffect(() => {
+    if (!selectedMatatu) return;
+    let cancelled = false;
+
+    const poll = () => {
+      getCrewReportsAction(selectedMatatu.regNumber).then((reports) => {
+        if (!cancelled) setLiveReports(reports);
+      });
+    };
+
+    poll();
+    const interval = setInterval(poll, REPORTS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [selectedMatatu]);
 
   const takenSeatMap = useMemo(() => {
@@ -79,37 +107,21 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
     .filter((b) => b.status === "CONFIRMED" || b.status === "USED")
     .reduce((sum, b) => sum + b.fareKes, 0);
 
-  // Tap a seat: empty seat -> record a cash walk-in booking; occupied seat -> cancel (passenger alighted / correction)
-  const handleToggleSeat = (seatId: number) => {
-    if (!selectedMatatu || isPending) return;
-    const route = routeById.get(selectedMatatu.routeId);
-    const existingBooking = takenSeatMap.get(seatId);
-
-    startTransition(async () => {
-      if (existingBooking) {
-        await updateBookingStatusAction(existingBooking.id, "CANCELLED");
-      } else {
-        await createBookingAction({
-          matatuId: selectedMatatu.id,
-          routeId: selectedMatatu.routeId,
-          passengerName: "Walk-in Passenger (Cash)",
-          phone: "N/A",
-          stageName: selectedMatatu.terminalSegment,
-          seatNumbers: [seatId],
-        });
-      }
-      refreshBookings();
-    });
-  };
-
-  // Stream live GPS to the passenger map: real device location when granted, simulated jitter as fallback
+  // Stream live GPS to the passenger map — real device location only.
+  //
+  // There is deliberately no simulated fallback here. The payload carries no
+  // provenance field, so by the time a position reaches Redis
+  // (telemetry:vehicle:*) and the public passenger map it is
+  // indistinguishable from a real fix: faking one shows commuters a vehicle
+  // at a place it has never been. This is the same rule the officer channel
+  // already documents (backend/app/routes/telemetry.py, OnPatrolToggle.tsx)
+  // — no fix means nothing is broadcast, and the crew is told so.
   useEffect(() => {
     if (!isBroadcastingGps || !selectedMatatu) return;
 
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let watchId: number | null = null;
-    let simInterval: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     let attempt = 0;
 
@@ -131,23 +143,12 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       }
     };
 
-    const startSimulatedMovement = () => {
-      setGpsSource("simulated");
-      simInterval = setInterval(() => {
-        send(
-          -1.2864 + Math.sin(Date.now() / 2000) * 0.005,
-          36.8228 + Math.cos(Date.now() / 2000) * 0.005,
-          Math.floor((Date.now() / 100) % 360),
-          45 + Math.floor(Math.sin(Date.now() / 1000) * 10)
-        );
-      }, 2000);
-    };
-
     const startDeviceGeolocation = () => {
       if (!("geolocation" in navigator)) {
-        startSimulatedMovement();
+        setGpsSource("unavailable");
         return;
       }
+      setGpsSource("acquiring");
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
           setGpsSource("device");
@@ -158,7 +159,9 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
             Math.round((pos.coords.speed || 0) * 3.6)
           );
         },
-        () => startSimulatedMovement(),
+        // Permission denied, or the fix timed out: broadcast nothing and say
+        // so. The watch stays registered, so a later fix recovers on its own.
+        () => setGpsSource("unavailable"),
         { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 }
       );
     };
@@ -172,7 +175,9 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       };
       ws.onclose = () => {
         if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-        if (simInterval) clearInterval(simInterval);
+        // Nothing is reaching the map while the socket is down — don't keep
+        // showing "Device GPS Live" through the reconnect backoff.
+        setGpsSource("idle");
         if (cancelled) return;
         const delay = Math.min(1000 * 2 ** attempt, 15000);
         attempt += 1;
@@ -187,7 +192,6 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
       cancelled = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      if (simInterval) clearInterval(simInterval);
       ws?.close();
       setGpsSource("idle");
     };
@@ -242,12 +246,18 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
     });
   };
 
+  const gpsLabel =
+    !isBroadcastingGps ? "OFF" :
+    gpsSource === "device" ? "Device GPS Live" :
+    gpsSource === "unavailable" ? "Unavailable — Not Tracked" :
+    "Connecting…";
+
   if (!selectedMatatu) {
     return (
       <div className="card">
         <EmptyState
-          title="No active vehicles assigned to your Sacco"
-          hint="Once your Sacco onboards a vehicle and it's marked active, it will appear here for you to drive."
+          title="No active vehicles assigned to your Operator"
+          hint="Once your Operator onboards a vehicle and it's marked active, it will appear here for you to drive."
         />
       </div>
     );
@@ -256,6 +266,7 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={UserCog}
         eyebrow="Nairobi City County · Crew Dashboard"
         title="Driver & Conductor Live Dashboard"
         subtitle="Manage seat occupancy, stream live GPS to the passenger app, validate tickets, and report incidents."
@@ -263,8 +274,14 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
           <>
             <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/15">
               <LiveIndicator
-                label={`GPS: ${isBroadcastingGps ? (gpsSource === "device" ? "Device GPS Live" : gpsSource === "simulated" ? "Simulated (no fix)" : "Connecting…") : "OFF"}`}
-                state={!isBroadcastingGps ? "offline" : gpsSource === "device" ? "live" : "connecting"}
+                label={`GPS: ${gpsLabel}`}
+                state={
+                  !isBroadcastingGps || gpsSource === "unavailable"
+                    ? "offline"
+                    : gpsSource === "device"
+                      ? "live"
+                      : "connecting"
+                }
                 className="text-white normal-case tracking-normal font-bold"
               />
               <button
@@ -292,34 +309,38 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
         }
       />
 
+      {isBroadcastingGps && gpsSource === "unavailable" && (
+        <div
+          role="status"
+          className="card p-4 border-county-red/40 bg-county-red/10 flex items-start gap-3"
+        >
+          <ShieldAlert size={18} strokeWidth={2} className="text-county-red shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-county-red">
+              GPS unavailable — your vehicle is not being tracked
+            </p>
+            <p className="text-xs text-black/60">
+              Passengers cannot see this vehicle on the live map, and no position is being
+              recorded. Allow location access for this site (or move somewhere with a clearer
+              view of the sky), then toggle GPS off and on again.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Vehicle Seats" value={selectedMatatu.capacity} hint="Licensed seating capacity" />
-        <StatCard label="Full / Occupied Seats" value={fullSeatsCount} accent="red" hint="Confirmed passengers on board" />
-        <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" />
-        <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" />
+        <StatCard label="Total Vehicle Seats" value={selectedMatatu.capacity} hint="Licensed seating capacity" icon={Armchair} />
+        <StatCard label="Full / Occupied Seats" value={fullSeatsCount} accent="red" hint="Confirmed passengers on board" icon={UserX} />
+        <StatCard label="Empty Seats Available" value={emptySeatsCount} hint="Available for boarding" icon={UserCheck} />
+        <StatCard label="Trip Revenue Collected" value={`KES ${totalCollectedKes.toLocaleString()}`} hint="Real booking + cash fares" icon={Coins} />
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <div className="card p-4 bg-county-black text-white flex items-center justify-between">
-            <div>
-              <div className="font-extrabold text-sm text-county-yellow uppercase">Tap Seat to Toggle Occupancy</div>
-              <div className="text-xs text-white/60">Empty → records a cash walk-in fare. Occupied → cancels that booking.</div>
-            </div>
-            <span className="badge bg-county-green text-white font-bold">Live Synced</span>
-          </div>
-
-          <SeatMap
-            capacity={selectedMatatu.capacity}
-            seats={currentSeats}
-            onToggleSeatStatus={handleToggleSeat}
-            isCrewMode={true}
-          />
-        </div>
-
-        <div className="space-y-6">
+      <div className="grid md:grid-cols-2 gap-6">
           <div className="card p-5 space-y-4">
-            <h3 className="font-bold text-sm text-county-black">Commuter Ticket Validator</h3>
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <TicketCheck size={15} strokeWidth={2} className="text-county-ink/50" />
+              Commuter Ticket Validator
+            </h3>
             <form onSubmit={handleValidateTicket} className="flex gap-2">
               <input
                 type="text"
@@ -328,7 +349,10 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
                 placeholder="Enter Ticket ID (e.g. PASS-178481809975)"
                 className="input text-xs"
               />
-              <button type="submit" className="btn-primary shrink-0 !py-1.5 text-xs font-bold">Verify</button>
+              <button type="submit" className="btn-primary shrink-0 !py-1.5 text-xs font-bold flex items-center gap-1">
+                <TicketCheck size={13} strokeWidth={2} />
+                Verify
+              </button>
             </form>
 
             {ticketError && (
@@ -352,7 +376,8 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
                   <div>Fare Payable to Crew: <span className="font-bold text-county-green">KES {scannedTicket.fareKes}</span></div>
                 </div>
                 {scannedTicket.status === "CONFIRMED" && (
-                  <button onClick={handleMarkBoarded} className="btn-primary w-full !py-1.5 text-xs font-bold">
+                  <button onClick={handleMarkBoarded} className="btn-primary w-full !py-1.5 text-xs font-bold flex items-center justify-center gap-1.5">
+                    <CheckCircle2 size={14} strokeWidth={2} />
                     Mark as Boarded
                   </button>
                 )}
@@ -361,7 +386,10 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
           </div>
 
           <div className="card p-5 space-y-4">
-            <h3 className="font-bold text-sm text-county-black">Alert County Enforcement</h3>
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <ShieldAlert size={15} strokeWidth={2} className="text-county-ink/50" />
+              Alert County Enforcement
+            </h3>
             <p className="text-xs text-black/50">Direct dispatch line to County Traffic & Enforcement Officers.</p>
 
             {incidentSent ? (
@@ -391,12 +419,61 @@ export default function CrewPortalClient({ matatus, routes, token }: CrewPortalC
                   className="input text-xs"
                   required
                 />
-                <button type="submit" className="btn-danger w-full !py-2 text-xs font-bold">
+                <button type="submit" className="btn-danger w-full !py-2 text-xs font-bold flex items-center justify-center gap-1.5">
+                  <Send size={13} strokeWidth={2} />
                   Send Rapid Incident Alert
                 </button>
               </form>
             )}
           </div>
+      </div>
+
+      {/* Live Ops: passenger requests/complaints for this vehicle, plus the
+          county-wide live fleet map so crew can see their own position among
+          other vehicles in real time. */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <GisMap />
+        </div>
+
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+              <MessageSquare size={15} strokeWidth={2} className="text-county-ink/50" />
+              Passenger Requests & Complaints
+            </h3>
+            <LiveIndicator label="Live" state="live" className="text-[10px]" />
+          </div>
+          <p className="text-xs text-black/50 -mt-2">Reports filed against {selectedMatatu.regNumber}, newest first.</p>
+
+          {liveReports.length === 0 ? (
+            <div className="py-8 text-center text-xs text-black/40 italic">
+              No passenger reports for this vehicle right now.
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-96 overflow-y-auto">
+              {liveReports.map((r) => (
+                <div key={r.id} className="p-3 rounded-lg border border-black/10 bg-black/[0.01] text-xs space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-county-black">{r.category}</span>
+                    <span
+                      className={`badge text-[9px] font-extrabold ${
+                        r.status === "PENDING"
+                          ? "bg-amber-100 text-amber-700"
+                          : r.status === "ESCALATED"
+                          ? "bg-county-red/10 text-county-red"
+                          : "bg-county-green/10 text-county-green"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                  </div>
+                  <p className="text-black/60">{r.message}</p>
+                  <p className="text-[10px] text-black/30">{new Date(r.createdAt).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import datetime
-import random
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,8 @@ from app.schemas import FineResponse, FineCreate, FineStatusUpdate
 from app.auth import get_current_user, requires_permission
 from app.events import dispatcher
 from app.audit import stage_audit_log
+from app.revenue import record_fine_issued, record_fine_paid, record_fine_waived
+from app.abac import sacco_scope_query, enforce_own_sacco, is_own_sacco
 
 router = APIRouter(prefix="/api/fines", tags=["Fines & Penalties"])
 
@@ -21,11 +23,8 @@ async def get_fines(
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Fine).join(Matatu, Fine.matatu_id == Matatu.id).options(selectinload(Fine.matatu))
-    
-    # Filter by Sacco if user is Sacco Operator
-    if current_user.role == "SACCO_OPERATOR":
-        query = query.where(Matatu.sacco_id == current_user.sacco_id)
-        
+    query = sacco_scope_query(current_user, query, Matatu.sacco_id)
+
     result = await db.execute(query)
     fines = result.scalars().all()
     
@@ -51,10 +50,7 @@ async def issue_fine(
     if not matatu:
         raise HTTPException(status_code=404, detail="Matatu vehicle not found")
         
-    # Generate unique ID
-    count_result = await db.execute(select(Fine))
-    total_count = len(count_result.scalars().all())
-    fine_id = f"f-{1000 + total_count + random.randint(1, 99)}"
+    fine_id = f"f-{uuid.uuid4().hex[:8]}"
 
     new_fine = Fine(
         id=fine_id,
@@ -63,8 +59,8 @@ async def issue_fine(
         reason=payload.reason.strip(),
         amount_kes=payload.amount_kes,
         status="PENDING",
-        issued_at=datetime.date.today().isoformat(),
-        due_date=payload.due_date
+        issued_at=datetime.datetime.now(datetime.timezone.utc),
+        due_date=payload.due_date  # already a real date object — Pydantic parses the "YYYY-MM-DD" string
     )
     
     db.add(new_fine)
@@ -72,6 +68,15 @@ async def issue_fine(
         db, resource_type="fine", resource_id=fine_id, action="CREATE",
         user_id=current_user.id,
         new_values={"matatuId": payload.matatu_id, "reason": payload.reason, "amountKes": payload.amount_kes},
+    )
+
+    # Revenue is recognised at issue, not at payment (see app/revenue.py):
+    # the county is legally owed the money the moment the fine is issued, and
+    # the unpaid balance belongs in receivable:fines where it is visible
+    # rather than invisible until someone happens to pay. Staged into the
+    # same transaction as the fine itself.
+    await record_fine_issued(
+        db, fine_id=fine_id, amount=payload.amount_kes, officer_id=current_user.id
     )
     await db.commit()
 
@@ -132,8 +137,7 @@ async def update_fine_status(
         from app.rbac import can
         if not can(current_user.role, "dispute_fine"):
             raise HTTPException(status_code=403, detail="You do not have permission to dispute fines.")
-        if current_user.role == "SACCO_OPERATOR" and fine.matatu.sacco_id != current_user.sacco_id:
-            raise HTTPException(status_code=403, detail="You can only dispute fines belonging to your Sacco.")
+        enforce_own_sacco(current_user, fine.matatu.sacco_id, "You can only dispute fines belonging to your Sacco.")
             
     # WAIVED is a policy override: Admin only
     if new_status == "WAIVED":
@@ -146,7 +150,7 @@ async def update_fine_status(
     if new_status == "PAID":
         from app.rbac import can
         is_admin_override = can(current_user.role, "update_fine_status")
-        is_sacco_payment = can(current_user.role, "pay_fine") and fine.matatu.sacco_id == current_user.sacco_id
+        is_sacco_payment = can(current_user.role, "pay_fine") and is_own_sacco(current_user, fine.matatu.sacco_id)
         if not (is_admin_override or is_sacco_payment):
             raise HTTPException(status_code=403, detail="You can only pay fines belonging to your own Sacco.")
 
@@ -156,6 +160,24 @@ async def update_fine_status(
             db, resource_type="fine", resource_id=fine.id, action="STATUS_CHANGE",
             user_id=current_user.id, old_values={"status": old_status}, new_values={"status": new_status},
         )
+
+        # Status transitions that move money must move it in the books too,
+        # in this same transaction (Readiness List §15). DISPUTED is
+        # deliberately absent: a dispute does not change what is owed, only
+        # whether it is contested — the write-off happens on the outcome.
+        if new_status == "WAIVED":
+            await record_fine_waived(
+                db, fine_id=fine.id, amount=fine.amount_kes, authorized_by=current_user.id
+            )
+        elif new_status == "PAID":
+            # Manual reconciliation path (cash, or an admin override) rather
+            # than the NairobiPay callback. Keyed on the fine id so it cannot
+            # double-post against a later automated payment for the same fine.
+            await record_fine_paid(
+                db, fine_id=fine.id, amount=fine.amount_kes,
+                transaction_id=f"manual:{fine.id}",
+            )
+
         await db.commit()
 
         # Dispatch event

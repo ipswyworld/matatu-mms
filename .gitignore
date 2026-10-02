@@ -1,5 +1,12 @@
 # Secrets — never commit real values
 .env
+# Backstop for every app's .env.local, present or future — the per-app
+# entries below existed for two of three frontend apps and NOT the ops
+# app, which sat one `git add .` away from committing its real
+# OPS_SESSION_SECRET. A single wildcard here means a fourth app can never
+# reintroduce the same gap.
+**/.env.local
+**/.env*.local
 nginx/certs/*.key
 nginx/certs/*.pem
 
@@ -8,12 +15,45 @@ backend/venv/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/mms.db
+backend/test_*.db
 backend/uploads/
+backend/*.log
+backend/.pytest_cache/
 
-# Frontend
+# Frontend — staff app
 matatu-mms/node_modules/
 matatu-mms/.next/
 matatu-mms/.env.local
+matatu-mms/*.log
+
+# Frontend — public app
+matatu-mms-public/node_modules/
+matatu-mms-public/.next/
+matatu-mms-public/.env.local
+matatu-mms-public/*.log
+matatu-mms-public/tsconfig.tsbuildinfo
+
+# Frontend — ops app (was entirely missing: no node_modules, .next, or
+# .env.local exclusion existed for this app at all)
+matatu-mms-ops/node_modules/
+matatu-mms-ops/.next/
+matatu-mms-ops/.env.local
+matatu-mms-ops/*.log
+matatu-mms-ops/tsconfig.tsbuildinfo
+
+# Database backups — real user PII (phone numbers, names, audit trails).
+# Never commit these regardless of how temporary they feel in the moment.
+db-backups/
+backend/mms.db.bak*
+
+# Local tooling and scratch files
+.claude/
+.impeccable/
+graphify-out/
+/1000335176.jpg
+
+# Local dev-server logs at the repo root
+/*-dev.log
 
 # OS/editor
 .DS_Store

@@ -1,9 +1,13 @@
+import type { Metadata } from "next";
+import { MessageSquare, ShieldCheck, MessageSquareWarning, CheckCircle2, Route as RouteIcon } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getRoutes, getMatatus, getReports } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import StatCard from "@/components/StatCard";
 import PageBanner from "@/components/PageBanner";
 import EmptyState from "@/components/EmptyState";
+
+export const metadata: Metadata = { title: "Passenger Feedback & Safety" };
 
 const REPORT_STATUS_STYLES: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-700",
@@ -14,12 +18,21 @@ const REPORT_STATUS_STYLES: Record<string, string> = {
 
 export default async function PassengersPage() {
   const session = readSession()!;
+  const isSacco = session.role === "SACCO_OPERATOR";
 
-  const [routes, matatus, reports] = await Promise.all([
+  const [routes, allMatatus, allReports] = await Promise.all([
     getRoutes(),
     getMatatus(),
     can(session.role, "view_reports") ? getReports() : Promise.resolve([]),
   ]);
+
+  // Scoped once, server-side: an operator's complaint data never leaves the
+  // server for other operators' vehicles — same pattern as /revenue and
+  // /matatus. Route definitions themselves aren't operator-exclusive data,
+  // so `routes` stays unfiltered.
+  const matatus = isSacco ? allMatatus.filter((m) => m.saccoId === session.saccoId) : allMatatus;
+  const myRegNumbers = new Set(matatus.map((m) => m.regNumber));
+  const reports = isSacco ? allReports.filter((r) => r.matatuRegNumber && myRegNumbers.has(r.matatuRegNumber)) : allReports;
 
   const activeMatatus = matatus.filter((m) => m.status === "ACTIVE").length;
   const complianceRating = Math.round((activeMatatus / (matatus.length || 1)) * 100);
@@ -41,16 +54,17 @@ export default async function PassengersPage() {
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={MessageSquare}
         eyebrow="Nairobi City County · Commuter Feedback"
         title="Passenger & Commuter Service Portal"
         subtitle="Real complaints submitted directly from the Passenger Portal app, cross-referenced against fleet and route data."
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Route Fleet Quality" value={`${complianceRating}%`} hint="Overall fleet compliance index" />
-        <StatCard label="Public Complaints (Total)" value={reports.length} accent="red" hint="Submitted via the Passenger Portal" />
-        <StatCard label="Handled Reports" value={handledReports.length} accent="green" hint="Reviewed, escalated, or dismissed" />
-        <StatCard label="Active Routes Monitored" value={routes.length} hint="County matatu corridors" />
+        <StatCard label="Route Fleet Quality" value={`${complianceRating}%`} hint="Overall fleet compliance index" icon={ShieldCheck} />
+        <StatCard label="Public Complaints (Total)" value={reports.length} accent="red" hint="Submitted via the Passenger Portal" icon={MessageSquareWarning} />
+        <StatCard label="Handled Reports" value={handledReports.length} accent="green" hint="Reviewed, escalated, or dismissed" icon={CheckCircle2} />
+        <StatCard label="Active Routes Monitored" value={routes.length} hint="County matatu corridors" icon={RouteIcon} />
       </div>
 
       <div className="card p-5">

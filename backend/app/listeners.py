@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import datetime
 import time
@@ -10,6 +12,7 @@ from app.database import AsyncSessionLocal
 from app.models import WebhookSubscription, WebhookLog
 from app.events import dispatcher
 from app.resilience import CircuitBreaker, CircuitBreakerOpenException, retry_async
+from app import ops_breakers
 from app.config import WEBHOOK_MAX_RETRIES
 
 logger = logging.getLogger("app.listeners")
@@ -54,9 +57,29 @@ async def notification_listener(event_type: str, data: dict):
             f"New booking on {reg_number} by {passenger_name} for seat(s) {seat_numbers}."
         )
 
-async def post_webhook(client: httpx.AsyncClient, url: str, payload: dict) -> httpx.Response:
+async def post_webhook(client: httpx.AsyncClient, url: str, payload: dict, secret: str | None = None) -> httpx.Response:
     """Performs the actual POST request to the subscriber's webhook endpoint."""
-    response = await client.post(url, json=payload, timeout=5.0)
+    # httpx's `json=` kwarg serializes with the stdlib json.dumps and no
+    # custom encoder, which can't handle the datetime/date/Decimal objects
+    # that now flow into event payloads straight from model attributes
+    # (e.g. Fine.issued_at, Fine.amount_kes). Serialize explicitly with
+    # default=str instead, so a real delivery never silently "fails" with
+    # a TypeError before it even reaches the network.
+    body = json.dumps(payload, default=str)
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        # Signs the exact bytes sent, so the subscriber verifies against the
+        # same serialization rather than re-encoding the payload themselves
+        # and risking a mismatch from key ordering/float formatting.
+        headers["X-Webhook-Signature"] = "sha256=" + hmac.new(
+            secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+    response = await client.post(
+        url,
+        content=body,
+        headers=headers,
+        timeout=5.0,
+    )
     response.raise_for_status()
     return response
 
@@ -65,14 +88,15 @@ async def deliver_webhook_with_resilience(
     url: str,
     event_type: str,
     payload: dict,
-    breaker: CircuitBreaker
+    breaker: CircuitBreaker,
+    secret: str | None = None,
 ):
     """Delivers webhook using circuit breaker & retry with exponential backoff."""
-    timestamp = datetime.datetime.utcnow().isoformat() + "Z"
-    
+    timestamp = datetime.datetime.now(datetime.timezone.utc)  # WebhookLog.timestamp is a real DateTime column
+
     async def make_attempt():
         async with httpx.AsyncClient() as client:
-            return await post_webhook(client, url, payload)
+            return await post_webhook(client, url, payload, secret)
 
     status_code = None
     error_message = None
@@ -103,7 +127,13 @@ async def deliver_webhook_with_resilience(
         log = WebhookLog(
             subscription_id=subscription_id,
             event_type=event_type,
-            payload=json.dumps(payload),
+            # default=str: event payloads embed raw model attributes (e.g.
+            # Fine.issued_at, Fine.amount_kes) that are now real datetime/
+            # date/Decimal objects, none of which json.dumps handles by
+            # default. str() is a fine representation for an outbound
+            # webhook log — this is a record of what was sent, not a value
+            # anything parses back.
+            payload=json.dumps(payload, default=str),
             status_code=status_code,
             error_message=error_message,
             attempt=WEBHOOK_MAX_RETRIES,  # Max retries hit or successful retry
@@ -133,10 +163,19 @@ async def webhook_dispatcher_listener(event_type: str, data: dict):
         if event_type not in subscribed_events:
             continue
 
-        # Get or create breaker for this subscription
+        # Get or create breaker for this subscription. Also registered by
+        # name in app/ops_breakers.py so the ops console can see that a
+        # subscription's breaker has tripped and manually hold it open or
+        # closed — previously these existed only in this dict, invisible and
+        # untouchable from outside this module.
         if sub.id not in subscription_breakers:
-            subscription_breakers[sub.id] = CircuitBreaker(failure_threshold=3, recovery_time=30.0)
-        
+            subscription_breakers[sub.id] = ops_breakers.get_or_create(
+                f"webhook:{sub.id}",
+                failure_threshold=3,
+                recovery_time=30.0,
+                description=f"Webhook delivery to subscription {sub.id}",
+            )
+
         breaker = subscription_breakers[sub.id]
         
         payload = {
@@ -149,7 +188,7 @@ async def webhook_dispatcher_listener(event_type: str, data: dict):
 
         # Schedule delivery concurrently in background
         asyncio.create_task(
-            deliver_webhook_with_resilience(sub.id, sub.url, event_type, payload, breaker)
+            deliver_webhook_with_resilience(sub.id, sub.url, event_type, payload, breaker, sub.secret)
         )
 
 # --- Register Listeners with Dispatcher ---

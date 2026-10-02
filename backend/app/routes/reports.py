@@ -1,15 +1,16 @@
 import datetime
-import random
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+import uuid
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models import PassengerReport, CrimeRecord, User
-from app.schemas import PassengerReportCreate, PassengerReportResponse, PassengerReportStatusUpdate
+from app.models import PassengerReport, CrimeRecord, Matatu, User
+from app.schemas import PassengerReportResponse, PassengerReportStatusUpdate
 from app.auth import requires_permission
 from app.audit import stage_audit_log
+from app.storage import save_upload
 
 router = APIRouter(prefix="/api/reports", tags=["Passenger Reports"])
 
@@ -25,26 +26,77 @@ async def get_reports(
     current_user: User = Depends(requires_permission("view_reports")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(PassengerReport).order_by(PassengerReport.created_at.desc()))
+    query = select(PassengerReport).order_by(PassengerReport.created_at.desc())
+    # PassengerReport.matatu_reg_number is a plain string, not a Matatu FK
+    # (the report can reference a vehicle from any Sacco) — so scoping a
+    # Sacco Operator/Crew account to their own fleet needs an explicit
+    # subquery on reg_number rather than the usual join-on-sacco_id
+    # pattern (app.abac.sacco_scope_query doesn't fit this shape). Without
+    # this, any operator account could read every passenger complaint
+    # county-wide, not just ones about their own vehicles.
+    if current_user.role in ("SACCO_OPERATOR", "CREW"):
+        own_reg_numbers = select(Matatu.reg_number).where(Matatu.sacco_id == current_user.sacco_id)
+        query = query.where(PassengerReport.matatu_reg_number.in_(own_reg_numbers))
+    result = await db.execute(query)
     return result.scalars().all()
+
+@router.post("/public-comment", status_code=status.HTTP_201_CREATED)
+async def create_public_comment(
+    message: str = Form(...),
+    reporter_name: Optional[str] = Form(None),
+    reporter_phone: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unauthenticated feedback channel for the public login page ('Leave a comment')."""
+    message = message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+
+    report_id = f"rep-{uuid.uuid4().hex[:8]}"
+    new_report = PassengerReport(
+        id=report_id,
+        category="Site Feedback",
+        message=message,
+        reporter_user_id=None,
+        reporter_name=reporter_name or None,
+        reporter_phone=reporter_phone or None,
+        photo_path=None,
+        status="PENDING",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(new_report)
+    await db.commit()
+    return {"ok": True}
 
 @router.post("", response_model=PassengerReportResponse, status_code=status.HTTP_201_CREATED)
 async def create_report(
-    payload: PassengerReportCreate,
+    category: str = Form(...),
+    message: str = Form(...),
+    matatu_reg_number: Optional[str] = Form(None),
+    reporter_name: Optional[str] = Form(None),
+    reporter_phone: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
     current_user: User = Depends(requires_permission("submit_report")),
     db: AsyncSession = Depends(get_db),
 ):
-    report_id = f"rep-{random.randint(100000, 999999)}"
+    report_id = f"rep-{uuid.uuid4().hex[:8]}"
+
+    photo_path = None
+    if photo is not None and photo.filename:
+        contents = await photo.read()
+        photo_path = await save_upload("passenger_reports", report_id, photo.filename, contents, db=db)
+
     new_report = PassengerReport(
         id=report_id,
-        matatu_reg_number=(payload.matatu_reg_number or "").upper().strip() or None,
-        category=payload.category,
-        message=payload.message.strip(),
+        matatu_reg_number=(matatu_reg_number or "").upper().strip() or None,
+        category=category,
+        message=message.strip(),
         reporter_user_id=current_user.id,
-        reporter_name=payload.reporter_name or current_user.name,
-        reporter_phone=payload.reporter_phone,
+        reporter_name=reporter_name or current_user.name,
+        reporter_phone=reporter_phone,
+        photo_path=photo_path,
         status="PENDING",
-        created_at=datetime.datetime.utcnow().isoformat() + "Z",
+        created_at=datetime.datetime.now(datetime.timezone.utc),
     )
     db.add(new_report)
     await db.commit()
@@ -76,7 +128,7 @@ async def update_report_status(
 
     # Escalating a report opens a real crime/citation record so it enters the enforcement ledger
     if new_status == "ESCALATED":
-        crime_id = f"crime-{random.randint(10000, 99999)}"
+        crime_id = f"crime-{uuid.uuid4().hex[:8]}"
         db.add(CrimeRecord(
             id=crime_id,
             offence_committed=CATEGORY_TO_OFFENCE.get(report.category, f"{report.category} (Passenger Reported)"),
@@ -87,7 +139,7 @@ async def update_report_status(
             fine_amount_kes=0.0,
             remarks=report.message,
             officer_id=current_user.id,
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
             status="PENDING",
         ))
 

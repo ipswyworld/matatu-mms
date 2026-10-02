@@ -4,18 +4,44 @@ services:
     restart: unless-stopped
     environment:
       SECRET_KEY: ${BACKEND_SECRET_KEY}
-      MPESA_CALLBACK_SECRET: ${MPESA_CALLBACK_SECRET}
+      NAIROBIPAY_CALLBACK_SECRET: ${NAIROBIPAY_CALLBACK_SECRET}
+      TOMTOM_API_KEY: ${TOMTOM_API_KEY:-}
       SESSION_COOKIE_NAME: mms_session
       TERMS_VERSION: ${TERMS_VERSION:-2026-07-25}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Real Postgres by default now — SQLite (single-writer, file-locked)
       # can't carry real concurrent traffic. Override only for a throwaway
       # local run with no docker-compose Postgres available.
+      #
+      # Points at Postgres directly, not through the pgbouncer service
+      # below, deliberately: Alembic migrations run against this same
+      # DATABASE_URL, and DDL/session-level features don't reliably survive
+      # PgBouncer's transaction-pooling mode. Point this at
+      # postgresql+asyncpg://matatu:<pw>@pgbouncer:6432/matatu_mms instead
+      # once connection-count pressure (not migrations) is the actual
+      # bottleneck — an operational switch, not the default.
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms}
+      # Analytics/dashboard reads go to the streaming replica instead of
+      # the primary writer (DATA_LAYER_SCALING_STATUS.md's read-replica
+      # plan) — app/database.py falls back to the primary automatically
+      # if this is ever unset.
+      DATABASE_URL_READONLY: ${DATABASE_URL_READONLY:-postgresql+asyncpg://matatu:${POSTGRES_PASSWORD:-changeme}@postgres-replica:5432/matatu_mms}
       # Real-time backbone (GPS telemetry, dashboard live-refresh, per-user
       # notifications) — every backend instance publishes/subscribes here
       # instead of only fanning out to its own in-memory websocket list.
       REDIS_URL: redis://redis:6379/0
+      # Uploaded files — the backend_uploads named volume below already
+      # persists local-disk uploads across container restarts/rebuilds in
+      # this self-hosted stack (unlike Render's web services, which have no
+      # equivalent), so these are optional here. Set them to use S3-
+      # compatible storage anyway (e.g. sharing one bucket between this
+      # stack and a Render deployment); see app/storage.py.
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_PUBLIC_URL_BASE: ${S3_PUBLIC_URL_BASE:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -33,19 +59,132 @@ services:
     networks: [internal]
 
   postgres:
-    image: postgres:16-alpine
+    # DATA_LAYER_SCALING_STATUS.md: the `enable_timescaledb` migration
+    # already tries to convert vehicle_positions into a hypertable and
+    # falls back gracefully if the extension isn't available — on plain
+    # postgres:16-alpine it never IS available, so that fallback is all
+    # that ever ran here. timescale/timescaledb is a drop-in, self-hostable
+    # Postgres image (same wire protocol, same postgres:16 underneath)
+    # with the extension actually present, so the existing migration now
+    # does real work instead of silently no-op'ing. This closes the
+    # self-hosted half of Phase 3 item 5 — Render's own Postgres is a
+    # separate, still-open decision (its free/standard tiers are an
+    # Apache-licensed build with no TimescaleDB extension available;
+    # moving Render itself onto Timescale means either a Timescale Cloud
+    # subscription or self-hosting Postgres on Render's own compute
+    # instead of its managed Postgres product — a real cost/ops decision,
+    # not something this file can decide on your behalf).
+    #
+    # Live-verified (2026-09-18): a FRESH volume needs nothing extra — the
+    # image's own docker-entrypoint-initdb.d scripts set
+    # shared_preload_libraries automatically. An EXISTING postgres_data
+    # volume created before this image swap does not: Postgres init
+    # scripts only ever run once, against an empty data directory, so an
+    # old volume keeps its original postgresql.conf with no preload
+    # entry, and `CREATE EXTENSION timescaledb` fails with "must be
+    # preloaded" until you add it by hand and restart:
+    #   docker exec <container> sh -c "echo \"shared_preload_libraries = 'timescaledb'\" >> /var/lib/postgresql/data/postgresql.conf"
+    #   docker restart <container>
+    # One-time, only for a volume that predates this change.
+    image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: matatu
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: matatu_mms
+      # Consumed by postgres/init-replication.sh (docker-entrypoint-initdb.d
+      # runs once, on an empty data dir) to create the replication role the
+      # postgres-replica service authenticates as.
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-changeme_replica}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=5"
+      - "-c"
+      - "wal_keep_size=512MB"
+      - "-c"
+      - "hot_standby=on"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U matatu -d matatu_mms"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [internal]
+
+  # Connection pooler (DATA_LAYER_SCALING_STATUS.md's option 2: "a
+  # separate PgBouncer service... in front of the database"). Transaction
+  # pooling mode is a transparent proxy from the app's point of view per
+  # that doc — app/database.py needs no change, only DATABASE_URL pointed
+  # at pgbouncer:6432 instead of postgres:5432 directly (see backend's
+  # DATABASE_URL_POOLED below). Closes the self-hosted half of Phase 3
+  # item 3; Render's own Postgres still needs its plan upgraded for the
+  # same capability there, or this same PgBouncer pattern run as its own
+  # Render service in front of Render's Postgres.
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://matatu:${POSTGRES_PASSWORD:-changeme}@postgres:5432/matatu_mms
+      # Without this, the image defaults its own listen_port to whatever
+      # port DATABASE_URL points at (5432) — same port Postgres itself
+      # uses, just confusing, not broken, since this container has no
+      # ports: mapping of its own (only reachable inside the compose
+      # network). Set explicitly to the conventional PgBouncer port so
+      # `pgbouncer:6432` in a DATABASE_URL actually means something.
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      # scram-sha-256 needs a real SCRAM verifier in userlist.txt; this
+      # image's entrypoint only ever writes the plaintext password it
+      # parsed out of DATABASE_URL there, which made every connection
+      # fail auth against the mismatch (confirmed live). "plain" matches
+      # what's actually in that file — acceptable here since this proxy
+      # is reachable only from other containers on the internal
+      # docker-compose network, never from outside it.
+      AUTH_TYPE: plain
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U matatu"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  # Streaming read replica (DATA_LAYER_SCALING_STATUS.md's read-replica
+  # plan: "point analytics/monitoring-centre dashboard queries at the
+  # replica's connection string via a second DATABASE_URL-style env var,
+  # leaving the primary writer connection untouched"). Real Postgres
+  # streaming replication, not a mock — `postgres-replica/entrypoint.sh`
+  # runs `pg_basebackup` against the primary once at first start, then
+  # starts in standby mode. Closes the self-hosted half of Phase 3 item 2;
+  # Render's free/standard Postgres tiers have no read-replica add-on, so
+  # that side is still a paid-plan decision.
+  postgres-replica:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      PGUSER: matatu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PRIMARY_HOST: postgres
+      PRIMARY_PORT: 5432
+      PRIMARY_USER: replicator
+      REPLICATOR_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-changeme_replica}
+    entrypoint: ["/bin/bash", "/scripts/entrypoint.sh"]
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres/replica-entrypoint.sh:/scripts/entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [internal]
 
   redis:
@@ -60,19 +199,82 @@ services:
       retries: 5
     networks: [internal]
 
+  # Staff app — county government back-office (admin, enforcement,
+  # director/chief officer, viewer). See render.yaml for the same split on
+  # the Render deployment path; this mirrors it for the self-hosted stack.
   frontend:
     build: ./matatu-mms
-    restart: unless-stopped 
+    restart: unless-stopped
     environment:
       BACKEND_URL: http://backend:8000
       NEXT_PUBLIC_BACKEND_URL: ${PUBLIC_ORIGIN:-https://localhost}
       NEXT_PUBLIC_WS_URL: ${PUBLIC_WS_ORIGIN:-wss://localhost}
+      NEXT_PUBLIC_PUBLIC_APP_URL: ${PUBLIC_APP_ORIGIN:-https://localhost:3001}
+      NEXT_PUBLIC_TOMTOM_API_KEY: ${NEXT_PUBLIC_TOMTOM_API_KEY:-}
       SESSION_SECRET: ${SESSION_SECRET}
+      # Where the retired /system page now redirects — the real external
+      # address of the :3002 ops console front door (nginx/nginx.conf),
+      # not the internal Docker service name (browsers can't resolve it).
+      OPS_APP_URL: ${OPS_APP_ORIGIN:-https://localhost:3002}
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks: [internal]
+
+  # Public app — passengers, crew, and Sacco operators. Exposed on its own
+  # host port (3001) directly rather than through nginx, matching the "own
+  # port" split — nginx's TLS-terminated 80/443 in front of the staff app
+  # stays as the primary reverse-proxied entry point for now; wire a real
+  # nginx server block for this too before relying on it for anything but
+  # local testing.
+  frontend-public:
+    build: ./matatu-mms-public
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      BACKEND_URL: http://backend:8000
+      NEXT_PUBLIC_BACKEND_URL: ${PUBLIC_ORIGIN:-https://localhost}
+      NEXT_PUBLIC_WS_URL: ${PUBLIC_WS_ORIGIN:-wss://localhost}
+      NEXT_PUBLIC_TOMTOM_API_KEY: ${NEXT_PUBLIC_TOMTOM_API_KEY:-}
+      SESSION_SECRET: ${SESSION_SECRET_PUBLIC:-${SESSION_SECRET}}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks: [internal]
+
+  # Ops console (ADMIN_DASHBOARD_AUDIT §4.3 Option B) — the former /system
+  # page as its own Next.js app/process, so a crash or bad deploy in the
+  # main staff app (frontend, above) can't take this down with it the way
+  # sharing one process did before. Reached only through nginx's :3002
+  # server block (Option A's network restriction), same as before — Option
+  # A and B aren't actually alternatives here, A is the network front door
+  # and B is what it now proxies to instead of the staff app's /system.
+  matatu-mms-ops:
+    build: ./matatu-mms-ops
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+      OPS_SESSION_SECRET: ${OPS_SESSION_SECRET:?Set OPS_SESSION_SECRET in .env — openssl rand -hex 32}
+      GRAFANA_EMBED_URL: /grafana/
+      STAFF_APP_URL: ${PUBLIC_ORIGIN:-https://localhost}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -85,6 +287,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # Superuser / technical monitoring console — same nginx container,
+      # a separate server block (see nginx/nginx.conf's ":3002" block,
+      # which defaults its own `allow`/`deny` to localhost-only too).
+      # 127.0.0.1-only here: reachable via SSH tunnel/VPN into the host
+      # for now. This is ADMIN_DASHBOARD_AUDIT_AND_RECOMMENDATIONS.md §4.3
+      # Option A (network isolation) fronting Option B (process isolation,
+      # matatu-mms-ops below) — not two alternatives, one build on the other.
+      - "127.0.0.1:3002:3002"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
@@ -94,6 +304,7 @@ services:
     depends_on:
       - backend
       - frontend
+      - matatu-mms-ops
     networks: [internal]
 
   nginx-exporter:
@@ -111,6 +322,7 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./prometheus/slo-alerts.yml:/etc/prometheus/slo-alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -119,11 +331,31 @@ services:
       - "127.0.0.1:9090:9090" # bind to localhost only — not for public exposure
     networks: [internal]
 
+  # One-shot: resolves ${SLACK_WEBHOOK_URL} in alertmanager.yml into a real
+  # config alertmanager can read, so the webhook URL lives in an env var /
+  # .env file instead of being committed in plaintext. The official
+  # alertmanager image has no shell/envsubst (busybox-based, minimal by
+  # design) — this runs the substitution in a throwaway alpine container
+  # before the real service starts, writing the result to a shared volume.
+  alertmanager-config-init:
+    image: alpine:3.20
+    restart: "no"
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:?Set SLACK_WEBHOOK_URL in .env — create a Slack incoming webhook first, see alertmanager/alertmanager.yml}
+    volumes:
+      - ./alertmanager/alertmanager.yml:/template/alertmanager.yml:ro
+      - alertmanager_config:/out
+    command: sh -c "apk add --no-cache gettext >/dev/null && envsubst < /template/alertmanager.yml > /out/alertmanager.yml"
+    networks: [internal]
+
   alertmanager:
     image: prom/alertmanager:latest
     restart: unless-stopped
+    depends_on:
+      alertmanager-config-init:
+        condition: service_completed_successfully
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_config:/etc/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
     networks: [internal]
@@ -136,16 +368,25 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
+    # Was 127.0.0.1:3001:3000 — collided with frontend-public's 3001:3001
+    # above (only masked because Grafana bound to 127.0.0.1 and
+    # frontend-public didn't, so it never surfaced unless both were started
+    # on the same host). 3003 is a genuinely free slot, alongside the new
+    # :3002 ops-nginx block below which is the real "own port" front door
+    # for Grafana going forward — this direct mapping stays as a
+    # localhost-only fallback for debugging without going through nginx.
     ports:
-      - "127.0.0.1:3001:3000" # bind to localhost only — put behind nginx/VPN before exposing
+      - "127.0.0.1:3003:3000" # bind to localhost only — put behind nginx/VPN before exposing
     depends_on:
       - prometheus
     networks: [internal]
 
 volumes:
+  alertmanager_config:
   backend_data:
   backend_uploads:
   postgres_data:
+  postgres_replica_data:
   redis_data:
   nginx_logs:
   certbot_webroot:

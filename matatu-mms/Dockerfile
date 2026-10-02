@@ -7,6 +7,28 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time — they
+# must arrive as build ARGs, not just runtime env vars, or the deployed app
+# silently falls back to its localhost defaults (dead map, dead WebSockets).
+ARG NEXT_PUBLIC_BACKEND_URL
+ARG NEXT_PUBLIC_WS_URL
+ARG NEXT_PUBLIC_TOMTOM_API_KEY
+ARG NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_TOMTOM_API_KEY=$NEXT_PUBLIC_TOMTOM_API_KEY
+# Used by robots.ts and metadataBase for absolute URLs (link previews, OG
+# images) — confirmed live: without this ARG declaration the build
+# silently bakes in the http://localhost:3000 fallback despite the Render
+# env var being set correctly, the same ARG-vs-runtime-env gap already
+# documented above for the other three.
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+# BACKEND_URL (no NEXT_PUBLIC_ prefix) is read server-side at request time by
+# Server Components/Actions, not baked in — a dummy value here only lets the
+# build's static analysis pass; the real value is supplied at runtime below.
+ENV BACKEND_URL=http://127.0.0.1:8000
+
 RUN npm run build
 
 FROM node:20-alpine AS runner

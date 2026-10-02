@@ -1,0 +1,47 @@
+# Namespace, quota, and default limits for the whole matatu-mms workload
+# (Readiness List §1). Referenced by README.md but never actually written
+# until the Argo CD wiring made "apply this and it should just work" a real
+# requirement rather than an aspiration.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: matatu-mms
+  labels:
+    app.kubernetes.io/part-of: matatu-mms
+---
+# A hard ceiling on the namespace, not a tuning knob for any one workload —
+# those are set per-container in backend.yaml/control-plane-and-worker.yaml/
+# frontends.yaml. This exists so a runaway HPA (backend.yaml scales to 20
+# replicas under load) or a mistake in a future manifest cannot silently
+# consume an entire shared cluster; it should fail loudly against this quota
+# instead.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: matatu-mms-quota
+  namespace: matatu-mms
+spec:
+  hard:
+    requests.cpu: "12"
+    requests.memory: 16Gi
+    limits.cpu: "24"
+    limits.memory: 32Gi
+    pods: "60"
+---
+# Every container in this namespace declares its own requests/limits
+# already (see backend.yaml etc.) — this is a backstop for anything added
+# later that forgets to, not the primary control.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: matatu-mms-limits
+  namespace: matatu-mms
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 256Mi
+      default:
+        cpu: 500m
+        memory: 512Mi

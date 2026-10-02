@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ClipboardList, Plus } from "lucide-react";
 import { readSession } from "@/lib/session";
 import { getActivity, getMatatus, getUsers } from "@/lib/data";
 import { can } from "@/lib/rbac";
@@ -28,13 +29,15 @@ export default async function ActivityPage() {
   return (
     <div className="space-y-4">
       <PageBanner
+        icon={ClipboardList}
         eyebrow="Nairobi City County · Field Records"
         title="Activity Log"
         subtitle={`${activity.length} logged event${activity.length !== 1 ? "s" : ""} — trips, inspections, and incidents recorded by crew and officers.`}
         action={
           can(session.role, "log_activity") && (
-            <Link href="/activity/new" className="rounded-lg px-3.5 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors">
-              + Log activity
+            <Link href="/activity/new" className="rounded-lg px-3.5 py-2 text-xs font-bold bg-county-green text-white hover:bg-county-green-dark transition-colors flex items-center gap-1.5">
+              <Plus size={14} strokeWidth={2.5} />
+              Log activity
             </Link>
           )
         }

@@ -1,0 +1,6 @@
+# Shell scripts are bind-mounted straight into Linux containers
+# (docker-compose.yml's postgres/postgres-replica services) — a CRLF
+# checkout on Windows would break their shebang line inside the
+# container. Force LF regardless of the checking-out machine's
+# core.autocrlf setting.
+*.sh text eol=lf

@@ -1,0 +1,42 @@
+{
+  "name": "Nairobi Matatu — Book, Track, Pay",
+  "short_name": "Nairobi Matatu",
+  "description": "Book a seat, track your matatu live, and pay fines. Nairobi City County.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF6E5",
+  "theme_color": "#0F5132",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["travel", "navigation", "government"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Track my matatu",
+      "short_name": "Track",
+      "url": "/track?source=pwa-shortcut",
+      "description": "Live position of the vehicle you are travelling on"
+    },
+    {
+      "name": "Pay a fine",
+      "short_name": "Pay fine",
+      "url": "/pay-fine?source=pwa-shortcut",
+      "description": "Settle an outstanding matatu fine"
+    }
+  ]
+}

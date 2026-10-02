@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Ticket, MapPin, Bus, Armchair, XCircle, MessageSquareWarning, Send } from "lucide-react";
 import GisMap, { NAIROBI_STAGES } from "@/components/GisMap";
-import SeatMap from "@/components/SeatMap";
 import MatatuGlyph from "@/components/MatatuGlyph";
 import EmptyState from "@/components/EmptyState";
 import PageBanner from "@/components/PageBanner";
 import { createBookingAction, getTakenSeatsAction, submitReportAction, updateBookingStatusAction } from "@/lib/actions";
-import { Booking, Matatu, Route, Seat, Stage } from "@/lib/types";
+import { Booking, Matatu, Route, Stage } from "@/lib/types";
 
 interface PassengerBookingClientProps {
   routes: Route[];
@@ -28,7 +28,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
   const [selectedStage, setSelectedStage] = useState<Stage>(NAIROBI_STAGES[0]);
   const [selectedRouteId, setSelectedRouteId] = useState<string>("all");
   const [selectedMatatu, setSelectedMatatu] = useState<Matatu | null>(matatus[0] || null);
-  const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
+  const [seatCount, setSeatCount] = useState(1);
   const [takenSeats, setTakenSeats] = useState<number[]>([]);
   const [isPending, startTransition] = useTransition();
 
@@ -40,6 +40,8 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
   const [feedbackMatatuReg, setFeedbackMatatuReg] = useState("");
   const [feedbackType, setFeedbackType] = useState("Overcharging Complaint");
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackPhoto, setFeedbackPhoto] = useState<File | null>(null);
+  const feedbackPhotoInputRef = useRef<HTMLInputElement>(null);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [feedbackReportId, setFeedbackReportId] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -54,33 +56,28 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
   useEffect(() => {
     if (!selectedMatatu) return;
     getTakenSeatsAction(selectedMatatu.id).then(setTakenSeats);
+    setSeatCount(1);
   }, [selectedMatatu]);
 
-  const handleToggleSelectSeat = (seatId: number) => {
-    setSelectedSeatIds((prev) =>
-      prev.includes(seatId) ? prev.filter((id) => id !== seatId) : [...prev, seatId]
-    );
-  };
-
-  const currentSeats: Seat[] = selectedMatatu
-    ? Array.from({ length: selectedMatatu.capacity }, (_, i) => {
-        const id = i + 1;
-        const route = routeById.get(selectedMatatu.routeId);
-        return {
-          id,
-          label: `S${id}`,
-          isOccupied: takenSeats.includes(id),
-          fareKes: route?.fareKes || 0,
-        };
-      })
-    : [];
-
+  const freeSeatsCount = selectedMatatu ? selectedMatatu.capacity - takenSeats.length : 0;
   const selectedRouteFare = selectedMatatu ? routeById.get(selectedMatatu.routeId)?.fareKes || 0 : 0;
-  const totalFare = selectedRouteFare * selectedSeatIds.length;
+  const totalFare = selectedRouteFare * seatCount;
 
   const handleBookTicket = (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedSeatIds.length === 0 || !selectedMatatu) return;
+    if (seatCount < 1 || !selectedMatatu) return;
+
+    // No exact-seat picking — the county assigns the next free seat numbers
+    // automatically. The passenger just says how many seats they need.
+    const takenSet = new Set(takenSeats);
+    const assignedSeats: number[] = [];
+    for (let seatId = 1; seatId <= selectedMatatu.capacity && assignedSeats.length < seatCount; seatId++) {
+      if (!takenSet.has(seatId)) assignedSeats.push(seatId);
+    }
+    if (assignedSeats.length < seatCount) {
+      setBookingError(`Only ${assignedSeats.length} seat(s) left on this vehicle.`);
+      return;
+    }
 
     setBookingError(null);
     startTransition(async () => {
@@ -90,7 +87,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
         passengerName: passengerName || "Commuter",
         phone: phone || "0712345678",
         stageName: selectedStage.name,
-        seatNumbers: selectedSeatIds,
+        seatNumbers: assignedSeats,
       });
 
       if (result.error) {
@@ -99,7 +96,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
       }
       if (result.booking) {
         setActiveBooking(result.booking);
-        setTakenSeats((prev) => [...prev, ...selectedSeatIds]);
+        setTakenSeats((prev) => [...prev, ...assignedSeats]);
       }
     });
   };
@@ -115,7 +112,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
       }
       setTakenSeats((prev) => prev.filter((seatId) => !activeBooking.seatNumbers.includes(seatId)));
       setActiveBooking(null);
-      setSelectedSeatIds([]);
+      setSeatCount(1);
     });
   };
 
@@ -130,6 +127,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
         message: feedbackMessage,
         reporterName: passengerName || undefined,
         reporterPhone: phone || undefined,
+        photo: feedbackPhoto,
       });
       if (result.error) {
         setFeedbackError(result.error);
@@ -140,6 +138,8 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
       setTimeout(() => {
         setFeedbackMessage("");
         setFeedbackMatatuReg("");
+        setFeedbackPhoto(null);
+        if (feedbackPhotoInputRef.current) feedbackPhotoInputRef.current.value = "";
         setFeedbackSubmitted(false);
       }, 3000);
     });
@@ -148,6 +148,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
   return (
     <div className="space-y-6">
       <PageBanner
+        icon={Ticket}
         eyebrow="Nairobi City County · Commuter Portal"
         title="Book Your Matatu"
         subtitle="Reserve a seat on a real, live-tracked vehicle, or report overcharging and safety issues directly to County Traffic Enforcement."
@@ -155,18 +156,20 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
           <>
             <button
               onClick={() => setActiveTab("booking")}
-              className={`rounded-lg px-3.5 py-2 text-xs font-bold transition-colors ${
+              className={`rounded-lg px-3.5 py-2 text-xs font-bold transition-colors flex items-center gap-1.5 ${
                 activeTab === "booking" ? "bg-county-green text-white" : "bg-white/10 text-white/80 hover:bg-white/15"
               }`}
             >
+              <MapPin size={13} strokeWidth={2} />
               Seat Reservation & Live Map
             </button>
             <button
               onClick={() => setActiveTab("feedback")}
-              className={`rounded-lg px-3.5 py-2 text-xs font-bold transition-colors ${
+              className={`rounded-lg px-3.5 py-2 text-xs font-bold transition-colors flex items-center gap-1.5 ${
                 activeTab === "feedback" ? "bg-county-green text-white" : "bg-white/10 text-white/80 hover:bg-white/15"
               }`}
             >
+              <MessageSquareWarning size={13} strokeWidth={2} />
               Feedback & Reports
             </button>
           </>
@@ -191,7 +194,10 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
               <GisMap selectedStageId={selectedStage.id} onSelectStage={(stg) => setSelectedStage(stg)} />
 
               <div className="card p-4 space-y-4">
-                <h3 className="font-bold text-sm text-county-black">Select Boarding Stage & Route</h3>
+                <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+                  <MapPin size={15} strokeWidth={2} className="text-county-ink/50" />
+                  Select Boarding Stage & Route
+                </h3>
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <label className="label">Boarding Terminus / Stage</label>
@@ -223,7 +229,10 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
               </div>
 
               <div className="card p-5 space-y-3">
-                <h3 className="font-bold text-sm">Available Matatus En-Route ({filteredMatatus.length})</h3>
+                <h3 className="font-bold text-sm flex items-center gap-1.5">
+                  <Bus size={15} strokeWidth={2} className="text-county-ink/50" />
+                  Available Matatus En-Route ({filteredMatatus.length})
+                </h3>
                 {filteredMatatus.length === 0 ? (
                   <EmptyState
                     title="No active vehicles on this route right now"
@@ -239,7 +248,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                           key={m.id}
                           onClick={() => {
                             setSelectedMatatu(m);
-                            setSelectedSeatIds([]);
+                            setSeatCount(1);
                             setActiveBooking(null);
                           }}
                           className={`p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
@@ -283,16 +292,26 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
 
             <div className="space-y-6">
               {selectedMatatu && (
-                <SeatMap
-                  capacity={selectedMatatu.capacity}
-                  seats={currentSeats}
-                  selectedSeatIds={selectedSeatIds}
-                  onToggleSelectSeat={handleToggleSelectSeat}
-                />
+                <div className="bg-county-black rounded-2xl p-5 text-white shadow-xl border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white/60 uppercase tracking-wider">{selectedMatatu.regNumber}</span>
+                    <span className="text-xs font-bold text-county-yellow">{freeSeatsCount} of {selectedMatatu.capacity} seats free</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-full bg-county-green rounded-full transition-all"
+                      style={{ width: `${selectedMatatu.capacity ? (freeSeatsCount / selectedMatatu.capacity) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
               )}
 
               <div className="card p-5 space-y-4">
-                <h3 className="font-bold text-sm text-county-black">Confirm Seat Reservation</h3>
+                <h3 className="font-bold text-sm text-county-black flex items-center gap-1.5">
+                  <Armchair size={15} strokeWidth={2} className="text-county-ink/50" />
+                  How Many Seats?
+                </h3>
+                <p className="text-xs text-black/50 -mt-2">No need to pick an exact seat — we'll assign the next available one(s) for you.</p>
 
                 {activeBooking ? (
                   <div className="bg-county-green/10 border border-county-green/30 rounded-xl p-4 space-y-3">
@@ -326,7 +345,7 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                         <button
                           onClick={() => {
                             setActiveBooking(null);
-                            setSelectedSeatIds([]);
+                            setSeatCount(1);
                           }}
                           className="btn-secondary flex-1 text-xs !py-1.5"
                         >
@@ -335,8 +354,9 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                         <button
                           onClick={handleCancelBooking}
                           disabled={isPending}
-                          className="btn-danger flex-1 text-xs !py-1.5"
+                          className="btn-danger flex-1 text-xs !py-1.5 flex items-center justify-center gap-1"
                         >
+                          <XCircle size={13} strokeWidth={2} />
                           {isPending ? "Cancelling..." : "Cancel Booking"}
                         </button>
                       </div>
@@ -349,6 +369,28 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                         {bookingError}
                       </div>
                     )}
+
+                    <div className="flex items-center justify-between bg-black/5 rounded-lg p-2.5 border border-black/5">
+                      <span className="text-xs font-bold text-black/60">Number of seats</span>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setSeatCount((n) => Math.max(1, n - 1))}
+                          className="h-8 w-8 rounded-lg bg-white border border-black/10 font-extrabold text-county-black hover:bg-black/5"
+                        >
+                          −
+                        </button>
+                        <span className="w-6 text-center font-extrabold text-county-black">{seatCount}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSeatCount((n) => Math.min(freeSeatsCount || 1, n + 1))}
+                          className="h-8 w-8 rounded-lg bg-white border border-black/10 font-extrabold text-county-black hover:bg-black/5"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="label">Passenger / Group Lead Name</label>
                       <input
@@ -374,28 +416,23 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                     </div>
 
                     <div className="bg-black/5 p-3 rounded-lg text-xs space-y-1.5 border border-black/5">
-                      <div className="flex justify-between">
-                        <span className="text-black/60">Selected Seats:</span>
-                        <span className="font-bold text-county-blue">
-                          {selectedSeatIds.length > 0
-                            ? selectedSeatIds.map((id) => `S${id}`).join(", ")
-                            : "Click seat(s) above"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between border-t border-black/5 pt-1.5">
-                        <span className="text-black/60">Total Fare ({selectedSeatIds.length} seats):</span>
+                      <div className="flex justify-between border-t border-black/5 pt-1.5 first:border-0 first:pt-0">
+                        <span className="text-black/60">Total Fare ({seatCount} seat{seatCount !== 1 ? "s" : ""}):</span>
                         <span className="font-extrabold text-county-black">KES {totalFare}</span>
                       </div>
                     </div>
 
                     <button
                       type="submit"
-                      disabled={selectedSeatIds.length === 0 || isPending || !selectedMatatu}
-                      className="btn-primary w-full !py-2.5 text-sm font-bold"
+                      disabled={freeSeatsCount === 0 || isPending || !selectedMatatu}
+                      className="btn-primary w-full !py-2.5 text-sm font-bold flex items-center justify-center gap-2"
                     >
+                      <Ticket size={16} strokeWidth={2} />
                       {isPending
                         ? "Issuing Boarding Pass..."
-                        : `Confirm ${selectedSeatIds.length || 0} Seat(s) & Get Boarding Pass`}
+                        : freeSeatsCount === 0
+                        ? "This vehicle is full"
+                        : `Confirm ${seatCount} Seat${seatCount !== 1 ? "s" : ""} & Get Boarding Pass`}
                     </button>
                   </form>
                 )}
@@ -406,7 +443,8 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
       ) : (
         <div className="max-w-2xl mx-auto space-y-6">
           <div className="card p-6 space-y-4">
-            <h3 className="text-base font-extrabold text-county-black border-b border-black/10 pb-3">
+            <h3 className="text-base font-extrabold text-county-black border-b border-black/10 pb-3 flex items-center gap-2">
+              <MessageSquareWarning size={18} strokeWidth={2} className="text-county-ink/50" />
               Submit Commuter Report or Overcharging Complaint
             </h3>
             <p className="text-xs text-black/60">
@@ -462,7 +500,22 @@ export default function PassengerBookingClient({ routes, matatus }: PassengerBoo
                   />
                 </div>
 
-                <button type="submit" disabled={isPending} className="btn-primary w-full !py-2.5 text-sm font-bold">
+                <div>
+                  <label className="label">Photo Evidence (Optional)</label>
+                  <input
+                    ref={feedbackPhotoInputRef}
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setFeedbackPhoto(e.target.files?.[0] || null)}
+                    className="w-full text-xs file:mr-2 file:rounded file:border-0 file:bg-black/5 file:px-3 file:py-1.5 file:text-xs file:font-bold"
+                  />
+                  {feedbackPhoto && (
+                    <p className="text-[11px] text-county-green font-semibold mt-1">Attached: {feedbackPhoto.name}</p>
+                  )}
+                </div>
+
+                <button type="submit" disabled={isPending} className="btn-primary w-full !py-2.5 text-sm font-bold flex items-center justify-center gap-2">
+                  <Send size={15} strokeWidth={2} />
                   {isPending ? "Submitting..." : "Submit Official Commuter Report"}
                 </button>
               </form>

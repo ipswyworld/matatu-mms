@@ -1,0 +1,333 @@
+# Staff, public and ops Next.js apps (Readiness List §1) — referenced by
+# README.md but not written until the Argo CD wiring needed a real target
+# to sync, matching backend.yaml's established conventions (probes,
+# non-root security context, resource limits, PDB). Two replicas each: this
+# serves interactive staff/passenger traffic, not a throughput problem an
+# HPA would solve — same reasoning as control-plane-and-worker.yaml's
+# control plane.
+#
+# All three: `imagePullPolicy: IfNotPresent`, image path
+# ghcr.io/ipswyworld/matatu-mms/<component> to match what
+# .github/workflows/ci.yml's build-and-push job actually publishes (see
+# backend.yaml's header comment).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mms-frontend
+  namespace: matatu-mms
+  labels:
+    app: mms-frontend
+    component: frontend-staff
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: mms-frontend
+  template:
+    metadata:
+      labels:
+        app: mms-frontend
+        component: frontend-staff
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: frontend
+          image: ghcr.io/ipswyworld/matatu-mms/frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            # Server-side only (no NEXT_PUBLIC_ prefix) — Server
+            # Actions/Components call the backend in-cluster by Service DNS
+            # rather than through the public ingress, same as any other
+            # in-cluster client. NEXT_PUBLIC_* values are already baked into
+            # this image at build time (CI build-args) and cannot be
+            # overridden at runtime — changing them means rebuilding.
+            - name: BACKEND_URL
+              value: "http://mms-backend.matatu-mms.svc.cluster.local"
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: SESSION_SECRET }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # Next.js standalone server writes its build cache under
+            # .next/cache at runtime (ISR, image optimization) — needs
+            # somewhere writable since the root filesystem above is
+            # read-only.
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mms-frontend
+  namespace: matatu-mms
+spec:
+  selector:
+    app: mms-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mms-frontend
+  namespace: matatu-mms
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: mms-frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mms-frontend-public
+  namespace: matatu-mms
+  labels:
+    app: mms-frontend-public
+    component: frontend-public
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: mms-frontend-public
+  template:
+    metadata:
+      labels:
+        app: mms-frontend-public
+        component: frontend-public
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: frontend-public
+          image: ghcr.io/ipswyworld/matatu-mms/frontend-public:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3001
+          env:
+            - name: PORT
+              value: "3001"
+            - name: BACKEND_URL
+              value: "http://mms-backend.matatu-mms.svc.cluster.local"
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: SESSION_SECRET }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mms-frontend-public
+  namespace: matatu-mms
+spec:
+  selector:
+    app: mms-frontend-public
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mms-frontend-public
+  namespace: matatu-mms
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: mms-frontend-public
+---
+# Ops frontend. This is the staff-facing Next.js UI (login page, dashboard)
+# — distinct from mms-control-plane's ops API in control-plane-and-worker.
+# yaml, which deliberately has no Ingress at all. This app is public
+# (staff sign in from wherever they are) and reaches the control-plane API
+# only from inside the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mms-frontend-ops
+  namespace: matatu-mms
+  labels:
+    app: mms-frontend-ops
+    component: frontend-ops
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: mms-frontend-ops
+  template:
+    metadata:
+      labels:
+        app: mms-frontend-ops
+        component: frontend-ops
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: frontend-ops
+          image: ghcr.io/ipswyworld/matatu-mms/frontend-ops:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            # Talks to the control-plane API's ClusterIP Service, not the
+            # main API — that's the whole point of the control plane being
+            # a separate process (control-plane-and-worker.yaml).
+            - name: BACKEND_URL
+              value: "http://mms-control-plane.matatu-mms.svc.cluster.local"
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: SESSION_SECRET }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mms-frontend-ops
+  namespace: matatu-mms
+spec:
+  selector:
+    app: mms-frontend-ops
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mms-frontend-ops
+  namespace: matatu-mms
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: mms-frontend-ops

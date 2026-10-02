@@ -1,0 +1,195 @@
+# API backend (Readiness List §1).
+#
+# Not applied anywhere today — see this directory's README.
+#
+# Image path fixed to match what .github/workflows/ci.yml's build-and-push
+# job actually publishes: ghcr.io/<owner>/<repo>/<component>, e.g.
+# ghcr.io/ipswyworld/matatu-mms/backend — not ghcr.io/ipswyworld/
+# matatu-mms-backend, a single hyphenated package name that was never a
+# real path CI ever pushed to. Found while wiring Argo CD to this CI.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mms-backend
+  namespace: matatu-mms
+  labels:
+    app: mms-backend
+    component: api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below full capacity during a rollout: this is the public
+      # API, and a deploy at 5pm should not reduce headroom at peak.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: mms-backend
+  template:
+    metadata:
+      labels:
+        app: mms-backend
+        component: api
+    spec:
+      # Spread replicas across nodes so a single node failure cannot take
+      # the whole API down — the default scheduler is free to co-locate all
+      # three otherwise.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: mms-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      # GHCR packages default to private. Argo CD/kubectl applying this
+      # manifest is not itself authenticated to ghcr.io — the cluster needs
+      # its own pull credential, documented (shape only) in
+      # secrets.example.yaml.
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: api
+          image: ghcr.io/ipswyworld/matatu-mms/backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: APP_ROLE
+              value: "api"
+            - name: PORT
+              value: "8000"
+            # Secrets come from the cluster's secret store, populated by
+            # Infisical (Readiness List §4) rather than committed here.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: DATABASE_URL }
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: REDIS_URL }
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: SECRET_KEY }
+            - name: NAIROBIPAY_CALLBACK_SECRET
+              valueFrom:
+                secretKeyRef: { name: mms-secrets, key: NAIROBIPAY_CALLBACK_SECRET }
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              # No CPU limit, deliberately. A CPU limit throttles rather than
+              # evicts, so a pod at its ceiling gets slower without any signal
+              # that says so — latency degrades and nothing looks unhealthy.
+              # The request plus the HPA is the right control; memory IS
+              # limited because exceeding it must fail fast rather than
+              # starve the node.
+              memory: 1Gi
+          # Liveness asks only "is this process alive". If it also checked
+          # Postgres, a brief database blip would restart every pod at once
+          # and turn a recoverable degradation into an outage.
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness asks "should this pod receive traffic", which is where
+          # dependency health belongs — an unready pod is removed from the
+          # Service without being killed.
+          readinessProbe:
+            httpGet: { path: /api/system/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Startup probe covers slow first boot (migrations already applied
+          # by the Job, but seeding and connection warm-up take time) without
+          # forcing a generous livenessProbe delay forever after.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      # Long enough for in-flight requests and open WebSockets to drain.
+      terminationGracePeriodSeconds: 45
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mms-backend
+  namespace: matatu-mms
+spec:
+  selector:
+    app: mms-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mms-backend
+  namespace: matatu-mms
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mms-backend
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+  behavior:
+    scaleUp:
+      # Commute peaks arrive fast. Waiting the default five minutes to react
+      # means scaling up after the surge has already been served badly.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      # Slow down deliberately: a lull between morning and evening peaks is
+      # not a reason to give up capacity that will be needed again shortly.
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 120
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mms-backend
+  namespace: matatu-mms
+spec:
+  # Keeps a node drain or cluster upgrade from taking the API below two
+  # replicas, which is what makes maintenance safe during working hours.
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: mms-backend

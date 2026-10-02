@@ -15,13 +15,30 @@ class CircuitBreaker:
     def __init__(self, failure_threshold: int = 3, recovery_time: float = 30.0):
         self.failure_threshold = failure_threshold
         self.recovery_time = recovery_time
-        
+
         self.state = "CLOSED"  # CLOSED, OPEN, HALF-OPEN
         self.failure_count = 0
         self.last_failure_time = 0.0
+        # Manual override from the ops console (Ops Console Rebuild Spec
+        # §6.1): "auto" means normal failure-driven behaviour, "open" forces
+        # every call to be rejected, "closed" forces every call through.
+        # Held separately from `state` so lifting an override returns the
+        # breaker to whatever the automatic logic had concluded, rather than
+        # silently resetting its failure history.
+        self.override: str = "auto"
 
     async def call(self, func: Callable[..., Awaitable[T]], *args, **kwargs) -> T:
         current_time = time.time()
+
+        # A manual override wins over the automatic state machine. This is
+        # the lever an operator pulls when a third party is known-bad and
+        # there is no reason to keep discovering that one failed call at a
+        # time, or conversely when the breaker tripped on a transient blip
+        # and traffic should resume immediately.
+        if self.override == "open":
+            raise CircuitBreakerOpenException("Circuit breaker is manually held OPEN by an operator.")
+        if self.override == "closed":
+            return await func(*args, **kwargs)
 
         # Check state transition from OPEN to HALF-OPEN
         if self.state == "OPEN":

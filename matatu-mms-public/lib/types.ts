@@ -1,0 +1,539 @@
+export type Role =
+  | "SUPERADMIN"
+  | "ADMIN"
+  | "ENFORCEMENT"
+  | "SACCO_OPERATOR"
+  | "VIEWER"
+  | "PASSENGER"
+  | "CREW"
+  | "DIRECTOR_MOBILITY"
+  | "CHIEF_OFFICER"
+  | "ARRESTING_OFFICER"
+  | "RELEASING_OFFICER"
+  | "ENFORCEMENT_COMMANDER";
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  password: string; // DEMO ONLY
+  role: Role;
+  saccoId?: string;
+  termsAccepted?: boolean;
+  termsAcceptedAt?: string;
+  termsSignature?: string;
+  enforcementDuty?: "ARRESTING" | "RELEASING" | null;
+  assignedZoneId?: string | null;
+  commanderTitle?: string | null;
+  isActive?: boolean;
+  favoriteSaccoId?: string | null;
+}
+
+export interface Zone {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface OffenceType {
+  id: string;
+  name: string;
+  defaultFineKes: number;
+  isOther: boolean;
+}
+
+export type EnforcementCaseStatus = "ARRESTED" | "PAID" | "RELEASED" | "DISPUTED" | "WAIVED";
+export type EnforcementAction = "IMPOUND" | "SELF_DRIVE_IMPOUND" | "TOLL";
+
+export interface EnforcementCase {
+  id: string;
+  caseReference: string;
+  regNumber: string;
+  offenceTypeId: string;
+  offenceName?: string;
+  offenceDescription?: string;
+  fineAmountKes: number;
+  actionTaken: EnforcementAction;
+  photoPaths: string[];
+  zoneId?: string;
+  zoneName?: string;
+  arrestingOfficerId: string;
+  arrestingOfficerName?: string;
+  createdAt: string;
+  status: EnforcementCaseStatus;
+  paymentReference?: string;
+  paidAt?: string;
+  releasingOfficerId?: string;
+  releasingOfficerName?: string;
+  releasedAt?: string;
+  disputeReason?: string;
+  waivedReason?: string;
+  waivedAuthorizedBy?: string;
+}
+
+export interface OfficerAssignment {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  enforcementDuty?: "ARRESTING" | "RELEASING" | null;
+  assignedZoneId?: string | null;
+  commanderTitle?: string | null;
+}
+
+export type SaccoStatus = "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "SUSPENDED";
+export type SaccoLicenseStatus = "ACTIVE" | "RENEWAL_DUE" | "RENEWAL_SUBMITTED" | "EXPIRED";
+
+export interface SaccoOfficialContact {
+  chairpersonName: string;
+  chairpersonPhone: string;
+  secretaryName: string;
+  secretaryPhone: string;
+  treasurerName: string;
+  treasurerPhone: string;
+}
+
+export interface SaccoDocuments {
+  registrationCertificate: string;
+  roadServiceLicense: string;
+  countyPermit: string;
+  singleBusinessPermit: string;
+  bonafideOfficialsContacts: SaccoOfficialContact;
+}
+
+// Must match backend/app/routes/saccos.py's DOC_FIELD_MAP keys exactly.
+export type SaccoDocType =
+  | "registrationCert"
+  | "roadServiceLicense"
+  | "countyPermit"
+  | "singleBusinessPermit"
+  | "taxComplianceCert"
+  | "fareChart"
+  | "letterNoObjection";
+
+export type SaccoType = "NEW" | "EXISTING";
+export type VerificationStageStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface Sacco {
+  id: string;
+  name: string;
+  status: SaccoStatus;
+  licenseStatus: SaccoLicenseStatus;
+  primaryRouteId: string;
+  secondaryRouteIds: string[];
+  documents?: SaccoDocuments;
+  rejectionReason?: string;
+  saccoType?: SaccoType;
+  createdAt?: string;
+  applicationSubmittedAt?: string;
+  docRegistrationCert?: string;
+  docRoadServiceLicense?: string;
+  docCountyPermit?: string;
+  docSingleBusinessPermit?: string;
+  docOfficialsContacts?: string; // JSON string
+  docTaxComplianceCert?: string;
+  docFareChart?: string;
+  docLetterNoObjection?: string;
+  directorMobilityStatus?: VerificationStageStatus;
+  directorMobilityReason?: string;
+  directorMobilityDecidedBy?: string;
+  directorMobilityDecidedAt?: string;
+  chiefOfficerStatus?: VerificationStageStatus;
+  chiefOfficerReason?: string;
+  chiefOfficerDecidedBy?: string;
+  chiefOfficerDecidedAt?: string;
+}
+
+export type MatatuStatus = "REGISTRATION_PENDING" | "ACTIVE" | "FLAGGED" | "IMPOUNDED" | "DECOMMISSIONED";
+
+export interface Matatu {
+  id: string;
+  regNumber: string;
+  saccoId: string;
+  routeId: string;
+  terminalSegment: string; // e.g. "CBD-Umoja Terminal: Tusker Stage"
+  capacity: number;
+  status: MatatuStatus;
+  createdAt: string;
+  driverName?: string;
+  driverLicense?: string;
+  driverPhone?: string;
+  conductorName?: string;
+  conductorLicense?: string;
+  conductorPhone?: string;
+  sacco?: Sacco;
+  route?: Route;
+  activities?: ActivityLog[];
+  fines?: Fine[];
+}
+
+export interface Route {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  fareKes: number;
+  vehicleCount?: number;
+}
+
+export interface RouteStagePoint {
+  stageId: string;
+  name: string;
+  sequence: number;
+}
+
+export type TripStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export interface Trip {
+  id: string;
+  matatuId: string;
+  regNumber: string;
+  routeId: string;
+  routeName: string;
+  originStageId: string;
+  originStageName: string;
+  destinationStageId: string;
+  destinationStageName: string;
+  status: TripStatus;
+  startedAt: string;
+  departedAt?: string | null;
+  endedAt?: string | null;
+  passengerCount?: number | null;
+}
+
+export interface QueueStatus {
+  myTripId?: string | null;
+  position?: number | null;
+  vehiclesAhead?: number | null;
+  queuedAtStage: number;
+  activeOnRoute: number;
+}
+
+export type CrewRole = "DRIVER" | "CONDUCTOR";
+
+// Real login-linked crew, distinct from Matatu.driverName/conductorName
+// (plain free text). See ARCHITECTURE_DECISIONS.md §29.1.
+export interface CrewAssignment {
+  id: string;
+  userId: string;
+  matatuId: string;
+  crewRole: CrewRole;
+  assignedAt: string;
+  unassignedAt: string | null;
+  userName: string;
+  userEmail: string;
+  userPhone: string | null;
+  crewNumber: string | null;
+  matatuRegNumber: string;
+}
+
+export type ActivityType = "TRIP" | "INSPECTION" | "INCIDENT";
+
+export interface ActivityLog {
+  id: string;
+  matatuId: string;
+  type: ActivityType;
+  description: string;
+  location: string;
+  officerId: string;
+  timestamp: string; // ISO date
+}
+
+export type FineStatus = "PENDING" | "PAID" | "DISPUTED" | "WAIVED";
+
+export interface Fine {
+  id: string;
+  matatuId: string;
+  officerId: string;
+  reason: string;
+  amountKes: number;
+  status: FineStatus;
+  issuedAt: string;
+  dueDate: string;
+  regNumber?: string;
+  saccoId?: string;
+}
+
+export interface CrimeRecord {
+  id: string;
+  offenceCommitted: string;
+  regNumber: string;
+  driverName: string;
+  driverLicense: string;
+  location: string;
+  fineAmountKes: number;
+  remarks: string;
+  officerId: string;
+  officerName?: string;
+  timestamp: string;
+  status: "PENDING" | "PROCESSED" | "PAID" | "DISPUTED";
+  photoPath?: string;
+}
+
+export interface SessionData {
+  userId: string;
+  name: string;
+  role: Role;
+  saccoId?: string;
+  token?: string;
+  // Set at login, read back by refreshSessionAction() so a background
+  // token refresh re-applies the same cookie maxAge the user originally
+  // got instead of silently defaulting to the short 8-hour lifetime every
+  // time it refreshes.
+  rememberMe?: boolean;
+}
+
+export interface AbacPolicy {
+  id: string;
+  description: string;
+  appliesToRoles: string[];
+}
+
+export interface SystemHealth {
+  uptimeSeconds: number;
+  database: {
+    reachable: boolean;
+    error: string | null;
+    engine: string;
+    pool: Record<string, string | number>;
+  };
+  redis: {
+    reachable: boolean;
+    error: string | null;
+  };
+  config: {
+    secretKeyConfigured: boolean;
+    nairobiPayCallbackSecretConfigured: boolean;
+    sentryConfigured: boolean;
+  };
+  abacPolicies: AbacPolicy[];
+}
+
+export interface AuditLog {
+  id: number;
+  resourceType: string;
+  resourceId: string;
+  action: string;
+  oldValues?: string;
+  newValues?: string;
+  userId: string;
+  timestamp: string;
+}
+
+export interface Seat {
+  id: number;
+  label: string;
+  isOccupied: boolean;
+  isReserved?: boolean;
+  fareKes: number;
+}
+
+export interface Stage {
+  id: string;
+  name: string;
+  // Only the original 7 hardcoded NAIROBI_STAGES entries (GisMap.tsx) carry
+  // a code/zone — real backend Stage rows (GET /api/search/stages) don't
+  // have either, so both are optional rather than backfilled with a fake
+  // value.
+  code?: string;
+  zone?: string;
+  lat: number;
+  lng: number;
+}
+
+export type ReportStatus = "PENDING" | "REVIEWED" | "ESCALATED" | "DISMISSED";
+
+export interface PassengerReport {
+  id: string;
+  matatuRegNumber?: string;
+  category: string;
+  message: string;
+  reporterName?: string;
+  reporterPhone?: string;
+  photoPath?: string;
+  status: ReportStatus;
+  createdAt: string;
+}
+
+export interface Booking {
+  id: string;
+  passengerName: string;
+  phone: string;
+  matatuId: string;
+  routeId: string;
+  regNumber?: string;
+  routeName?: string;
+  stageName: string;
+  seatNumbers: number[];
+  fareKes: number;
+  bookedAt: string;
+  status: "CONFIRMED" | "USED" | "CANCELLED";
+  accessibilityFlag?: boolean;
+}
+
+export type ScheduledBookingStatus = "PENDING" | "CONFIRMED" | "BOARDED" | "NO_SHOW" | "CANCELLED" | "REASSIGNED";
+
+export interface ScheduledBooking {
+  id: string;
+  routeId: string;
+  matatuId?: string | null;
+  passengerName: string;
+  phone: string;
+  originStageId: string;
+  destinationStageId?: string | null;
+  scheduledDeparture: string;
+  seatNumbers: number[];
+  fareKes: number;
+  status: ScheduledBookingStatus;
+  isRecurring: boolean;
+  accessibilityFlag: boolean;
+  trustedContactPhone?: string | null;
+  shareToken?: string | null;
+  createdAt: string;
+  routeName?: string | null;
+  routeCode?: string | null;
+  originStageName?: string | null;
+  destinationStageName?: string | null;
+  regNumber?: string | null;
+}
+
+// Trusted-contact sharing (Phase 7, #8) — the unauthenticated view returned
+// by GET /api/scheduled-bookings/share/{token}, deliberately thinner than
+// ScheduledBooking itself (no phone, no seat numbers).
+export interface ScheduledBookingShare {
+  status: ScheduledBookingStatus;
+  scheduledDeparture: string;
+  routeName?: string | null;
+  originStageName?: string | null;
+  destinationStageName?: string | null;
+  regNumber?: string | null;
+  livePosition?: { lat: number; lng: number; heading?: number | null; recordedAt?: string | null } | null;
+}
+
+export interface UserFavorite {
+  id: string;
+  saccoId: string;
+  createdAt: string;
+}
+
+export interface RecentSacco {
+  saccoId: string;
+  lastBookedAt: string;
+}
+
+export type OperatorTerminalMatchStatus =
+  | "PENDING"
+  | "MATCHED_EXISTING_STAGE"
+  | "GEOCODED_NEW"
+  | "MANUALLY_SET"
+  | "UNRESOLVED";
+
+export interface OperatorTerminal {
+  id: string;
+  saccoId: string;
+  routeId: string;
+  label: string;
+  stageId?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  geocoded: boolean;
+  matchStatus: OperatorTerminalMatchStatus;
+  createdAt: string;
+}
+
+export interface TripRating {
+  id: string;
+  bookingId: string;
+  matatuId: string;
+  saccoId: string;
+  driverUserId?: string | null;
+  conductorUserId?: string | null;
+  rating: number;
+  comment?: string | null;
+  createdAt: string;
+}
+
+export interface PendingRating {
+  bookingId: string;
+  regNumber: string;
+  routeName: string;
+  bookedAt: string;
+}
+
+export interface OriginDestinationResult {
+  matatuId: string;
+  regNumber: string;
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  fromStageName: string;
+  toStageName: string;
+  fareKes: number;
+  capacity: number;
+  seatsAvailable: number;
+  direction: string;
+}
+
+// One-transfer journey (Phase 9, #6) — each leg is its own independent
+// direct-search-shaped result (own matatu, own fare), joined at a
+// transfer stage. Mirrors OriginDestinationResult's fields per leg rather
+// than inventing a new shape, since TripPlanner already knows how to
+// render one of those.
+export interface MultiLegLegResult {
+  matatuId: string;
+  regNumber: string;
+  routeId: string;
+  routeName: string;
+  routeCode: string;
+  fromStageId: string;
+  fromStageName: string;
+  toStageId: string;
+  toStageName: string;
+  fareKes: number;
+  capacity: number;
+  seatsAvailable: number;
+  direction: string;
+}
+
+export interface MultiLegSearchResult {
+  leg1: MultiLegLegResult;
+  leg2: MultiLegLegResult;
+  transferStageId: string;
+  transferStageName: string;
+  transferStageLat: number;
+  transferStageLng: number;
+  totalFareKes: number;
+}
+
+export interface TimeseriesPoint {
+  bucket: string;
+  count: number;
+  value: number;
+}
+
+export interface TimeseriesResponse {
+  metric: string;
+  grouping: string;
+  points: TimeseriesPoint[];
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  level: "info" | "success" | "error";
+  type?: string;
+  createdAt: string;
+  readAt?: string | null;
+}
+
+export interface NotificationHistory {
+  items: AppNotification[];
+  unreadCount: number;
+}
+
+export interface PublicStatus {
+  services: { name: string; up: boolean }[];
+  maintenanceActive: boolean;
+  maintenanceAnnouncement: { scheduledStart: string | null; scheduledEnd: string | null; message: string | null } | null;
+}

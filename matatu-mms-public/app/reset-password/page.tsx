@@ -1,0 +1,88 @@
+"use client";
+
+import { Suspense } from "react";
+import { useFormState, useFormStatus } from "react-dom";
+import { useSearchParams } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
+import { resetPasswordAction } from "@/lib/actions";
+import AuthSkyline from "@/components/AuthSkyline";
+import PublicFooter from "@/components/PublicFooter";
+import PasswordInput from "@/components/PasswordInput";
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" className="btn-primary w-full !py-3 text-base flex items-center justify-center gap-2" disabled={pending}>
+      {pending ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={16} strokeWidth={2} />}
+      {pending ? "Updating..." : "Set new password"}
+    </button>
+  );
+}
+
+function ResetPasswordForm() {
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") || "";
+  const [state, formAction] = useFormState(resetPasswordAction, undefined);
+
+  return (
+    <div className="card p-6 space-y-4 auth-card-enter">
+      {!token ? (
+        <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold text-center">
+          This reset link is missing its token. Request a new one from the sign-in page.
+        </div>
+      ) : state?.message ? (
+        <div className="text-sm text-county-green bg-county-green/10 border border-county-green/30 rounded-lg px-3 py-2.5 font-semibold text-center">
+          {state.message}
+        </div>
+      ) : (
+        <form action={formAction} className="space-y-4">
+          <input type="hidden" name="token" value={token} />
+          <div>
+            <label className="label" htmlFor="newPassword">New password</label>
+            <PasswordInput id="newPassword" name="newPassword" placeholder="••••••••" required minLength={6} />
+          </div>
+          <div>
+            <label className="label" htmlFor="confirmPassword">Confirm password</label>
+            <PasswordInput id="confirmPassword" name="confirmPassword" placeholder="••••••••" required minLength={6} />
+          </div>
+          {state?.error && (
+            <div className="text-sm text-county-red bg-county-red/10 border border-county-red/30 rounded-lg px-3 py-2.5 font-semibold">
+              {state.error}
+            </div>
+          )}
+          <SubmitButton />
+        </form>
+      )}
+
+      <div className="text-center pt-2 border-t border-black/5">
+        <Link href="/login" className="text-xs font-extrabold text-county-green hover:underline inline-flex items-center gap-1">
+          <ArrowLeft size={12} strokeWidth={2.5} />
+          Back to Sign in
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <main className="relative min-h-screen bg-county-cream flex flex-col overflow-hidden">
+      <AuthSkyline heightClassName="h-[70vh]" />
+      <div className="relative z-10 flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center space-y-2">
+            <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={48} height={48} className="mx-auto object-contain drop-shadow" priority />
+            <h1 className="text-2xl font-black tracking-tight text-county-ink">Set a new password</h1>
+          </div>
+
+          <Suspense fallback={<div className="card p-6 text-center text-sm text-county-ink/50">Loading…</div>}>
+            <ResetPasswordForm />
+          </Suspense>
+        </div>
+      </div>
+      <PublicFooter transparent />
+    </main>
+  );
+}
