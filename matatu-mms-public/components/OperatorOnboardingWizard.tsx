@@ -32,39 +32,39 @@ function missingItems(sacco: Sacco): string[] {
 function StageTracker({ sacco }: { sacco: Sacco }) {
   return (
     <div className="grid md:grid-cols-2 gap-4">
-      <div className="p-3 rounded-lg border border-white/15 bg-black/20 text-xs space-y-1">
+      <div className="p-3 rounded-lg border border-county-ink/10 bg-black/[0.02] text-xs space-y-1">
         <div className="flex justify-between items-center">
-          <span className="font-extrabold text-white">Stage 1 · Director of Mobility</span>
+          <span className="font-extrabold text-county-ink">Stage 1 · Director of Mobility</span>
           <span
             className={`badge font-extrabold ${
               sacco.directorMobilityStatus === "APPROVED"
-                ? "bg-county-green/20 text-county-green"
+                ? "bg-county-green/10 text-county-green"
                 : sacco.directorMobilityStatus === "REJECTED"
-                ? "bg-county-red/20 text-county-red"
-                : "bg-county-yellow/20 text-county-yellow"
+                ? "bg-county-red/10 text-county-red"
+                : "bg-county-yellow/20 text-yellow-900"
             }`}
           >
             {sacco.directorMobilityStatus || "PENDING"}
           </span>
         </div>
-        {sacco.directorMobilityReason && <p className="text-white/60">Reason: {sacco.directorMobilityReason}</p>}
+        {sacco.directorMobilityReason && <p className="text-county-ink/60">Reason: {sacco.directorMobilityReason}</p>}
       </div>
-      <div className="p-3 rounded-lg border border-white/15 bg-black/20 text-xs space-y-1">
+      <div className="p-3 rounded-lg border border-county-ink/10 bg-black/[0.02] text-xs space-y-1">
         <div className="flex justify-between items-center">
-          <span className="font-extrabold text-white">Stage 2 · Chief Officer (Final)</span>
+          <span className="font-extrabold text-county-ink">Stage 2 · Chief Officer (Final)</span>
           <span
             className={`badge font-extrabold ${
               sacco.chiefOfficerStatus === "APPROVED"
-                ? "bg-county-green/20 text-county-green"
+                ? "bg-county-green/10 text-county-green"
                 : sacco.chiefOfficerStatus === "REJECTED"
-                ? "bg-county-red/20 text-county-red"
-                : "bg-county-yellow/20 text-county-yellow"
+                ? "bg-county-red/10 text-county-red"
+                : "bg-county-yellow/20 text-yellow-900"
             }`}
           >
             {sacco.chiefOfficerStatus || "PENDING"}
           </span>
         </div>
-        {sacco.chiefOfficerReason && <p className="text-white/60">Reason: {sacco.chiefOfficerReason}</p>}
+        {sacco.chiefOfficerReason && <p className="text-county-ink/60">Reason: {sacco.chiefOfficerReason}</p>}
       </div>
     </div>
   );
@@ -88,7 +88,7 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
           Application submitted — awaiting county verification.
         </div>
         <StageTracker sacco={sacco} />
-        <p className="text-xs text-white/50 text-center">
+        <p className="text-xs text-county-ink/50 text-center">
           You'll be able to access your full Operator Dashboard automatically once both stages approve. Refresh this
           page any time to check your status.
         </p>
@@ -142,29 +142,29 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
             <button
               onClick={() => setStep(s.n)}
               className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${
-                step === s.n ? "bg-county-yellow text-county-green-deep" : "bg-white/10 text-white/60"
+                step === s.n ? "bg-county-yellow text-county-green-deep" : "bg-black/5 text-county-ink/50"
               }`}
             >
               {s.n}
             </button>
-            <span className={`text-xs font-bold ${step === s.n ? "text-white" : "text-white/40"}`}>{s.label}</span>
-            {i < steps.length - 1 && <div className="flex-1 h-px bg-white/10" />}
+            <span className={`text-xs font-bold ${step === s.n ? "text-county-ink" : "text-county-ink/40"}`}>{s.label}</span>
+            {i < steps.length - 1 && <div className="flex-1 h-px bg-black/10" />}
           </div>
         ))}
       </div>
 
       {error && (
-        <div className="bg-county-red/20 border border-county-red/40 text-red-200 text-xs p-3 rounded-lg font-semibold">
+        <div className="bg-county-red/10 border border-county-red/30 text-county-red text-xs p-3 rounded-lg font-semibold">
           {error}
         </div>
       )}
 
       {step === 1 && (
         <div className="space-y-2.5">
-          <p className="text-xs text-white/60">
+          <p className="text-xs text-county-ink/60">
             Upload each mandatory document (PDF, JPG, or PNG). {sacco.saccoType === "NEW" && "As a new operator, a Letter of No Objection is required before your Road Service License is accepted."}
           </p>
-          <div className="bg-white rounded-xl p-3 space-y-2">
+          <div className="bg-black/[0.02] border border-county-ink/10 rounded-xl p-3 space-y-2">
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="registrationCert" label="1. Registration Certificate" currentPath={sacco.docRegistrationCert} />
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="roadServiceLicense" label="2. Road Service License (RSL)" currentPath={sacco.docRoadServiceLicense} />
             <SaccoDocumentUploadRow saccoId={sacco.id} docType="countyPermit" label="3. Permit from County" currentPath={sacco.docCountyPermit} />
@@ -181,8 +181,8 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
 
       {step === 2 && (
         <div className="space-y-2.5">
-          <p className="text-xs text-white/60">Chairperson, Secretary, and Treasurer contact details for your Operator.</p>
-          <div className="bg-white rounded-xl p-3">
+          <p className="text-xs text-county-ink/60">Chairperson, Secretary, and Treasurer contact details for your Operator.</p>
+          <div className="bg-black/[0.02] border border-county-ink/10 rounded-xl p-3">
             <SaccoOfficialsForm saccoId={sacco.id} officials={officials} />
           </div>
           <div className="flex gap-2">
@@ -194,7 +194,7 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
 
       {step === 3 && (
         <div className="space-y-3">
-          <h4 className="font-bold text-sm text-white">Review Before Submitting</h4>
+          <h4 className="font-bold text-sm text-county-ink">Review Before Submitting</h4>
           {missingItems(sacco).length === 0 ? (
             <div className="bg-county-green/10 border border-county-green/30 text-county-green text-xs p-3 rounded-lg font-semibold">
               Everything's in place. Submit when ready — you won't be able to edit while under review.
@@ -213,7 +213,7 @@ export default function OperatorOnboardingWizard({ sacco }: { sacco: Sacco }) {
         </div>
       )}
 
-      <div className="text-center text-xs text-white/40 pt-2 border-t border-white/10">
+      <div className="text-center text-xs text-county-ink/40 pt-2 border-t border-black/10">
         <Link href="/login" className="hover:underline">Sign out and come back later →</Link>
       </div>
     </div>

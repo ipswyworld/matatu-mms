@@ -88,6 +88,14 @@ const SECURITY_HEADERS = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // This app doesn't use output: "standalone", so file-trace collection
+  // (.nft.json per page, used only to know which files a standalone build
+  // needs to copy) buys nothing here. On this machine it's also the build
+  // step that keeps failing with sporadic ENOENT on freshly-written
+  // .nft.json files — Windows Defender's real-time scan racing the build's
+  // own writes/reads of those files. Disabling it removes that failure
+  // point entirely; nothing at runtime reads these files.
+  outputFileTracing: false,
   // @tomtom-org/maps-sdk does `import { version } from "maplibre-gl/package.json"`,
   // which Next's default webpack config doesn't resolve as a named JSON
   // export. Routing it through Next's own transform pipeline fixes the

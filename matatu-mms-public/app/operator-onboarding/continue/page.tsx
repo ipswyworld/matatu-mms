@@ -3,7 +3,13 @@ import Image from "next/image";
 import { readSession } from "@/lib/session";
 import { getSaccos } from "@/lib/data";
 import OperatorOnboardingWizard from "@/components/OperatorOnboardingWizard";
+import AuthSkyline from "@/components/AuthSkyline";
+import PublicFooter from "@/components/PublicFooter";
 
+// Same cream/skyline template as the rest of the auth family — this page
+// (and OperatorOnboardingWizard.tsx, which it's the sole caller of)
+// previously ran its own bespoke dark theme, inconsistent with
+// /operator-onboarding and every other auth-family page.
 export default async function OperatorOnboardingContinuePage() {
   const session = readSession()!;
   if (session.role !== "SACCO_OPERATOR") {
@@ -21,24 +27,26 @@ export default async function OperatorOnboardingContinuePage() {
   }
 
   return (
-    <main className="min-h-screen bg-county-black text-white flex flex-col justify-center items-center p-4">
-      <div className="w-full max-w-lg space-y-6">
-        <div className="text-center space-y-3">
-          <div className="h-16 w-16 rounded-2xl bg-county-cream flex items-center justify-center overflow-hidden shadow-lg mx-auto">
-            <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={64} height={64} className="object-contain" priority />
-          </div>
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-county-yellow">
-              Nairobi City County · Operator Verification
+    <main className="relative min-h-screen bg-county-cream flex flex-col overflow-hidden">
+      <AuthSkyline heightClassName="h-[70vh]" />
+      <div className="relative z-10 flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-lg space-y-6">
+          <div className="text-center space-y-3">
+            <Image src="/nairobi-crest.jpg" alt="Nairobi City County" width={48} height={48} className="mx-auto object-contain drop-shadow" priority />
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-county-green">
+                Nairobi City County · Operator Verification
+              </div>
+              <h1 className="text-2xl font-black tracking-tight text-county-ink mt-1">{sacco.name}</h1>
             </div>
-            <h1 className="text-xl font-extrabold tracking-tight text-white mt-1">{sacco.name}</h1>
           </div>
-        </div>
 
-        <div className="bg-white/[0.06] border border-white/10 p-6 rounded-2xl shadow-2xl">
-          <OperatorOnboardingWizard sacco={sacco} />
+          <div className="card p-6 auth-card-enter">
+            <OperatorOnboardingWizard sacco={sacco} />
+          </div>
         </div>
       </div>
+      <PublicFooter transparent />
     </main>
   );
 }
