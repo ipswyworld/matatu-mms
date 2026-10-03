@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { BadgeCheck } from "lucide-react";
 import { readSession } from "@/lib/session";
-import { getSaccos, getRoutes, getMatatus, getCrewAssignments, getComplianceFunnel } from "@/lib/data";
+import { getSaccos, getRoutes, getMatatus, getCrewAssignments, getComplianceFunnel, getOperatorTerminals } from "@/lib/data";
 import { can } from "@/lib/rbac";
 import SaccoVerificationCard from "@/components/SaccoVerificationCard";
 import PageBanner from "@/components/PageBanner";
 import LicenseRenewalPanel from "@/components/LicenseRenewalPanel";
 import ShadowRegistryPanel from "@/components/ShadowRegistryPanel";
+import OperatorTerminalsPanel from "@/components/OperatorTerminalsPanel";
 import OperatorVerificationBrowser, { OperatorEntry } from "@/components/OperatorVerificationBrowser";
 import type { Metadata } from "next";
 
@@ -15,7 +16,8 @@ export const metadata: Metadata = { title: "Operator Verification" };
 export default async function SaccoVerifyPage() {
   const session = readSession()!;
   const canManageShadowRegistry = can(session.role, "verify_saccos");
-  const [allSaccos, routes, matatus, crewAssignments, funnel] = await Promise.all([
+  const canViewOperatorTerminals = can(session.role, "view_operator_terminals");
+  const [allSaccos, routes, matatus, crewAssignments, funnel, operatorTerminals] = await Promise.all([
     getSaccos(),
     getRoutes(),
     getMatatus(),
@@ -24,6 +26,7 @@ export default async function SaccoVerifyPage() {
     // one) shouldn't take down Sacco listing/routing/verification with it.
     getCrewAssignments().catch(() => []),
     canManageShadowRegistry ? getComplianceFunnel() : Promise.resolve(null),
+    canViewOperatorTerminals ? getOperatorTerminals() : Promise.resolve([]),
   ]);
   // Shadow-registry rows (UNREGISTERED/INVITED) have no docs/verification
   // stages — they don't belong in the verification pipeline browser below,
@@ -67,6 +70,15 @@ export default async function SaccoVerifyPage() {
       />
 
       {canManageShadowRegistry && funnel && <ShadowRegistryPanel funnel={funnel} />}
+
+      {canViewOperatorTerminals && (
+        <OperatorTerminalsPanel
+          terminals={operatorTerminals}
+          saccos={allSaccos}
+          routes={routes}
+          canResolve={can(session.role, "resolve_operator_terminals")}
+        />
+      )}
 
       <LicenseRenewalPanel saccos={saccos} />
 

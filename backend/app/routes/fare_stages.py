@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
-from app.models import FareStage, Route, Matatu, Stage, User
+from app.models import FareStage, Route, Stage, User
 from app.schemas import FareStageCreate, FareStageResponse, FareStageUploadResult
 from app.auth import get_current_user, requires_permission
+from app.route_access import enforce_route_access as _enforce_route_access
 
 router = APIRouter(tags=["Fare Stages"])
 
@@ -22,23 +23,6 @@ async def _route_or_404(db: AsyncSession, route_id: str) -> Route:
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
     return route
-
-
-async def _enforce_route_access(db: AsyncSession, current_user: User, route: Route) -> None:
-    """Admin/Superadmin manage any route's fares. A Sacco Operator may only
-    manage fares for a route at least one of their own vehicles operates on
-    — routes are shared, county-wide entities (not Sacco-owned), so
-    ownership is derived from the operator's fleet rather than a direct FK."""
-    if current_user.role not in ("SACCO_OPERATOR", "CREW"):
-        return
-    result = await db.execute(
-        select(Matatu).where(Matatu.route_id == route.id, Matatu.sacco_id == current_user.sacco_id)
-    )
-    if not result.scalars().first():
-        raise HTTPException(
-            status_code=403,
-            detail="You can only manage fare charts for routes your own fleet operates on.",
-        )
 
 
 @router.get("/api/routes/{route_id}/fare-stages", response_model=List[FareStageResponse])

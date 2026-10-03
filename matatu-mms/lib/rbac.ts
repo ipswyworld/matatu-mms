@@ -73,6 +73,8 @@ export type Action =
   | "manage_admins"
   | "view_system_health"
   | "manage_system_config"
+  | "view_operator_terminals"
+  | "resolve_operator_terminals"
   | "view_scheduling_analytics";
 
 // Every permission string the backend actually enforces (backend/app/rbac.py's
@@ -158,6 +160,8 @@ export const MATRIX: Record<Role, Action[]> = {
     "view_audit_logs",
     "view_system_health",
     "manage_system_config",
+    "view_operator_terminals",
+    "resolve_operator_terminals",
     "view_scheduling_analytics",
   ],
   ADMIN: [
@@ -192,18 +196,22 @@ export const MATRIX: Record<Role, Action[]> = {
     "manage_duty_allocation",
     "send_broadcast",
     "view_audit_logs",
+    "view_operator_terminals",
+    "resolve_operator_terminals",
     "view_scheduling_analytics",
   ],
   DIRECTOR_MOBILITY: [
     "view_dashboard",
     "view_operator_verification",
     "decide_operator_verification_stage1",
+    "view_operator_terminals",
     "view_scheduling_analytics",
   ],
   CHIEF_OFFICER: [
     "view_dashboard",
     "view_operator_verification",
     "decide_operator_verification_stage2",
+    "view_operator_terminals",
   ],
   ENFORCEMENT: [
     "view_dashboard",

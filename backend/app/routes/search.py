@@ -39,23 +39,22 @@ class StageSearchResult(BaseModelCamel):
 
 @router.get("/stages", response_model=List[StageSearchResult])
 async def search_stages(
-    q: str = Query(..., min_length=1),
+    q: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Type-ahead over the real BRN stage list (hundreds of real stops,
     not the old 7-stage hardcoded dropdown) — backs "Guide Me"'s free-text
     destination field. Only geocoded stages: a stage with no real lat/lng
-    can't be used as a walking-guidance target."""
-    query = q.strip()
-    if not query:
-        return []
-    result = await db.execute(
-        select(Stage)
-        .where(Stage.name.ilike(f"%{query}%"), Stage.geocoded == True, Stage.lat.is_not(None))
-        .order_by(Stage.name)
-        .limit(15)
-    )
+    can't be used as a walking-guidance target.
+
+    With no `q`, returns every geocoded stage (capped) instead of an empty
+    list — GisMap.tsx uses this to plot the real stage/terminal network
+    instead of its old hardcoded 7-stage fallback array."""
+    query = (q or "").strip()
+    stmt = select(Stage).where(Stage.geocoded == True, Stage.lat.is_not(None))  # noqa: E712
+    stmt = stmt.where(Stage.name.ilike(f"%{query}%")).limit(15) if query else stmt.limit(500)
+    result = await db.execute(stmt.order_by(Stage.name))
     return [StageSearchResult(id=s.id, name=s.name, lat=s.lat, lng=s.lng) for s in result.scalars().all()]
 
 

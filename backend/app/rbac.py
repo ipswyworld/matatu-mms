@@ -62,6 +62,9 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_crew",
         "manage_fare_stages",
         "manage_webhooks",
+        "manage_operator_terminals",
+        "view_operator_terminals",
+        "resolve_operator_terminals",
         "view_scheduling_analytics",
     ],
     "ADMIN": [
@@ -98,6 +101,9 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_crew",
         "manage_fare_stages",
         "manage_webhooks",
+        "manage_operator_terminals",
+        "view_operator_terminals",
+        "resolve_operator_terminals",
         "view_scheduling_analytics",
     ],
     "DIRECTOR_MOBILITY": [
@@ -112,12 +118,17 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         # managing crew (issuing/revoking credentials) stays manage_crew-only,
         # which this role deliberately doesn't have.
         "view_crew",
+        # Same read-only posture, same page: sees operator-submitted
+        # terminals but can't resolve one (resolve_operator_terminals is
+        # ADMIN/SUPERADMIN-only — this mutates canonical map data).
+        "view_operator_terminals",
     ],
     "CHIEF_OFFICER": [
         "view_dashboard",
         "view_operator_verification",
         "decide_operator_verification_stage2",
         "view_crew",
+        "view_operator_terminals",
     ],
     "ENFORCEMENT": [
         "view_dashboard",
@@ -196,6 +207,8 @@ ROLE_MATRIX: Dict[str, List[str]] = {
         "view_reports",
         "view_enforcement_cases",
         "manage_webhooks",
+        "manage_operator_terminals",
+        "view_operator_terminals",
         "view_scheduled_bookings",
     ],
     "VIEWER": [

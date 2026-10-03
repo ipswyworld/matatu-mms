@@ -5,13 +5,15 @@ no new vendor dependency). Needed to draw all 125 routes on the network map
 whose stages happened to already be geocoded from the original BRN PDF
 digitization pass.
 
+The actual TomTom call + Nairobi bounding-box check now live in
+app/terminal_matching.py (geocode_place), shared with the live
+operator-terminal-submission path — this script just drives it in bulk.
+
 Run from backend/: python scripts/geocode_stages.py
 """
 import asyncio
 import os
-import re
 import sys
-from urllib.parse import quote
 
 import httpx
 from sqlalchemy import select
@@ -20,61 +22,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import AsyncSessionLocal  # noqa: E402
 from app.models import Stage  # noqa: E402
-
-TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY") or os.environ.get("NEXT_PUBLIC_TOMTOM_API_KEY")
-NAIROBI_LAT, NAIROBI_LNG = -1.2864, 36.8228
-SEARCH_URL = "https://api.tomtom.com/search/2/search/{query}.json"
-
-# Nairobi's bounding box, loosely — rejects a geocode hit that lands
-# nowhere near the city (a wrong disambiguation for an ambiguous name)
-# rather than silently plotting a stage in the wrong county/country.
-NAIROBI_BBOX = {"minLat": -1.50, "maxLat": -1.10, "minLng": 36.60, "maxLng": 37.05}
-
-
-def in_nairobi(lat: float, lng: float) -> bool:
-    return NAIROBI_BBOX["minLat"] <= lat <= NAIROBI_BBOX["maxLat"] and NAIROBI_BBOX["minLng"] <= lng <= NAIROBI_BBOX["maxLng"]
-
-
-def clean_query(name: str) -> str:
-    # Stage names carry BRN-report artifacts ("/ Hakati", "-Kabiria") that
-    # confuse a places search more than they help it — strip to the first
-    # clear segment and always anchor the search to Nairobi, Kenya.
-    name = re.split(r"[/]", name)[0].strip()
-    return f"{name}, Nairobi, Kenya"
-
-
-async def geocode_one(client: httpx.AsyncClient, name: str) -> tuple[float, float] | None:
-    query = clean_query(name)
-    try:
-        resp = await client.get(
-            SEARCH_URL.format(query=quote(query)),
-            params={
-                "key": TOMTOM_API_KEY,
-                "lat": NAIROBI_LAT,
-                "lon": NAIROBI_LNG,
-                "radius": 60000,
-                "countrySet": "KE",
-                "limit": 1,
-            },
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        results = resp.json().get("results") or []
-        if not results:
-            return None
-        pos = results[0]["position"]
-        lat, lng = pos["lat"], pos["lon"]
-        if not in_nairobi(lat, lng):
-            return None
-        return lat, lng
-    except Exception as exc:  # noqa: BLE001 — log and move on, this is a best-effort backfill
-        print(f"  ERROR geocoding {name!r}: {exc}")
-        return None
+from app.terminal_matching import geocode_place  # noqa: E402
+from app.config import TOMTOM_API_KEY  # noqa: E402
 
 
 async def main():
     if not TOMTOM_API_KEY:
-        print("Set TOMTOM_API_KEY (or NEXT_PUBLIC_TOMTOM_API_KEY) in the environment first.")
+        print("Set TOMTOM_API_KEY in the environment first.")
         return
 
     async with AsyncSessionLocal() as db:
@@ -84,7 +38,7 @@ async def main():
         succeeded, failed = 0, []
         async with httpx.AsyncClient() as client:
             for i, stage in enumerate(stages, 1):
-                coords = await geocode_one(client, stage.name)
+                coords = await geocode_place(client, stage.name)
                 if coords:
                     stage.lat, stage.lng = coords
                     stage.geocoded = True
